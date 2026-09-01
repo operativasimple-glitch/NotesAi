@@ -194,6 +194,31 @@ body{
   background:var(--bg2);color:var(--tx);font-size:15px;font-weight:600;cursor:pointer}
 .flash-count{color:var(--tx2);font-size:14px;min-width:64px;text-align:center;font-variant-numeric:tabular-nums}
 
+/* ---- clips ---- */
+.clip{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:14px;margin-bottom:10px}
+.clip.approx{border-style:dashed}
+.clip-head{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--tx2);margin-bottom:8px}
+.clip-head .ctime{font-variant-numeric:tabular-nums;margin-left:auto}
+.ctype{font-size:11px;padding:3px 8px;border-radius:99px;font-weight:700;text-transform:uppercase;letter-spacing:.4px;
+  background:rgba(110,168,254,.15);color:var(--acc)}
+.ctype.examen{background:rgba(255,91,91,.15);color:var(--red)}
+.ctype.tarea,.ctype.aviso{background:rgba(245,192,69,.15);color:var(--gold)}
+.ctype.formula,.ctype.definicion{background:rgba(78,201,138,.15);color:var(--green)}
+.stars{color:var(--gold);letter-spacing:1px;font-size:11px}
+.clip h3{margin:0 0 8px;font-size:16px;line-height:1.35}
+.clip .cq{margin:0 0 8px;color:var(--tx2);font-style:italic;line-height:1.55;border-left:2px solid var(--line);padding-left:10px}
+.clip .cs{margin:0;font-size:14px;line-height:1.5}
+.clip-actions{display:flex;gap:8px;margin-top:12px}
+.clip-actions button{flex:1;padding:11px;border-radius:10px;border:1px solid var(--line);background:var(--bg3);
+  color:var(--tx);font-size:14px;font-weight:600;cursor:pointer;font-variant-numeric:tabular-nums}
+.clip-actions button.play{background:var(--acc2);border-color:var(--acc2);color:#fff}
+.clip-actions button.play.on{background:var(--bg3);border-color:var(--acc);color:var(--acc)}
+.clip-actions button:disabled{opacity:.45}
+.clip-intro{color:var(--tx2);font-size:13.5px;margin:16px 2px 12px;line-height:1.5}
+.field label.toggle{display:flex;align-items:center;gap:12px;background:var(--bg2);border:1px solid var(--line);
+  border-radius:12px;padding:12px 14px;cursor:pointer;font-weight:500;font-size:15px;margin-bottom:10px}
+.toggle input{width:22px;height:22px;accent-color:var(--acc);margin:0;flex:none}
+
 /* ---- raw ---- */
 .raw-text{background:var(--bg2);border:1px solid var(--line);border-radius:12px;padding:14px;
   white-space:pre-wrap;line-height:1.65;font-size:15px;margin-top:16px;color:var(--tx2)}
@@ -308,6 +333,7 @@ textarea{resize:vertical}
 
     <div class="tabs" id="s-tabs">
       <button class="tab active" data-tab="notes">Apuntes</button>
+      <button class="tab" data-tab="clips">✂ Clips</button>
       <button class="tab" data-tab="study">Estudiar</button>
       <button class="tab" data-tab="raw">Transcripción</button>
     </div>
@@ -316,6 +342,11 @@ textarea{resize:vertical}
       <div id="tab-notes" class="tabpane">
         <div id="process-box" class="process-box"></div>
         <div id="notes-render"></div>
+      </div>
+
+      <div id="tab-clips" class="tabpane hidden">
+        <div id="clips-progress"></div>
+        <div id="clips-render"></div>
       </div>
 
       <div id="tab-study" class="tabpane hidden">
@@ -382,12 +413,23 @@ textarea{resize:vertical}
       </div>
 
       <div class="field">
+        <label>Clipping automático</label>
+        <label class="toggle"><input type="checkbox" id="in-autoclip"><span>Recortar solos los momentos clave de cada clase</span></label>
+        <select id="in-clipmax">
+          <option value="5">Hasta 5 clips por clase</option>
+          <option value="8">Hasta 8 clips por clase (recomendado)</option>
+          <option value="12">Hasta 12 clips por clase</option>
+        </select>
+        <p class="hint">Al generar los apuntes, un agente lee la transcripción, elige lo que merece la pena volver a escuchar (avisos de examen, definiciones, fórmulas, tareas, respuestas a dudas…) y guarda un recorte de audio de cada momento antes de borrar el audio de la clase. Los minutos que marques con ★ siempre tienen su clip.</p>
+      </div>
+
+      <div class="field">
         <label>Datos guardados</label>
         <div id="settings-storage" class="hint"></div>
         <button class="danger-btn wide" id="btn-wipe-audio">Borrar todos los audios ya procesados</button>
       </div>
 
-      <p class="hint center">v1.0 · Todo se guarda en tu móvil. El audio solo sale de aquí cuando pulsas «Generar apuntes».</p>
+      <p class="hint center">v1.1 · Todo se guarda en tu móvil. El audio solo sale de aquí cuando pulsas «Generar apuntes».</p>
     </div>
   </section>
 
@@ -402,9 +444,10 @@ textarea{resize:vertical}
 
 <script>
 /* ==========================================================
-   Apuntes de clase — graba, transcribe y estudia
+   Apuntes de clase — graba, transcribe, recorta y estudia
    Todo se guarda en el móvil. El audio solo sale al pulsar
-   "Generar apuntes" (va a la API de Google Gemini).
+   "Generar apuntes" (va a la API de Google Gemini). Después,
+   un agente de clipping recorta los momentos clave de la clase.
    ========================================================== */
 'use strict';
 
@@ -426,7 +469,11 @@ const S = {
   get style()      { return localStorage.getItem('gstyle') || ''; },
   set style(v)     { localStorage.setItem('gstyle', v); },
   get models()     { try { return JSON.parse(localStorage.getItem('gmodels')) || DEFAULT_MODELS; } catch (e) { return DEFAULT_MODELS; } },
-  set models(v)    { localStorage.setItem('gmodels', JSON.stringify(v)); }
+  set models(v)    { localStorage.setItem('gmodels', JSON.stringify(v)); },
+  get autoClip()   { return localStorage.getItem('gclip') !== '0'; },
+  set autoClip(v)  { localStorage.setItem('gclip', v ? '1' : '0'); },
+  get clipMax()    { return parseInt(localStorage.getItem('gclipmax') || '8', 10); },
+  set clipMax(v)   { localStorage.setItem('gclipmax', String(v)); }
 };
 
 /* ---------- tiny helpers ---------- */
@@ -472,7 +519,7 @@ let _db = null;
 function db() {
   if (_db) return Promise.resolve(_db);
   return new Promise((res, rej) => {
-    const req = indexedDB.open('apuntes', 1);
+    const req = indexedDB.open('apuntes', 2);
     req.onupgradeneeded = () => {
       const d = req.result;
       if (!d.objectStoreNames.contains('sessions')) {
@@ -480,6 +527,10 @@ function db() {
       }
       if (!d.objectStoreNames.contains('chunks')) {
         const st = d.createObjectStore('chunks', { keyPath: 'id' });
+        st.createIndex('bySession', 'sessionId');
+      }
+      if (!d.objectStoreNames.contains('clips')) {
+        const st = d.createObjectStore('clips', { keyPath: 'id' });
         st.createIndex('bySession', 'sessionId');
       }
     };
@@ -503,6 +554,7 @@ async function delSession(id) {
   const cs = await getChunks(id);
   const st = await tx('chunks', 'readwrite');
   cs.forEach(c => st.delete(c.id));
+  await delClips(id);
   return idbReq((await tx('sessions', 'readwrite')).delete(id));
 }
 async function putChunk(c)    { return idbReq((await tx('chunks', 'readwrite')).put(c)); }
@@ -515,6 +567,18 @@ async function dropAudio(sessionId) {
   const cs = await getChunks(sessionId);
   const st = await tx('chunks', 'readwrite');
   for (const c of cs) { c.blob = null; c.size = c.size || 0; st.put(c); }
+}
+async function putClip(k)     { return idbReq((await tx('clips', 'readwrite')).put(k)); }
+async function getClips(sessionId) {
+  const store = await tx('clips', 'readonly');
+  const r = await idbReq(store.index('bySession').getAll(sessionId));
+  return (r || []).sort((a, b) => a.index - b.index);
+}
+async function delClips(sessionId) {
+  const ks = await getClips(sessionId);
+  if (!ks.length) return;
+  const st = await tx('clips', 'readwrite');
+  ks.forEach(k => st.delete(k.id));
 }
 
 /* ==========================================================
@@ -545,7 +609,8 @@ async function renderHome() {
     else if (s.status === 'error') pill = '<span class="pill err">Error</span>';
     else if (s.status === 'procesando') pill = '<span class="pill todo">Procesando…</span>';
     const sub = fmtDate(s.createdAt) + ' · ' + fmtTime(s.durationMs || 0) +
-                (s.marks && s.marks.length ? ' · ★' + s.marks.length : '');
+                (s.marks && s.marks.length ? ' · ★' + s.marks.length : '') +
+                (s.clipCount ? ' · ✂' + s.clipCount : '');
     return '<div class="card" data-id="' + esc(s.id) + '">' +
              '<div class="c-main"><div class="c-title">' + esc(s.title || 'Clase sin título') + '</div>' +
              '<div class="c-sub">' + esc(sub) + '</div></div>' + pill + '</div>';
@@ -581,7 +646,7 @@ const R = {
   session: null, index: 0, parts: [], mime: '',
   startedAt: 0, pausedAt: 0, pausedTotal: 0,
   rotating: false, stopping: false, paused: false,
-  segTimer: null, uiTimer: null, wakeLock: null, wasHidden: false
+  segTimer: null, uiTimer: null, wakeLock: null, wasHidden: false, segStart: 0
 };
 
 function pickMime() {
@@ -660,11 +725,13 @@ function startSegment() {
     const type = R.mime || (R.parts[0] && R.parts[0].type) || 'audio/mp4';
     const blob = new Blob(R.parts, { type });
     R.parts = [];
+    const segStart = R.segStart, segEnd = elapsed();
     if (blob.size > 1000) {
       const i = R.index++;
       await putChunk({
         id: R.session.id + ':' + pad(i), sessionId: R.session.id, index: i,
-        blob, mime: type, size: blob.size, wav: false, transcript: ''
+        blob, mime: type, size: blob.size, wav: false, transcript: '',
+        startMs: segStart, endMs: segEnd
       });
       R.session.chunkCount = R.index;
       R.session.durationMs = elapsed();
@@ -676,6 +743,7 @@ function startSegment() {
     else finishStop();
   };
 
+  R.segStart = elapsed();
   rec.start();
   clearTimeout(R.segTimer);
   R.segTimer = setTimeout(rotate, S.seg * 1000);
@@ -1126,6 +1194,306 @@ function notesPrompt(session, transcript) {
   ].join('\n');
 }
 
+
+/* ==========================================================
+   AGENTE DE CLIPPING AUTOMÁTICO
+   1) Lee la transcripción por bloques y elige los momentos que
+      merece la pena volver a escuchar.
+   2) Localiza cada cita dentro del bloque para estimar el minuto.
+   3) Recorta el audio de ese tramo (wav 16 kHz) y lo guarda.
+   Se ejecuta solo al generar los apuntes, antes de borrar el audio.
+   ========================================================== */
+const CLIP_TYPES = ['examen', 'definicion', 'formula', 'ejemplo', 'tarea', 'aviso', 'pregunta', 'resumen'];
+const CLIP_LABEL = {
+  examen: 'Examen', definicion: 'Definición', formula: 'Fórmula', ejemplo: 'Ejemplo',
+  tarea: 'Tarea', aviso: 'Aviso', pregunta: 'Pregunta', resumen: 'Resumen'
+};
+const CLIP_MIN_MS = 15000;   // duración mínima de un clip
+const CLIP_MAX_MS = 90000;   // duración máxima
+const CLIP_PAD_MS = 4000;    // margen antes y después de la cita
+
+const CLIPS_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    clips: {
+      type: 'ARRAY',
+      items: {
+        type: 'OBJECT',
+        properties: {
+          titulo: { type: 'STRING' },
+          tipo: { type: 'STRING', enum: CLIP_TYPES },
+          bloque: { type: 'INTEGER' },
+          cita: { type: 'STRING' },
+          por_que: { type: 'STRING' },
+          importancia: { type: 'INTEGER' }
+        },
+        required: ['titulo', 'tipo', 'bloque', 'cita', 'por_que', 'importancia']
+      }
+    }
+  },
+  required: ['clips']
+};
+
+/** ms de inicio/fin de un bloque dentro de la clase */
+function chunkSpan(c, s) {
+  const seg = S.seg * 1000;
+  const start = c.startMs != null ? c.startMs : c.index * seg;
+  let end = c.endMs != null && c.endMs > start ? c.endMs : start + seg;
+  if (s && s.durationMs && end > s.durationMs + 2000 && s.durationMs > start) end = s.durationMs;
+  return { start, end };
+}
+
+function clipsPrompt(session, chunks) {
+  const blocks = chunks.map((c, i) => {
+    const sp = chunkSpan(c, session);
+    return '[BLOQUE ' + (i + 1) + ' · ' + fmtTime(sp.start) + ' – ' + fmtTime(sp.end) + ']\n' +
+           (c.transcript || '[sin transcripción]');
+  }).join('\n\n');
+  const marks = (session.marks || []).length
+    ? '\nEl alumno pulsó "Marcar esto" en estos minutos: ' + session.marks.map(m => m.label).join(', ') +
+      '. Cada marca DEBE tener su clip: busca lo que se explicaba justo antes y después de ese minuto.\n'
+    : '';
+  const style = S.style ? '\nContexto del alumno: ' + S.style + '\n' : '';
+  return [
+    'Eres un agente de clipping para estudiantes: tu trabajo es encontrar los momentos de una clase que merece la pena volver a escuchar, para recortarlos del audio.',
+    'Abajo tienes la transcripción automática de la clase, dividida en bloques numerados con su minuto de inicio y fin.',
+    marks + style,
+    'Elige entre 3 y ' + S.clipMax + ' momentos (menos si la clase es corta o floja). Prioriza, en este orden:',
+    '1. Avisos de examen ("esto entra", "esto cae seguro", "acordaos de").',
+    '2. Definiciones de conceptos clave y fórmulas con su explicación.',
+    '3. Ejemplos que aclaran algo difícil.',
+    '4. Tareas, entregas y fechas.',
+    '5. Respuestas del profesor a preguntas de alumnos.',
+    '6. El resumen o cierre de la clase.',
+    '',
+    'Para cada momento devuelve:',
+    '- "bloque": número del bloque donde EMPIEZA el momento.',
+    '- "cita": copia LITERAL de 1 a 3 frases seguidas tal y como aparecen en la transcripción de ese bloque. Sin corregir, sin resumir, sin puntos suspensivos, sin juntar trozos separados. Se usa para localizar el audio, así que tiene que coincidir palabra por palabra con el texto.',
+    '- "titulo": 3-8 palabras en ' + S.lang + ' que digan de qué va el clip.',
+    '- "por_que": una frase en ' + S.lang + ' explicando por qué merece la pena volver a escucharlo.',
+    '- "importancia": de 1 (curioso) a 5 (imprescindible para el examen).',
+    '- "tipo": uno de ' + CLIP_TYPES.join(', ') + '.',
+    'No repitas el mismo momento dos veces. Ordénalos por tiempo. Si la transcripción no es una clase o está vacía, devuelve la lista vacía.',
+    '',
+    'TRANSCRIPCIÓN POR BLOQUES:',
+    '"""', blocks, '"""'
+  ].join('\n');
+}
+
+/* ---------- localizar la cita dentro del bloque ---------- */
+const normTxt = (t) => String(t || '').toLowerCase()
+  .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9ñ ]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+/** devuelve la fracción [f0, f1] del texto del bloque donde está la cita */
+function locateQuote(text, quote) {
+  const T = normTxt(text), Q = normTxt(quote);
+  if (!T.length || !Q.length) return { f0: 0.5, f1: 0.5, exact: false };
+  const find = (q) => { const p = T.indexOf(q); return p < 0 ? -1 : p; };
+  let p = find(Q);
+  if (p >= 0) return { f0: p / T.length, f1: Math.min(1, (p + Q.length) / T.length), exact: true };
+  // la IA ha corregido algo: probamos con trozos de la cita
+  const w = Q.split(' ');
+  const tries = [];
+  for (const n of [10, 7, 5, 4]) {
+    if (w.length >= n) {
+      tries.push(w.slice(0, n).join(' '));
+      tries.push(w.slice(-n).join(' '));
+      const mid = Math.floor((w.length - n) / 2);
+      tries.push(w.slice(mid, mid + n).join(' '));
+    }
+  }
+  for (const t of tries) {
+    p = find(t);
+    if (p >= 0) {
+      const off = Q.indexOf(t);
+      const start = Math.max(0, p - (off > 0 ? off : 0));
+      return { f0: start / T.length, f1: Math.min(1, (start + Q.length) / T.length), exact: false, partial: true };
+    }
+  }
+  return { f0: 0.5, f1: 0.5, exact: false };
+}
+
+/** de la cita localizada a un tramo [t0, t1] en ms dentro de la clase */
+function clipWindow(span, loc) {
+  const dur = Math.max(1000, span.end - span.start);
+  let t0, t1, q0, q1, approx = false;
+  if (!loc.exact && !loc.partial) {
+    // no hemos encontrado la cita: cogemos el centro del bloque
+    const mid = span.start + dur / 2;
+    t0 = mid - 20000; t1 = mid + 20000; approx = true;
+    q0 = t0; q1 = t1;
+  } else {
+    q0 = span.start + loc.f0 * dur;      // donde empieza y acaba la cita en sí
+    q1 = span.start + loc.f1 * dur;
+    t0 = q0 - CLIP_PAD_MS;
+    t1 = q1 + CLIP_PAD_MS;
+    approx = !loc.exact;
+  }
+  if (t1 - t0 < CLIP_MIN_MS) { const c = (t0 + t1) / 2; t0 = c - CLIP_MIN_MS / 2; t1 = c + CLIP_MIN_MS / 2; }
+  if (t1 - t0 > CLIP_MAX_MS) t1 = t0 + CLIP_MAX_MS;
+  t0 = Math.max(span.start, Math.round(t0));
+  t1 = Math.min(span.end, Math.round(t1));
+  if (t1 - t0 < 3000) { t0 = span.start; t1 = Math.min(span.end, span.start + CLIP_MIN_MS); }
+  q0 = Math.min(Math.max(Math.round(q0), t0), t1); q1 = Math.min(Math.max(Math.round(q1), q0), t1);
+  return { t0, t1, q0, q1, approx, g0: (t0 - span.start) / dur, g1: (t1 - span.start) / dur };
+}
+
+/* ---------- recorte de audio ---------- */
+/** blob de un bloque -> Float32Array mono 16 kHz */
+async function chunkSamples(c) {
+  const ab = await c.blob.arrayBuffer();
+  const { buf, ctx } = await decode(ab);
+  const mono = mixMono(buf);
+  const rs = resample(mono, buf.sampleRate, TARGET_RATE);
+  try { ctx.close(); } catch (e) {}
+  return rs;
+}
+function cutWav(samples, g0, g1) {
+  const a = Math.max(0, Math.floor(g0 * samples.length));
+  const b = Math.min(samples.length, Math.ceil(g1 * samples.length));
+  if (b - a < TARGET_RATE) return null;   // menos de 1 s: no vale
+  return encodeWav(samples.subarray(a, b), TARGET_RATE);
+}
+
+/** recalcula las fracciones de audio tras mover los bordes de un clip */
+function refit(k) {
+  k.g0 = (k.t0 - k.spanStart) / k.spanDur;
+  k.g1 = (k.t1 - k.spanStart) / k.spanDur;
+  return k;
+}
+
+/** resuelve solapes: si se pisan mucho gana el más importante, si es poco se recortan los bordes; limita el total */
+function dedupeClips(list) {
+  // un clip localizado a ojo solo merece la pena si es importante
+  list = list.filter(k => !k.approx || (k.importancia || 0) >= 3);
+  list.sort((a, b) => a.t0 - b.t0 || (b.importancia || 0) - (a.importancia || 0));
+  const out = [];
+  for (const k of list) {
+    const last = out[out.length - 1];
+    if (last && k.t0 < last.t1) {
+      // comparamos las citas en sí (sin el margen): ¿es el mismo momento?
+      const coreOverlap = Math.min(last.q1, k.q1) - Math.max(last.q0, k.q0);
+      const shorterCore = Math.max(1000, Math.min(last.q1 - last.q0, k.q1 - k.q0));
+      if (coreOverlap > shorterCore * 0.5) {
+        if ((k.importancia || 0) > (last.importancia || 0)) out[out.length - 1] = k;
+        continue;
+      }
+      // solo se tocan los márgenes: partimos el hueco sin cortar ninguna cita
+      let b = Math.round((k.t0 + last.t1) / 2);
+      b = Math.min(Math.max(b, last.q1), Math.max(last.q1, k.q0));
+      last.t1 = b; k.t0 = b;
+      refit(last); refit(k);
+      if (k.t1 - k.t0 < 3000) continue;
+    }
+    out.push(k);
+  }
+  if (out.length > S.clipMax) {
+    // nos quedamos con los más importantes y volvemos a ordenar por tiempo
+    out.sort((a, b) => (b.importancia || 0) - (a.importancia || 0) || a.t0 - b.t0);
+    out.length = S.clipMax;
+    out.sort((a, b) => a.t0 - b.t0);
+  }
+  return out;
+}
+
+/** el agente completo: devuelve cuántos clips ha guardado */
+async function runClipAgent(id, setP) {
+  setP = setP || (() => {});
+  const s = await getSession(id);
+  if (!s) throw new Error('La clase ya no existe.');
+  const chunks = await getChunks(id);
+  if (!chunks.some(c => c.transcript)) throw new Error('No hay transcripción para recortar.');
+
+  // 1) plan: qué momentos merecen clip
+  setP('✂ Buscando los momentos clave…', 90);
+  const raw = await gemini([{ text: clipsPrompt(s, chunks) }], { temp: 0.25, schema: CLIPS_SCHEMA });
+  let plan;
+  try { plan = JSON.parse(raw); }
+  catch (e) { const m = raw.match(/\{[\s\S]*\}/); plan = m ? JSON.parse(m[0]) : { clips: [] }; }
+  let wanted = (Array.isArray(plan.clips) ? plan.clips : [])
+    .filter(k => k && k.cita && k.bloque >= 1 && k.bloque <= chunks.length);
+
+  // 2) localizar cada cita en el tiempo
+  const located = wanted.map(k => {
+    const c = chunks[k.bloque - 1];
+    const span = chunkSpan(c, s);
+    const loc = locateQuote(c.transcript, k.cita);
+    const w = clipWindow(span, loc);
+    return {
+      titulo: String(k.titulo || '').trim() || 'Momento clave',
+      tipo: CLIP_TYPES.indexOf(k.tipo) >= 0 ? k.tipo : 'aviso',
+      cita: String(k.cita || '').trim(),
+      porQue: String(k.por_que || '').trim(),
+      importancia: Math.min(5, Math.max(1, parseInt(k.importancia, 10) || 3)),
+      chunkIndex: c.index, spanStart: span.start, spanDur: Math.max(1000, span.end - span.start),
+      t0: w.t0, t1: w.t1, q0: w.q0, q1: w.q1, g0: w.g0, g1: w.g1, approx: w.approx
+    };
+  });
+  const clips = dedupeClips(located);
+
+  // 3) recortar el audio y guardar
+  await delClips(id);
+  let cache = { index: -1, samples: null };
+  let withAudio = 0;
+  for (let i = 0; i < clips.length; i++) {
+    const k = clips[i];
+    setP('✂ Recortando clip ' + (i + 1) + ' de ' + clips.length + '…', 90 + 9 * ((i + 1) / clips.length));
+    const c = chunks.find(x => x.index === k.chunkIndex);
+    let blob = null;
+    if (c && c.blob) {
+      try {
+        if (cache.index !== c.index) cache = { index: c.index, samples: await chunkSamples(c) };
+        blob = cutWav(cache.samples, k.g0, k.g1);
+      } catch (e) { blob = null; }
+    }
+    if (blob) withAudio++;
+    await putClip({
+      id: id + ':clip:' + pad(i), sessionId: id, index: i,
+      titulo: k.titulo, tipo: k.tipo, cita: k.cita, porQue: k.porQue,
+      importancia: k.importancia, t0: k.t0, t1: k.t1, approx: k.approx,
+      blob, mime: 'audio/wav', size: blob ? blob.size : 0
+    });
+  }
+  cache = null;
+
+  const s2 = await getSession(id);
+  if (s2) {
+    s2.clipCount = clips.length;
+    s2.clipAudio = withAudio;
+    s2.clipsAt = Date.now();
+    s2.clipError = '';
+    await putSession(s2);
+  }
+  return clips.length;
+}
+
+/** relanzar el agente a mano desde el menú de la clase */
+async function regenClips(id) {
+  if (processing) return toast('Ya hay una clase procesándose.');
+  if (!S.key) { openSettings(); return toast('Primero pon la clave de Gemini.'); }
+  processing = true;
+  const setP = (label, pct) => {
+    const box = $('#clips-progress');
+    if (!box || openId !== id) return;
+    box.innerHTML = '<div class="progress"><div class="p-label">' + esc(label) + '</div>' +
+      '<div class="pbar"><div style="width:' + Math.round(pct) + '%"></div></div></div>';
+  };
+  try {
+    setP('✂ Buscando los momentos clave…', 10);
+    const n = await runClipAgent(id, (l, p) => setP(l, 10 + (p - 90) * 9));
+    toast(n ? n + ' clips listos ✓' : 'No he encontrado momentos destacables.');
+  } catch (e) {
+    const s = await getSession(id);
+    if (s) { s.clipError = e.message || String(e); await putSession(s); }
+    toast(e.message || 'Algo ha fallado', 5000);
+  }
+  processing = false;
+  const box = $('#clips-progress'); if (box) box.innerHTML = '';
+  if (openId === id) renderSession(id);
+  renderHome();
+}
+
 /* ==========================================================
    PIPELINE
    ========================================================== */
@@ -1202,6 +1570,18 @@ async function processSession(id, opts) {
     s.processedAt = Date.now();
     await putSession(s);
 
+    // agente de clipping: recorta los momentos clave mientras aún tenemos el audio
+    const haveClips = (await getClips(id)).length > 0;
+    if (S.autoClip && (!opts.notesOnly || !haveClips)) {
+      try {
+        await sleep(1200); // respeta la cuota gratuita
+        await runClipAgent(id, setP);
+      } catch (e) {
+        const s3 = await getSession(id);
+        if (s3) { s3.clipError = e.message || String(e); await putSession(s3); }
+      }
+    }
+
     await dropAudio(id);   // ya no hace falta el audio: liberamos espacio
 
     processing = false;
@@ -1234,7 +1614,8 @@ async function openSession(id) {
 function tabTo(name) {
   currentTab = name;
   $$('#s-tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.tab === name));
-  ['notes', 'study', 'raw'].forEach(n => $('#tab-' + n).classList.toggle('hidden', n !== name));
+  ['notes', 'clips', 'study', 'raw'].forEach(n => $('#tab-' + n).classList.toggle('hidden', n !== name));
+  if (name !== 'clips') stopClipAudio();
   $('#s-scroll').scrollTop = 0;
 }
 
@@ -1273,6 +1654,106 @@ async function renderSession(id) {
     : '<p class="empty">Todavía no hay transcripción.</p>';
   const cr = $('#btn-copy-raw');
   if (cr) cr.onclick = () => copyText(s.transcript);
+  await renderClips(s);
+}
+
+/* ---------- clips tab ---------- */
+let clipPlayer = null, clipPlaying = null, clipUrl = null;
+function stopClipAudio() {
+  if (clipPlayer) { try { clipPlayer.pause(); } catch (e) {} }
+  if (clipUrl) { URL.revokeObjectURL(clipUrl); clipUrl = null; }
+  clipPlayer = null; clipPlaying = null;
+  $$('.clip-actions .play.on').forEach(b => { b.classList.remove('on'); b.textContent = '▶ Escuchar'; });
+}
+function playClip(k, btn) {
+  if (clipPlaying === k.id) return stopClipAudio();
+  stopClipAudio();
+  if (!k.blob) return toast('Este clip no tiene audio guardado.');
+  clipUrl = URL.createObjectURL(k.blob);
+  clipPlayer = new Audio(clipUrl);
+  clipPlaying = k.id;
+  const total = fmtTime(k.t1 - k.t0);
+  btn.classList.add('on'); btn.textContent = '⏸ 00:00 / ' + total;
+  clipPlayer.ontimeupdate = () => { if (clipPlaying === k.id) btn.textContent = '⏸ ' + fmtTime(clipPlayer.currentTime * 1000) + ' / ' + total; };
+  clipPlayer.onended = stopClipAudio;
+  clipPlayer.onerror = () => { stopClipAudio(); toast('No he podido reproducir el clip.'); };
+  clipPlayer.play().catch(() => { stopClipAudio(); toast('No he podido reproducir el clip.'); });
+}
+function clipFileName(s, k) {
+  const base = ((s.title || 'clase') + ' ' + fmtTime(k.t0).replace(/:/g, '.') + ' ' + k.titulo)
+    .replace(/[^\wáéíóúñÁÉÍÓÚÑ .\-]/g, '').replace(/\s+/g, ' ').trim().slice(0, 60);
+  return base + '.wav';
+}
+async function shareClip(s, k) {
+  if (!k.blob) return toast('Este clip no tiene audio guardado.');
+  const name = clipFileName(s, k);
+  const file = new File([k.blob], name, { type: 'audio/wav' });
+  try {
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: k.titulo, text: '“' + k.cita + '”' });
+      return;
+    }
+  } catch (e) { if (e && e.name === 'AbortError') return; }
+  const url = URL.createObjectURL(k.blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 4000);
+}
+function clipsToText(s, clips) {
+  const L = ['✂ Momentos clave · ' + (s.title || 'Clase'), ''];
+  clips.forEach(k => {
+    L.push((k.approx ? '≈' : '') + fmtTime(k.t0) + ' – ' + fmtTime(k.t1) + ' · ' + k.titulo + ' [' + (CLIP_LABEL[k.tipo] || k.tipo) + ']');
+    L.push('“' + k.cita + '”');
+    if (k.porQue) L.push(k.porQue);
+    L.push('');
+  });
+  return L.join('\n');
+}
+async function renderClips(s) {
+  const el = $('#clips-render');
+  stopClipAudio();
+  const clips = await getClips(s.id);
+  const regen = '<div class="actions-row"><button id="btn-copy-clips"' + (clips.length ? '' : ' class="hidden"') +
+    '>Copiar lista</button><button id="btn-regen-clips">' + (clips.length ? 'Volver a recortar' : '✂ Buscar clips') + '</button></div>';
+
+  if (!clips.length) {
+    let msg;
+    if (s.status === 'procesando' && processing) msg = '<p class="empty">Cuando terminen los apuntes, el agente recortará los momentos clave.</p>';
+    else if (!s.transcript) msg = '<p class="empty">Los clips se recortan solos al generar los apuntes.</p>';
+    else if (s.clipError) msg = '<div class="banner warn">No se pudieron recortar los clips: ' + esc(s.clipError) + '</div>';
+    else if (!S.autoClip && !s.clipsAt) msg = '<p class="empty">El clipping automático está apagado en Ajustes. Puedes lanzarlo a mano.</p>';
+    else if (s.clipsAt) msg = '<p class="empty">El agente no encontró momentos destacables en esta clase.</p>';
+    else msg = '<p class="empty">Todavía no hay clips.</p>';
+    el.innerHTML = msg + (s.transcript ? regen : '');
+  } else {
+    const noAudio = clips.filter(k => !k.blob).length;
+    let h = '<p class="clip-intro">El agente ha recortado ' + clips.length + ' momento' + (clips.length === 1 ? '' : 's') +
+      ' clave de la clase.' +
+      (noAudio ? ' ' + noAudio + ' sin audio (se recortaron cuando el audio ya se había borrado).' : '') +
+      (clips.some(k => k.approx) ? ' Los que llevan ≈ están localizados a ojo.' : '') + '</p>';
+    h += clips.map(k =>
+      '<div class="clip' + (k.approx ? ' approx' : '') + '" data-id="' + esc(k.id) + '">' +
+        '<div class="clip-head"><span class="ctype ' + esc(k.tipo) + '">' + esc(CLIP_LABEL[k.tipo] || k.tipo) + '</span>' +
+        '<span class="stars">' + '★'.repeat(k.importancia || 0) + '</span>' +
+        '<span class="ctime">' + (k.approx ? '≈ ' : '') + esc(fmtTime(k.t0)) + ' – ' + esc(fmtTime(k.t1)) + '</span></div>' +
+        '<h3>' + esc(k.titulo) + '</h3>' +
+        '<p class="cq">“' + esc(k.cita) + '”</p>' +
+        (k.porQue ? '<p class="cs">' + esc(k.porQue) + '</p>' : '') +
+        '<div class="clip-actions">' +
+          '<button class="play" data-act="play"' + (k.blob ? '' : ' disabled') + '>' + (k.blob ? '▶ Escuchar' : 'Sin audio') + '</button>' +
+          '<button data-act="share"' + (k.blob ? '' : ' disabled') + '>Compartir</button>' +
+        '</div>' +
+      '</div>').join('');
+    el.innerHTML = h + regen;
+    el.querySelectorAll('.clip').forEach(card => {
+      const k = clips.find(x => x.id === card.dataset.id);
+      card.querySelector('[data-act="play"]').onclick = (e) => playClip(k, e.currentTarget);
+      card.querySelector('[data-act="share"]').onclick = () => shareClip(s, k);
+    });
+  }
+  const cc = $('#btn-copy-clips'); if (cc) cc.onclick = () => copyText(clipsToText(s, clips));
+  const rg = $('#btn-regen-clips'); if (rg) rg.onclick = () => { rg.disabled = true; regenClips(s.id); };
 }
 
 function renderNotes(n, s) {
@@ -1327,7 +1808,7 @@ function renderNotes(n, s) {
 
 function wireNotes(s) {
   const c = $('#btn-copy-md'), sh = $('#btn-share-md');
-  if (c) c.onclick = () => copyText(notesToMd(s));
+  if (c) c.onclick = async () => copyText(notesToMd(s, await getClips(s.id)));
   if (sh) sh.onclick = () => shareMd(s);
 }
 
@@ -1375,7 +1856,7 @@ function renderStudy(n) {
 }
 
 /* ---------- export ---------- */
-function notesToMd(s) {
+function notesToMd(s, clips) {
   const n = s.notes || {};
   const arr = (x) => Array.isArray(x) ? x : [];
   const L = [];
@@ -1421,6 +1902,12 @@ function notesToMd(s) {
   if (arr(n.flashcards).length) {
     L.push('## Tarjetas');
     arr(n.flashcards).forEach(c => L.push('- ' + c.anverso + ' → ' + c.reverso));
+    L.push('');
+  }
+  if (Array.isArray(clips) && clips.length) {
+    L.push('## Momentos clave (clips)');
+    clips.forEach(k => L.push('- ' + (k.approx ? '≈' : '') + fmtTime(k.t0) + ' – ' + fmtTime(k.t1) + ' · **' + k.titulo +
+      '** (' + (CLIP_LABEL[k.tipo] || k.tipo) + '): "' + k.cita + '"' + (k.porQue ? ' — ' + k.porQue : '')));
   }
   return L.join('\n');
 }
@@ -1441,7 +1928,7 @@ async function copyText(t) {
 }
 
 async function shareMd(s) {
-  const md = notesToMd(s);
+  const md = notesToMd(s, await getClips(s.id));
   const name = (s.title || 'apuntes').replace(/[^\wáéíóúñÁÉÍÓÚÑ \-]/g, '').slice(0, 50) + '.md';
   const file = new File([md], name, { type: 'text/markdown' });
   try {
@@ -1483,6 +1970,9 @@ async function sessionMenu() {
     items.push({
       label: 'Regenerar los apuntes', fn: () => processSession(s.id, { notesOnly: true })
     });
+    items.push({
+      label: '✂ Volver a recortar los clips', fn: () => { tabTo('clips'); regenClips(s.id); }
+    });
   }
   items.push({ label: 'Cerrar', fn: () => {} });
   items.push({
@@ -1517,7 +2007,8 @@ async function importFile(file) {
     for (let i = 0; i < slices.length; i++) {
       await putChunk({
         id: id + ':' + pad(i), sessionId: id, index: i, blob: slices[i],
-        mime: 'audio/wav', size: slices[i].size, wav: true, transcript: ''
+        mime: 'audio/wav', size: slices[i].size, wav: true, transcript: '',
+        startMs: i * S.seg * 1000, endMs: Math.min((i + 1) * S.seg * 1000, durationMs)
       });
     }
     session.chunkCount = slices.length;
@@ -1559,6 +2050,8 @@ function openSettings() {
   $('#in-lang').value = S.lang;
   $('#in-seg').value = String(S.seg);
   $('#in-notes-style').value = S.style;
+  $('#in-autoclip').checked = S.autoClip;
+  $('#in-clipmax').value = String(S.clipMax);
   fillModels(S.models, S.model);
   $('#key-result').textContent = '';
   $('#key-result').className = 'key-result';
@@ -1573,6 +2066,8 @@ function bindSettings() {
   $('#in-lang').addEventListener('change', e => { S.lang = e.target.value; });
   $('#in-seg').addEventListener('change', e => { S.seg = parseInt(e.target.value, 10); });
   $('#in-notes-style').addEventListener('change', e => { S.style = e.target.value; });
+  $('#in-autoclip').addEventListener('change', e => { S.autoClip = e.target.checked; });
+  $('#in-clipmax').addEventListener('change', e => { S.clipMax = parseInt(e.target.value, 10); });
 
   $('#btn-test-key').onclick = async () => {
     S.key = $('#in-key').value.trim();
