@@ -1009,7 +1009,7 @@ function renderResearch(r) {
 /* ===================== ajustes ===================== */
 
 const MARKET_FIELDS = [
-  { key: "series", label: "Series", type: "list", help: "Por defecto, los partidos (KXMLBGAME, KXNFLGAME, KXNHLGAME, KXNBAGAME, KXNCAAFGAME): donde los datos dieron ventaja." },
+  { key: "series", label: "Series", type: "list", help: "Por defecto, partidos (KXMLBGAME, KXNFLGAME…) y temperatura máxima en 7 ciudades (KXHIGHNY, KXHIGHMIA…): donde los datos dieron ventaja. Si tu estado bloquea los deportes, quita los partidos." },
   { key: "max_hours_to_close", label: "Solo los que terminan en las próximas (horas)", type: "number", help: "0 = sin límite. En los partidos cuenta el final previsto, no el cierre oficial." },
   { key: "max_markets", label: "Mercados máximos a la vez", type: "number" },
   { key: "max_markets_per_event", label: "Máximo por evento", type: "number", help: "1 evita apostar varias veces a lo mismo (cada partido tiene dos mercados)." },

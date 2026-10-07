@@ -41,8 +41,12 @@ from .risk import RiskLimits
 
 log = logging.getLogger(__name__)
 
-# Partidos (quién gana): donde la prueba con datos reales dio ventaja. Ver INVESTIGACION.md.
-DEFAULT_SERIES = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
+# Donde la prueba con datos reales dio ventaja (ver INVESTIGACION.md): partidos (quién gana)
+# y temperatura máxima diaria en 7 ciudades. El clima no depende de las restricciones a los
+# contratos deportivos que tienen algunos estados.
+GAME_SERIES = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
+WEATHER_SERIES = ["KXHIGHLAX", "KXHIGHNY", "KXHIGHCHI", "KXHIGHMIA", "KXHIGHAUS", "KXHIGHDEN", "KXHIGHPHIL"]
+DEFAULT_SERIES = GAME_SERIES + WEATHER_SERIES
 # El clima abre la víspera y cierra a medianoche (hora local), con varios tramos de
 # temperatura por día: necesita una ventana más larga y más de un mercado por evento.
 DEFAULT_SERIES_RULES = {"KXHIGH": {"max_hours_to_close": 40, "max_markets_per_event": 4}}

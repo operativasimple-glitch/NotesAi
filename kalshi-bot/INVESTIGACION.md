@@ -78,11 +78,49 @@ Qué significa y qué no:
 - A 93¢, **un fallo borra unos 13 aciertos**. Habrá semanas en negativo aunque la estrategia sea buena.
 - La bolsa da positivo, pero con pocos días de datos: todavía no se puede confirmar.
 
-Por todo esto, el bot sigue por defecto los **partidos** (series `KXMLBGAME`, `KXNFLGAME`, `KXNHLGAME`,
-`KXNBAGAME` y `KXNCAAFGAME`) que terminan en las próximas 6 horas, uno por partido, y deja de operar 15
-minutos antes del **final previsto**. En los partidos, Kalshi pone el cierre oficial dos o tres días
-después del encuentro (y cierra el mercado en cuanto acaba), así que el bot usa el campo
-`expected_expiration_time` para saber cuándo termina de verdad.
+En los partidos, Kalshi pone el cierre oficial dos o tres días después del encuentro (y cierra el
+mercado en cuanto acaba), así que el bot usa el campo `expected_expiration_time` para saber cuándo
+termina de verdad: sigue los partidos que terminan en las próximas 6 horas, uno por partido, y deja de
+operar 15 minutos antes del **final previsto**.
+
+### Sin deportes: clima, bolsa y otras categorías
+
+Algunos estados persiguen los contratos deportivos. En Missouri, la fiscal general ordenó el 18 de
+septiembre de 2026 a Kalshi y a otras cinco plataformas dejar de ofrecerlos a sus residentes en 30 días
+salvo que obtengan licencia ([Gaming.net](https://www.gaming.net/missouri-ag-orders-six-prediction-markets-to-halt-sports-event-contracts/),
+[SBC Americas](https://sbcamericas.com/2026/09/18/missouri-targets-prediction-markets/)). Por eso se midió
+la misma estrategia fuera de los deportes:
+
+| Mercados | Eventos | Rendimiento tras comisiones | Margen de error (95 %) | Veredicto |
+| --- | --- | --- | --- | --- |
+| **Temperatura máxima diaria, 7 ciudades** (agosto–octubre 2026) | 470 días | **+4,08 %** | **+3,16 % a +5,00 %** | **gana** |
+| … Miami | 67 | +4,13 % | +2,14 % a +6,13 % | gana |
+| … Denver | 68 | +3,97 % | +1,61 % a +6,33 % | gana |
+| … Austin | 67 | +3,22 % | +0,81 % a +5,63 % | gana |
+| … Los Ángeles | 67 | +5,32 % | −8,98 % a +6,30 % | sin confirmar |
+| … Nueva York | 67 | +2,80 % | −0,96 % a +6,56 % | sin confirmar |
+| … Filadelfia | 67 | +2,30 % | −0,72 % a +5,31 % | sin confirmar |
+| … Chicago | 67 | +0,31 % | −3,87 % a +4,49 % | sin confirmar |
+| Bolsa: S&P 500 y Nasdaq-100 (rangos y por encima/debajo) | 125 días | +3,56 % | −1,19 % a +8,32 % | sin confirmar |
+| Economía (Fed, gasolina…) | 14 | +2,09 % | — | pocos datos |
+| Cripto | — | — | — | no encaja: los mercados más activos duran 15 minutos |
+
+Las siete ciudades salen en positivo y, juntas, la ventaja queda confirmada. Por ciudad hay pocos días:
+la API normal de Kalshi solo guarda unos dos meses de mercados de clima (lo anterior está en su API
+histórica), así que más historia estrecharía los márgenes.
+
+Cómo funcionan los mercados de clima: el del día D abre la víspera (14:00 UTC) y cierra a medianoche
+hora local; se liquida la tarde siguiente con el informe oficial del Servicio Meteorológico. Cada día
+tiene varios tramos de temperatura. Por eso tienen su propia regla en el bot: los sigue hasta 40 horas
+antes del cierre y hasta 4 tramos por día.
+
+**El margen de error** se calcula por eventos (un partido, o un día de una ciudad) con el método delta.
+Cuando hay menos de 5 eventos perdidos (o ganados), esa aproximación no vale y se amplía con el
+intervalo de Wilson, para no dar por segura una racha sin batacazos.
+
+Por todo esto, el bot sigue por defecto **los partidos y la temperatura máxima de las 7 ciudades**. Si tu
+estado bloquea los deportes, quita las series de partidos en **Ajustes → Mercados** y el bot seguirá con
+el clima.
 
 ## ¿Dónde se gana dinero de verdad? (EE. UU., octubre 2026)
 

@@ -15,10 +15,15 @@ order_prefix = "kb"              # el bot solo toca órdenes cuyo client_order_i
 log_dir = "logs"                 # aquí van bot.log y journal.jsonl
 
 [markets]
-# Por defecto, los partidos (quién gana): es donde la prueba con datos reales dio ventaja
-# (+3,9 % tras comisiones en 878 partidos; ver INVESTIGACION.md).
-series = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
-max_hours_to_close = 6           # solo partidos que terminan en las próximas 6 h (en juego o a punto de empezar)
+# Por defecto, donde la prueba con datos reales dio ventaja (ver INVESTIGACION.md):
+#   - partidos, quién gana: +3,9 % tras comisiones en 878 partidos;
+#   - temperatura máxima en 7 ciudades: +4,1 % en 470 días. No depende de las restricciones a
+#     los contratos deportivos de algunos estados (si te los bloquean, quita los partidos).
+series = [
+    "KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME",
+    "KXHIGHLAX", "KXHIGHNY", "KXHIGHCHI", "KXHIGHMIA", "KXHIGHAUS", "KXHIGHDEN", "KXHIGHPHIL",
+]
+max_hours_to_close = 6           # partidos que terminan en las próximas 6 h (el clima tiene su regla abajo)
 min_hours_to_close = 0           # el riesgo deja de operar 15 min antes del final previsto
 max_markets = 20                 # como mucho, los N de más volumen
 max_markets_per_event = 1        # uno por evento: cada partido tiene dos mercados que son la misma apuesta
