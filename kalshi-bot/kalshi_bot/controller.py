@@ -14,12 +14,14 @@ import json
 import logging
 import threading
 import time
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Callable, Optional
+from urllib.parse import urlparse
 
-from .client import KalshiAPIError, KalshiClient, new_client_order_id
+from .client import ENVIRONMENTS, KalshiAPIError, KalshiClient, new_client_order_id
 from .config import (
     ConfigError,
     Settings,
@@ -45,6 +47,8 @@ log = logging.getLogger(__name__)
 
 STATE_FILE = "state.json"
 MANUAL_PREFIX = "man"  # las órdenes manuales del panel no las toca el bot
+TEST_PREFIX = "diag"  # orden de prueba del diagnóstico
+ENV_LABELS = {"demo": "Demo", "prod": "Real"}
 
 
 class ControllerError(Exception):
@@ -140,6 +144,22 @@ class Job:
             "started_at": self.started_at,
             "finished_at": self.finished_at,
         }
+
+
+def _short_error(exc: Exception) -> str:
+    if isinstance(exc, KalshiAPIError):
+        text = exc.message or str(exc)
+        if exc.code and exc.code not in text:
+            text = f"{text} [{exc.code}]"
+        return f"HTTP {exc.status}: {text}" if exc.status else text
+    return str(exc)[:300] or exc.__class__.__name__
+
+
+def _cents(price: Optional[Decimal]) -> str:
+    if price is None:
+        return "—"
+    cents = price * 100
+    return f"{cents.normalize():f}¢" if cents == cents.to_integral_value() else f"{cents:.1f}¢"
 
 
 def _now_iso() -> str:
@@ -602,6 +622,177 @@ class BotController:
         tmp.replace(path)
         log.info("Valores justos guardados desde el panel (%d mercados)", len(values))
         return self.fair_values()
+
+    # --- diagnóstico ----------------------------------------------------------------------
+
+    def diagnose(self, order_test: bool = False) -> dict:
+        """Comprueba paso a paso que el bot puede trabajar con tu cuenta.
+
+        Solo lee datos, salvo con order_test=True: entonces envía una orden de
+        1 contrato al precio mínimo (post-only, caduca en un minuto) y la
+        cancela al momento, para comprobar que Kalshi acepta las órdenes del bot.
+        """
+        settings = self.settings()
+        steps: list = []
+        result = {
+            "env": settings.env,
+            "is_production": settings.is_production,
+            "steps": steps,
+            "suggest_env": None,
+            "ok": False,
+        }
+
+        def add(name: str, ok: bool, detail: str, hint: str = "") -> None:
+            steps.append({"name": name, "ok": ok, "detail": detail, "hint": hint})
+
+        public = self._client_factory(settings, None)
+        try:
+            exchange = public.get_exchange_status()
+        except Exception as exc:  # noqa: BLE001 - se muestra en el panel
+            add(
+                "Conexión con Kalshi",
+                False,
+                _short_error(exc),
+                "El servidor no llega a la API de Kalshi. Si está fuera de EE. UU., muévelo a una región de EE. UU.",
+            )
+            return result
+        host = urlparse(getattr(public, "base_url", settings.base_url)).netloc
+        if exchange.get("trading_active"):
+            add("Conexión con Kalshi", True, f"{host} responde y el mercado está abierto")
+        else:
+            add("Conexión con Kalshi", True, f"{host} responde, pero ahora mismo Kalshi tiene el trading pausado")
+
+        try:
+            signer = settings.signer()
+        except (ConfigError, ValueError) as exc:
+            add("API key", False, str(exc), "Vuelve a guardar la key en Ajustes → Cuenta de Kalshi")
+            return result
+        client = None
+        if signer is None:
+            add("API key", False, "No hay ninguna API key configurada", "Ponla en Ajustes → Cuenta de Kalshi")
+        else:
+            client = self._client_factory(settings, signer)
+            try:
+                balance = client.get_balance()
+            except KalshiAPIError as exc:
+                other = self._env_accepting(settings, signer) if exc.is_auth_error else None
+                if other:
+                    result["suggest_env"] = other
+                    add(
+                        "API key",
+                        False,
+                        f"Esta key es de {ENV_LABELS[other]}, no de {ENV_LABELS[settings.env]}",
+                        f"Cambia el entorno a {ENV_LABELS[other]}",
+                    )
+                elif exc.is_auth_error:
+                    add(
+                        "API key",
+                        False,
+                        f"Kalshi rechaza la key ({_short_error(exc)})",
+                        "Comprueba que el Key ID y la clave privada son de la misma key y que no la has borrado "
+                        "en Kalshi. Si el error habla de la hora, reinicia el servidor.",
+                    )
+                else:
+                    add("API key", False, _short_error(exc))
+                return result
+            add("API key", True, f"Key {settings.api_key_id[:8]}… aceptada en {ENV_LABELS[settings.env]}")
+            add("Saldo", True, f"Disponible ${balance.cash:.2f} · en posiciones ${balance.portfolio_value:.2f}")
+            try:
+                positions = client.get_positions()
+                orders = client.get_orders(status="resting")
+            except KalshiAPIError as exc:
+                add("Cartera", False, _short_error(exc))
+            else:
+                prefix = settings.engine.order_prefix + "-"
+                own = sum(1 for o in orders if o.client_order_id.startswith(prefix))
+                detail = f"{len(positions)} posiciones abiertas · {len(orders)} órdenes en reposo ({own} del bot)"
+                add("Cartera", True, detail)
+
+        try:
+            strategy = build_strategy(settings.strategy_name, settings.strategy_params)
+            strategy.refresh()
+            executor = DryRunExecutor(settings.engine.order_prefix, Journal(None))
+            bot = Bot(public, strategy, RiskManager(settings.risk), executor, settings.engine)
+            markets = list(bot.load_markets(datetime.now(timezone.utc)).values())
+        except Exception as exc:  # noqa: BLE001
+            add("Mercados", False, _short_error(exc))
+            return result
+        if not markets:
+            add(
+                "Mercados",
+                False,
+                "Con los ajustes actuales el bot no encuentra mercados que seguir",
+                "Amplía Ajustes → Mercados (más horas o menos volumen mínimo) o usa «¿Dónde gana más el bot?»",
+            )
+        else:
+            examples = ", ".join(m.ticker for m in markets[:3])
+            add("Mercados", True, f"El bot seguiría {len(markets)} mercados ahora (p. ej. {examples})")
+            try:
+                book = public.get_orderbook(markets[0].ticker)
+            except Exception as exc:  # noqa: BLE001
+                add("Libro de órdenes", False, _short_error(exc))
+            else:
+                add(
+                    "Libro de órdenes",
+                    True,
+                    f"{markets[0].ticker}: mejor compra {_cents(book.best_bid)} · mejor venta {_cents(book.best_ask)}",
+                )
+
+        if order_test:
+            if client is None:
+                add("Orden de prueba", False, "Hace falta una API key válida")
+            elif not markets:
+                add("Orden de prueba", False, "No hay ningún mercado donde probar")
+            else:
+                add("Orden de prueba", *self._order_round_trip(client, markets))
+        result["ok"] = all(step["ok"] for step in steps)
+        return result
+
+    def _env_accepting(self, settings: Settings, signer) -> Optional[str]:
+        """Si la key no vale en este entorno, ¿vale en el otro? (las keys de demo y real son distintas)."""
+        if settings.env_locked or settings.base_url.rstrip("/") != ENVIRONMENTS.get(settings.env):
+            return None
+        other = "prod" if settings.env == "demo" else "demo"
+        try:
+            self._client_factory(replace(settings, env=other, base_url=ENVIRONMENTS[other]), signer).get_balance()
+        except Exception:  # noqa: BLE001 - tampoco vale ahí
+            return None
+        return other
+
+    def _order_round_trip(self, client: KalshiClient, markets: list) -> tuple:
+        """Envía 1 contrato al precio mínimo (no se llena: nadie vende a 1¢) y lo cancela."""
+        target = price = None
+        for market in markets[:5]:
+            price = ceil_to_tick(Decimal("0.01"), market.price_ranges)
+            if price is None:
+                continue
+            book = client.get_orderbook(market.ticker)
+            if book.best_ask is None or book.best_ask > price:  # post-only: no puede cruzar
+                target = market
+                break
+        if target is None:
+            return False, "No encontré un mercado donde la orden de prueba no se cruzara", ""
+        intent = OrderIntent(target.ticker, BID, price, Decimal(1), GTC, post_only=True, reason="prueba de conexión")
+        try:
+            resp = client.create_order(intent, new_client_order_id(TEST_PREFIX), int(time.time()) + 60)
+        except KalshiAPIError as exc:
+            log.warning("Orden de prueba rechazada: %s", exc)
+            return False, f"Kalshi no aceptó la orden: {_short_error(exc)}", "Envíame este mensaje para revisarlo"
+        order = resp.get("order", resp)
+        order_id = order.get("order_id")
+        if not order_id:
+            return False, f"Kalshi respondió sin id de orden: {str(order)[:200]}", ""
+        try:
+            client.cancel_order(order_id, target.ticker)
+        except KalshiAPIError as exc:
+            log.warning("No se pudo cancelar la orden de prueba %s: %s", order_id, exc)
+            return (
+                False,
+                f"La orden se creó pero no se pudo cancelar: {_short_error(exc)}",
+                "Caduca sola en un minuto; también puedes cancelarla en Inicio → Órdenes",
+            )
+        log.info("Orden de prueba creada y cancelada en %s (id %s)", target.ticker, order_id)
+        return True, f"Kalshi aceptó y canceló una orden de 1 contrato a {_cents(price)} en {target.ticker}", ""
 
     # --- trabajos -----------------------------------------------------------------------
 

@@ -5,7 +5,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, padding, rsa
 
-from kalshi_bot.auth import KalshiSigner
+from kalshi_bot.auth import KalshiSigner, canonical_pem
 
 
 def pem(key) -> bytes:
@@ -63,3 +63,33 @@ def test_invalid_key_and_missing_id():
         KalshiSigner("abc", "no es un pem")
     with pytest.raises(ValueError, match="KALSHI_API_KEY_ID"):
         KalshiSigner("", "x")
+
+
+def test_key_pasted_from_a_phone_still_loads(rsa_key):
+    """Al copiar la clave en el móvil se pierden saltos de línea o se cuelan espacios y comillas."""
+    good = pem(rsa_key).decode()
+    pkcs1 = rsa_key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.TraditionalOpenSSL, serialization.NoEncryption()
+    ).decode()
+    body = "".join(good.strip().splitlines()[1:-1])
+    variants = [
+        good.replace("\n", " "),  # saltos de línea convertidos en espacios
+        pkcs1.replace("\n", ""),  # todo en una línea (formato RSA PRIVATE KEY)
+        good.replace("\n", "\\n"),  # "\n" literales, como en algunas variables de entorno
+        f'"{good}"',  # con comillas
+        body,  # sin las líneas BEGIN/END
+        "  " + good.replace("\n", "\r\n") + "\n\n",  # saltos de Windows y espacios
+    ]
+    expected = rsa_key.private_numbers()
+    for text in variants:
+        signer = KalshiSigner("k", text)
+        assert signer._key.private_numbers() == expected
+
+
+def test_canonical_pem_and_bad_keys(rsa_key):
+    canonical = canonical_pem(pem(rsa_key).decode().replace("\n", " "))
+    assert canonical.startswith("-----BEGIN PRIVATE KEY-----\n") and canonical.endswith("-----END PRIVATE KEY-----\n")
+    assert all(len(line) <= 64 for line in canonical.splitlines())
+    for bad in ["", "hola", "-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----", pem(rsa_key)[:200]]:
+        with pytest.raises(ValueError, match="clave privada"):
+            canonical_pem(bad)

@@ -385,3 +385,19 @@ td.neg { background: var(--red-soft); }
 @media (min-width: 700px) {
   .topbar h1 { font-size: 32px; }
 }
+
+/* ---------- diagnóstico y clave ---------- */
+.file-btn { position: relative; overflow: hidden; }
+.file-btn input[type="file"] { position: absolute; inset: 0; opacity: 0; cursor: pointer; font-size: 0; }
+.link.block { display: block; margin: 8px auto 0; text-align: center; }
+.diag { margin-top: 12px; }
+.diag-summary { font-weight: 600; margin: 0 0 8px; }
+.diag-list { list-style: none; margin: 0; padding: 0; }
+.diag-list li { display: flex; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.diag-list li:first-child { border-top: 0; }
+.diag-list p { margin: 2px 0 0; overflow-wrap: anywhere; }
+.diag-icon {
+  flex: none; width: 22px; height: 22px; border-radius: 50%; display: grid; place-items: center;
+  font-size: 13px; font-weight: 700; color: #fff; background: var(--green);
+}
+.diag-list li.fail .diag-icon { background: var(--red); }

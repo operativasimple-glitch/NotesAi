@@ -211,3 +211,37 @@ def test_public_endpoints_are_never_signed():
     )
     client.get_orderbook("KXTEST-1")
     assert signer.calls == [] and "KALSHI-ACCESS-KEY" not in session.calls[0]["headers"]
+
+
+def test_falls_back_to_the_other_official_host_on_connection_errors():
+    from kalshi_bot import client as client_module
+
+    alt = "https://demo-api.kalshi.co/trade-api/v2"
+    client_module._working_url.clear()
+    try:
+        session = FakeSession([requests.ConnectionError("dns"), FakeResponse(200, {"balance": 1})])
+        signer = RecordingSigner()
+        client = KalshiClient(
+            BASE, signer, session=session, sleep=lambda s: None, reads_per_second=0, fallback_urls=[alt]
+        )
+        assert client.request("GET", "/portfolio/balance") == {"balance": 1}
+        assert [c["url"] for c in session.calls] == [BASE + "/portfolio/balance", alt + "/portfolio/balance"]
+        assert signer.calls[-1] == ("GET", "/trade-api/v2/portfolio/balance")  # misma ruta firmada
+
+        # Los clientes nuevos empiezan directamente por la dirección que funcionó...
+        session = FakeSession([FakeResponse(200, {})])
+        KalshiClient(BASE, session=session, reads_per_second=0, fallback_urls=[alt]).get_exchange_status()
+        assert session.calls[0]["url"].startswith(alt)
+        # ...salvo los que no la tienen entre sus opciones (p. ej. con KALSHI_BASE_URL).
+        session = FakeSession([FakeResponse(200, {})])
+        KalshiClient(BASE, session=session, reads_per_second=0).get_exchange_status()
+        assert session.calls[0]["url"].startswith(BASE)
+
+        # Un POST que falla por red no se repite en la otra dirección: la orden pudo crearse.
+        session = FakeSession([requests.ConnectionError("caída")])
+        client = KalshiClient(BASE, signer, session=session, writes_per_second=0, fallback_urls=[alt])
+        with pytest.raises(KalshiAPIError):
+            client.create_order(OrderIntent("T", BID, D("0.5"), D("1")), "kb-1")
+        assert len(session.calls) == 1
+    finally:
+        client_module._working_url.clear()

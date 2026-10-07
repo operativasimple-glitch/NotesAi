@@ -134,12 +134,16 @@
           </div>
           <details id="cred-details">
             <summary>Configurar API key</summary>
-            <p class="muted small">En Kalshi: tu cuenta → API Keys → crear. Copia el Key ID y el contenido de la clave privada. Las keys de demo solo funcionan en Demo y las reales solo en Real.</p>
-            <label class="field">Key ID<input id="cred-key-id" autocomplete="off" spellcheck="false"></label>
-            <label class="field">Clave privada (texto del .pem)<textarea id="cred-pem" rows="5" spellcheck="false" autocomplete="off" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
-            <button id="btn-save-cred" class="btn primary full" type="button">Guardar credenciales</button>
+            <p class="muted small">En Kalshi: tu cuenta → API Keys → crear. Copia el Key ID y guarda la clave privada (el archivo que se descarga; Kalshi solo la enseña una vez). Las keys de demo solo funcionan en Demo y las de kalshi.com solo en Real.</p>
+            <label class="field">Key ID<input id="cred-key-id" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="a1b2c3d4-…"></label>
+            <label class="field">Clave privada<textarea id="cred-pem" rows="5" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="Pega aquí todo el texto, de -----BEGIN a -----END"></textarea></label>
+            <label class="btn full file-btn">Cargar la clave desde un archivo<input id="cred-file" type="file"></label>
+            <button id="btn-save-cred" class="btn primary full" type="button">Guardar y probar</button>
             <button id="btn-del-cred" class="btn danger-outline full" type="button">Borrar credenciales</button>
           </details>
+          <button id="btn-diagnose" class="btn full" type="button">Probar conexión</button>
+          <button id="btn-diagnose-order" class="link small block" type="button">Probar también una orden (1 contrato a 1¢ que se cancela al instante)</button>
+          <div id="diag-results" class="diag" hidden></div>
         </div>
 
         <div class="card">

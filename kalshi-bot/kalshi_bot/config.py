@@ -32,8 +32,8 @@ try:  # Python 3.11+
 except ModuleNotFoundError:  # pragma: no cover - Python 3.10
     import tomli as tomllib
 
-from .auth import KalshiSigner
-from .client import ENVIRONMENTS, KalshiClient
+from .auth import KalshiSigner, canonical_pem
+from .client import ENVIRONMENTS, FALLBACK_URLS, KalshiClient
 from .engine import EngineConfig
 from .models import to_decimal
 from .risk import RiskLimits
@@ -146,6 +146,7 @@ class Settings:
         return KalshiSigner.from_file(self.api_key_id, self.private_key_path)
 
     def client(self, signer: Optional[KalshiSigner] = None) -> KalshiClient:
+        official = self.base_url.rstrip("/") == ENVIRONMENTS.get(self.env)
         return KalshiClient(
             self.base_url,
             signer,
@@ -153,6 +154,7 @@ class Settings:
             reads_per_second=self.reads_per_second,
             writes_per_second=self.writes_per_second,
             self_trade_prevention=self.self_trade_prevention,
+            fallback_urls=FALLBACK_URLS.get(self.env, ()) if official else (),
         )
 
     def sections(self) -> dict:
@@ -287,13 +289,26 @@ def panel_credentials(data_dir: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def clean_key_id(value: str) -> str:
+    """El Key ID tal y como lo pega la gente: sin espacios, comillas ni saltos de línea."""
+    key_id = re.sub(r"[\s\"']", "", value or "")
+    if not key_id:
+        raise ConfigError("Falta el Key ID")
+    if "BEGIN" in key_id or len(key_id) > 100:
+        raise ConfigError("En «Key ID» va el identificador corto (tipo a1b2c3d4-…), no la clave privada")
+    return key_id
+
+
 def save_panel_credentials(data_dir: Path, *, key_id: str, private_key_pem: str, env: str) -> None:
-    """Guarda credenciales enviadas desde el panel (validando la clave antes)."""
+    """Guarda credenciales enviadas desde el panel (validando la clave antes).
+
+    La clave se guarda normalizada, así que da igual si al pegarla en el móvil
+    se perdieron los saltos de línea."""
     if env not in ENVIRONMENTS:
         raise ConfigError("El entorno debe ser 'demo' o 'prod'")
-    key_id = (key_id or "").strip()
-    pem = (private_key_pem or "").strip().replace("\\n", "\n") + "\n"
-    KalshiSigner(key_id, pem)  # lanza ValueError si no es válida
+    key_id = clean_key_id(key_id)
+    pem = canonical_pem(private_key_pem or "")  # lanza ValueError si no es válida
+    KalshiSigner(key_id, pem)
     data_dir.mkdir(parents=True, exist_ok=True)
     key_path = data_dir / KEY_FILE
     fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
@@ -362,7 +377,7 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
     env = (env_value or panel.get("env") or "demo").strip().lower()
     if env not in ENVIRONMENTS:
         raise ConfigError(f"KALSHI_ENV debe ser 'demo' o 'prod' (valor: {env!r})")
-    api_key_id = os.environ.get("KALSHI_API_KEY_ID") or None
+    api_key_id = re.sub(r"[\s\"']", "", os.environ.get("KALSHI_API_KEY_ID") or "") or None
     key_pem = os.environ.get("KALSHI_PRIVATE_KEY") or None
     key_path = resolve(os.environ.get("KALSHI_PRIVATE_KEY_PATH"))
     if key_path is not None and not api_key_id and not key_path.is_file():

@@ -45,22 +45,37 @@ El bot tiene que estar en marcha en algún sitio para operar, aunque cierres el 
 ### Opción A: Railway
 
 1. Entra en [railway.com](https://railway.com) con tu cuenta de GitHub y activa el plan **Hobby**.
-2. **New Project → Deploy from GitHub repo** y elige este repositorio (y la rama donde esté el bot).
-3. En el servicio, **Settings → Source → Root Directory**: `kalshi-bot`. Railway encontrará el
-   `Dockerfile` solo.
-4. En **Variables** añade:
-   - `DASHBOARD_PASSWORD`: la contraseña del panel. Que sea larga (12 caracteres o más).
-   - `KALSHI_BOT_DATA_DIR` = `/data`
-5. Clic derecho en el servicio → **Attach volume**, montado en `/data`. Así se guardan tus ajustes,
+2. **New Project → Deploy from GitHub repo** y elige este repositorio.
+3. En el servicio, **Settings → Source**:
+   - **Root Directory**: `/kalshi-bot`. Railway encontrará el `Dockerfile` solo.
+   - **Branch**: la rama donde esté el bot, si no es la principal.
+4. **Settings → Deploy → Regions**: una región de **EE. UU.** (mejor US East, Virginia). Kalshi bloquea
+   conexiones desde algunos países.
+5. En **Variables** añade `DASHBOARD_PASSWORD`: la contraseña del panel. Que sea larga (12 caracteres o
+   más).
+6. Clic derecho en el servicio → **Attach volume**, montado en `/data`. Así se guardan tus ajustes,
    credenciales y registros entre despliegues.
-6. **Settings → Networking → Generate Domain**. Abre esa dirección en el móvil, entra con tu contraseña y
+7. **Settings → Networking → Generate Domain**. Abre esa dirección en el móvil, entra con tu contraseña y
    añádela a la pantalla de inicio:
    - iPhone: Compartir → Añadir a pantalla de inicio;
    - Android: menú → Instalar app.
-7. En el panel, **Ajustes → Configurar API key**: pega el Key ID y el texto de la clave privada de Kalshi
-   (sección siguiente).
-8. Pulsa **Simular** para ver qué haría. Después usa **Operar en demo** y, cuando estés convencido, cambia
-   a **Real** en Ajustes.
+
+Opcional: en **Settings → Config-as-code** pon `/kalshi-bot/railway.json` para que Railway use el
+chequeo de salud (`/healthz`) y reinicie el bot si se cae.
+
+### Puesta en marcha (en el panel)
+
+1. **Ajustes → Configurar API key**: pega el Key ID, pulsa **Cargar la clave desde un archivo** y elige el
+   archivo de la clave privada que te dio Kalshi (o pega su texto). Pulsa **Guardar y probar**.
+2. El panel comprueba cada paso: conexión, key, saldo, cartera, mercados y libro de órdenes. Si te dice que
+   la key es de Real, pulsa **Cambiar a Real y volver a probar**.
+3. **Probar también una orden**: envía 1 contrato a 1¢ (no se llena) y lo cancela al instante. Si todo
+   sale en verde, el bot puede operar con tu cuenta.
+4. **Oportunidades → ¿Dónde gana más el bot?**: mira en qué series han ganado los favoritos y pulsa
+   **Usar** en la mejor. El botón solo aparece si el rendimiento fue positivo.
+5. **Inicio → Simular** durante al menos un día y revisa la actividad: verás las órdenes que habría puesto.
+6. Cuando estés convencido, **Operar**. Empieza con los límites por defecto: 50 $ comprometidos como
+   máximo y freno si pierdes 20 $.
 
 Si prefieres no guardar la clave en el panel, ponla como variables del servidor (`KALSHI_API_KEY_ID`,
 `KALSHI_PRIVATE_KEY` con el PEM y `KALSHI_ENV`). Las variables tienen prioridad sobre el panel.
@@ -96,7 +111,7 @@ Abre `http://IP-DEL-ORDENADOR:8000` desde el móvil (en la misma wifi). Para ent
   - escáner: favoritos, spreads amplios y arbitraje en eventos;
   - investigación: rendimiento por tramo de precio, takers frente a makers, con mercados ya liquidados.
 - **Ajustes:**
-  - cuenta y entorno (Demo o Real);
+  - cuenta y entorno (Demo o Real), con **Probar conexión** y una orden de prueba de 1¢;
   - estrategia y sus parámetros, valores justos, qué mercados seguir y límites de riesgo.
 
 Seguridad del panel:
@@ -110,10 +125,13 @@ Seguridad del panel:
 
 ## Crear la API key de Kalshi
 
-1. Empieza en demo: crea una cuenta en [demo.kalshi.co](https://demo.kalshi.co) (dinero ficticio).
-2. En tu cuenta, sección **API Keys**, crea una key. Copia el **Key ID** y guarda la **clave privada**
-   (el archivo `.pem` o su texto). Kalshi solo la muestra una vez.
-3. Las keys de demo solo funcionan en Demo y las de [kalshi.com](https://kalshi.com) solo en Real.
+1. En [kalshi.com](https://kalshi.com) (o en [demo.kalshi.co](https://demo.kalshi.co) para dinero
+   ficticio), ve a tu cuenta, sección **API Keys**, y crea una key.
+2. Copia el **Key ID** y guarda la **clave privada** (el archivo que se descarga o su texto). Kalshi solo
+   la muestra una vez: si la pierdes, borra esa key y crea otra.
+3. Las keys de demo solo funcionan en Demo y las de kalshi.com solo en Real. El panel detecta si la has
+   puesto en el entorno equivocado.
+4. Nunca compartas la clave privada: con ella se puede operar con tu dinero. El Key ID solo no basta.
 
 ## La estrategia recomendada: favoritos
 
@@ -246,15 +264,20 @@ Simulan la API de Kalshi y levantan el panel en local, así que no necesitan con
 - Se construyó siguiendo el SDK oficial de Kalshi (v3.32): órdenes por `POST /portfolio/events/orders`,
   con `side` = `bid`/`ask`, precios en dólares (`"0.5600"`) y cantidades en punto fijo (`"10.00"`).
 - URLs: producción `https://external-api.kalshi.com/trade-api/v2` y demo
-  `https://external-api.demo.kalshi.co/trade-api/v2`. Puedes cambiarlas con `KALSHI_BASE_URL`.
+  `https://external-api.demo.kalshi.co/trade-api/v2`. Si no responden, el bot pasa solo a las
+  alternativas que el SDK también da por buenas (`api.elections.kalshi.com` y `demo-api.kalshi.co`).
+  Puedes forzar otra con `KALSHI_BASE_URL`.
 - El bot opera contratos enteros y consulta la API por REST cada `poll_interval_seconds`.
 - Las comisiones del bot son estimaciones conservadoras.
 - Proyecto independiente, sin relación con Kalshi.
 
 ## Solución de problemas
 
+Lo primero: **Ajustes → Probar conexión**. Dice qué paso falla y qué hacer.
+
 - **HTTP 401/403**: el Key ID no corresponde a la clave, la key es de otro entorno (demo frente a real) o
   el reloj del servidor va desfasado.
+- **No conecta con Kalshi**: el servidor debe estar en una región de EE. UU.
 - **"No hay mercados que seguir"**: revisa **Ajustes → Mercados** (o `[markets]`). Por defecto busca
   mercados que cierran en 48 h con volumen de 200 o más.
 - **HTTP 429**: demasiadas peticiones. Sube `poll_interval_seconds` o baja `reads_per_second`.

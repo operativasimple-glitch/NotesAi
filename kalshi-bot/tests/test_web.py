@@ -12,6 +12,7 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
+from kalshi_bot.client import KalshiAPIError
 from kalshi_bot.controller import BotController
 from kalshi_bot.models import ASK, BID
 from kalshi_bot.web import server as web_server
@@ -91,7 +92,10 @@ def panel(tmp_path, monkeypatch):
         return fake
 
     controller = BotController(None, client_factory=factory)
-    logging.getLogger().addHandler(controller.logs)
+    root = logging.getLogger()
+    root_level = root.level
+    root.setLevel(logging.INFO)  # como `kalshi_bot web`: el panel muestra los INFO del bot
+    root.addHandler(controller.logs)
     srv = make_server(controller, PASSWORD, "127.0.0.1", 0)
     thread = threading.Thread(target=srv.serve_forever, daemon=True)
     thread.start()
@@ -101,7 +105,8 @@ def panel(tmp_path, monkeypatch):
         controller.stop(timeout=5)
         srv.shutdown()
         srv.server_close()
-        logging.getLogger().removeHandler(controller.logs)
+        root.removeHandler(controller.logs)
+        root.setLevel(root_level)
         os.environ.clear()
         os.environ.update(saved)
 
@@ -313,3 +318,79 @@ def test_sweep_job_and_use_series(panel):
     markets = panel.call("GET", "/api/settings")[1]["values"]["markets"]
     assert markets["series"] == ["KXGOOD"] and markets["closing_within_hours"] == 0
     assert panel.call("POST", "/api/markets/use-series", {"series": []})[0] == 400
+
+
+def test_diagnose_checks_each_step_and_round_trips_a_test_order(panel, pem):
+    panel.login()
+    status, r, _ = panel.call("POST", "/api/diagnose", {})
+    assert status == 200 and r["ok"] is False
+    steps = {s["name"]: s for s in r["steps"]}
+    assert steps["Conexión con Kalshi"]["ok"]
+    assert not steps["API key"]["ok"] and "Ajustes" in steps["API key"]["hint"]
+    assert steps["Mercados"]["ok"] and T in steps["Mercados"]["detail"]
+    assert steps["Libro de órdenes"]["ok"] and "90¢" in steps["Libro de órdenes"]["detail"]
+
+    # La clave pegada desde el móvil sin saltos de línea se guarda normalizada.
+    body = {"key_id": ' "kid-1"\n', "private_key": pem.replace("\n", " "), "env": "demo"}
+    assert panel.call("POST", "/api/credentials", body)[0] == 200
+    saved = panel.controller.data_dir / "kalshi-key.pem"
+    assert saved.read_text().startswith("-----BEGIN PRIVATE KEY-----\n")
+    assert oct(saved.stat().st_mode & 0o777) == "0o600"
+    assert json.loads((panel.controller.data_dir / "credentials.json").read_text())["key_id"] == "kid-1"
+
+    status, r, _ = panel.call("POST", "/api/diagnose", {"order_test": True})
+    assert status == 200 and r["ok"] is True, r
+    assert [s["name"] for s in r["steps"]] == [
+        "Conexión con Kalshi",
+        "API key",
+        "Saldo",
+        "Cartera",
+        "Mercados",
+        "Libro de órdenes",
+        "Orden de prueba",
+    ]
+    created = panel.fake.created[-1]
+    intent = created["intent"]
+    assert created["client_order_id"].startswith("diag-") and created["expiration_ts"]
+    assert (intent.ticker, intent.side, intent.price, intent.count, intent.post_only) == (T, BID, D("0.01"), D(1), True)
+    assert panel.fake.cancelled and not panel.fake.orders  # cancelada al momento
+
+    # Con dinero real, la orden de prueba exige confirmación explícita.
+    assert panel.call("POST", "/api/env", {"env": "prod"})[0] == 200
+    status, body, _ = panel.call("POST", "/api/diagnose", {"order_test": True})
+    assert status == 400 and "dinero real" in body["error"]
+    assert panel.call("POST", "/api/diagnose", {"order_test": True, "confirm": True})[1]["ok"] is True
+
+    # Sin conexión con Kalshi se para en el primer paso y dice por qué.
+    panel.fake.failures["get_exchange_status"] = KalshiAPIError(0, "network_error", "sin conexión")
+    r = panel.call("POST", "/api/diagnose", {})[1]
+    assert [s["name"] for s in r["steps"]] == ["Conexión con Kalshi"] and "EE. UU." in r["steps"][0]["hint"]
+
+
+def test_diagnose_detects_a_key_from_the_other_environment(panel, pem):
+    panel.login()
+    assert panel.call("POST", "/api/credentials", {"key_id": "kid-1", "private_key": pem, "env": "demo"})[0] == 200
+    fake = panel.fake
+
+    def factory(settings, signer):  # la key solo vale en Real
+        fake.authenticated = signer is not None
+        if signer is not None and settings.env == "demo":
+            fake.failures["get_balance"] = KalshiAPIError(401, "authentication_error", "invalid key")
+        else:
+            fake.failures.pop("get_balance", None)
+        return fake
+
+    panel.controller._client_factory = factory
+    r = panel.call("POST", "/api/diagnose", {})[1]
+    key = next(s for s in r["steps"] if s["name"] == "API key")
+    assert r["suggest_env"] == "prod" and not key["ok"] and "Real" in key["detail"]
+
+    assert panel.call("POST", "/api/env", {"env": "prod"})[0] == 200
+    r = panel.call("POST", "/api/diagnose", {})[1]
+    assert r["ok"] is True and r["suggest_env"] is None
+
+
+def test_credentials_reject_a_private_key_in_the_key_id_field(panel, pem):
+    panel.login()
+    status, body, _ = panel.call("POST", "/api/credentials", {"key_id": pem, "private_key": pem, "env": "demo"})
+    assert status == 400 and "Key ID" in body["error"]

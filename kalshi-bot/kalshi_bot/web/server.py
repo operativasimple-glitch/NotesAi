@@ -160,6 +160,7 @@ class PanelApp:
             ("POST", r"/api/credentials", self._save_credentials),
             ("DELETE", r"/api/credentials", lambda q, b: c.delete_credentials()),
             ("POST", r"/api/env", lambda q, b: c.set_env(str(b.get("env", "")))),
+            ("POST", r"/api/diagnose", self._diagnose),
             ("GET", r"/api/fair-values", lambda q, b: c.fair_values()),
             ("PUT", r"/api/fair-values", lambda q, b: c.save_fair_values(b.get("rows"))),
             ("GET", r"/api/events", lambda q, b: c.events(q.get("series"))),
@@ -210,6 +211,12 @@ class PanelApp:
     def _save_credentials(self, query: dict, body: dict):
         env = str(body.get("env") or "demo")
         return self.controller.save_credentials(str(body.get("key_id") or ""), str(body.get("private_key") or ""), env)
+
+    def _diagnose(self, query: dict, body: dict):
+        order_test = body.get("order_test") is True
+        if order_test and self.controller.settings().is_production and body.get("confirm") is not True:
+            raise ApiError(400, "Confirma la orden de prueba: es dinero real")
+        return self.controller.diagnose(order_test=order_test)
 
     def _cancel_research(self, query: dict, body: dict):
         self.controller.jobs["research"].cancel = True

@@ -11,7 +11,7 @@ import logging
 import random
 import time
 import uuid
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Sequence
 from urllib.parse import quote, urlparse
 
 import requests
@@ -26,6 +26,15 @@ ENVIRONMENTS = {
     "prod": "https://external-api.kalshi.com/trade-api/v2",
     "demo": "https://external-api.demo.kalshi.co/trade-api/v2",
 }
+# Direcciones alternativas que el SDK oficial también da por buenas. Si la
+# principal no responde (DNS, conexión rechazada), el cliente se pasa a esta.
+FALLBACK_URLS = {
+    "prod": ["https://api.elections.kalshi.com/trade-api/v2"],
+    "demo": ["https://demo-api.kalshi.co/trade-api/v2"],
+}
+# Dirección que funcionó la última vez, compartida por todos los clientes del
+# proceso para no repetir el fallo en cada consulta: {principal: alternativa}.
+_working_url: dict = {}
 
 ORDERS_ENDPOINT = "/portfolio/events/orders"
 
@@ -92,9 +101,13 @@ class KalshiClient:
         session: Optional[requests.Session] = None,
         sleep: Callable[[float], None] = time.sleep,
         clock: Callable[[], float] = time.monotonic,
+        fallback_urls: Sequence[str] = (),
     ):
-        self.base_url = base_url.rstrip("/")
-        self._base_path = urlparse(self.base_url).path  # p. ej. /trade-api/v2
+        self._primary_url = base_url.rstrip("/")
+        self._urls = [self._primary_url]
+        self._urls += [u.rstrip("/") for u in fallback_urls if u.rstrip("/") not in self._urls]
+        preferred = _working_url.get(self._primary_url)
+        self._set_base_url(preferred if preferred in self._urls else self._primary_url)
         self.signer = signer
         self.timeout = timeout
         self.max_retries = max_retries
@@ -108,6 +121,24 @@ class KalshiClient:
     @property
     def authenticated(self) -> bool:
         return self.signer is not None
+
+    def _set_base_url(self, url: str) -> None:
+        self.base_url = url
+        self._base_path = urlparse(url).path  # p. ej. /trade-api/v2
+
+    def _switch_url(self) -> bool:
+        """Tras un fallo de conexión, pasa a la siguiente dirección oficial de la API."""
+        if len(self._urls) < 2:
+            return False
+        index = self._urls.index(self.base_url) if self.base_url in self._urls else -1
+        new_url = self._urls[(index + 1) % len(self._urls)]
+        log.warning("No hay conexión con %s; pruebo con %s", urlparse(self.base_url).netloc, urlparse(new_url).netloc)
+        self._set_base_url(new_url)
+        if new_url == self._primary_url:
+            _working_url.pop(self._primary_url, None)
+        else:
+            _working_url[self._primary_url] = new_url
+        return True
 
     # ------------------------------------------------------------------
     # Núcleo HTTP
@@ -140,13 +171,13 @@ class KalshiClient:
                 method=method,
                 path=endpoint,
             )
-        url = self.base_url + endpoint
         clean_params = {k: v for k, v in (params or {}).items() if v is not None and v != ""}
         limiter = self._read_limiter if method == "GET" else self._write_limiter
         retry_server_errors = method in ("GET", "DELETE")
         attempt = 0
         while True:
             limiter.wait()
+            url = self.base_url + endpoint
             headers = {}
             if auth:
                 headers.update(self.signer.headers(method, self._base_path + endpoint))
@@ -157,6 +188,9 @@ class KalshiClient:
             except requests.RequestException as exc:
                 if retry_server_errors and attempt < self.max_retries:
                     attempt += 1
+                    # Solo GET/DELETE: un POST que falla pudo llegar a crear la orden.
+                    if isinstance(exc, requests.ConnectionError):
+                        self._switch_url()
                     delay = self._backoff(attempt)
                     log.warning(
                         "Error de red en %s %s (%s); reintento %d en %.1fs", method, endpoint, exc, attempt, delay

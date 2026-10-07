@@ -219,6 +219,9 @@ async function init() {
   $("#btn-logout").addEventListener("click", logout);
   $("#btn-save-cred").addEventListener("click", saveCredentials);
   $("#btn-del-cred").addEventListener("click", deleteCredentials);
+  $("#cred-file").addEventListener("change", loadKeyFile);
+  $("#btn-diagnose").addEventListener("click", () => runDiagnosis(false));
+  $("#btn-diagnose-order").addEventListener("click", () => runDiagnosis(true));
   $("#btn-fv-add").addEventListener("click", () => {
     state.fairValues.push({ ticker: "", pct: "" });
     renderFairValues();
@@ -1136,23 +1139,26 @@ function renderCredentials(c) {
 
 async function setEnv(env) {
   const c = state.settings && state.settings.credentials;
-  if (!c || c.env === env) return;
+  if (!c || c.env === env) return Boolean(c);
   if (env === "prod") {
     const ok = await confirmDialog({
       title: "Cambiar a dinero real",
-      message: "A partir de ahora el panel y el bot usarán tu cuenta real de Kalshi (necesitas una API key creada en kalshi.com).",
+      message: "A partir de ahora el panel y el bot usarán tu cuenta real de Kalshi (necesitas una API key creada en kalshi.com). El bot sigue sin operar hasta que pulses Operar.",
       confirmLabel: "Cambiar a real",
       danger: true,
     });
-    if (!ok.ok) return;
+    if (!ok.ok) return false;
   }
   try {
     await api("/api/env", { method: "POST", body: { env } });
     toast(env === "prod" ? "Entorno: REAL" : "Entorno: DEMO", "success");
+    $("#diag-results").hidden = true;
     await loadSettings();
     refreshStatus().catch(() => {});
+    return true;
   } catch (err) {
     toast(err.message, "error");
+    return false;
   }
 }
 
@@ -1171,9 +1177,95 @@ async function saveCredentials() {
     toast("Credenciales guardadas", "success");
     await loadSettings();
     refreshStatus().catch(() => {});
+    runDiagnosis(false);
   } catch (err) {
     toast(err.message, "error");
   }
+}
+
+async function loadKeyFile(event) {
+  const input = event.target;
+  const file = input.files && input.files[0];
+  input.value = "";
+  if (!file) return;
+  if (file.size > 20000) {
+    toast("Ese archivo es demasiado grande para ser una clave", "error");
+    return;
+  }
+  const text = (await file.text()).trim();
+  if (!/PRIVATE KEY/.test(text) && !/^[A-Za-z0-9+/=\s]{100,}$/.test(text)) {
+    toast("Ese archivo no parece la clave privada de Kalshi", "error");
+    return;
+  }
+  $("#cred-pem").value = text;
+  toast(`Clave cargada desde «${file.name}»`, "success");
+}
+
+async function runDiagnosis(orderTest) {
+  const c = state.settings && state.settings.credentials;
+  let confirm = false;
+  if (orderTest) {
+    const ok = await confirmDialog({
+      title: "Orden de prueba",
+      message:
+        c && c.is_production
+          ? "Se enviará una orden REAL de compra de 1 contrato a 1¢ (post-only) y se cancelará al instante; si algo falla, caduca sola en un minuto. Como mucho te costaría 1¢."
+          : "Se enviará una orden de 1 contrato a 1¢ en demo y se cancelará al instante.",
+      confirmLabel: "Enviar la prueba",
+    });
+    if (!ok.ok) return;
+    confirm = true;
+  }
+  const box = $("#diag-results");
+  const buttons = [$("#btn-diagnose"), $("#btn-diagnose-order")];
+  for (const b of buttons) b.disabled = true;
+  box.hidden = false;
+  box.replaceChildren(el("p", { class: "muted small", text: "Probando… (tarda unos segundos)" }));
+  try {
+    renderDiagnosis(await api("/api/diagnose", { method: "POST", body: { order_test: orderTest, confirm } }), orderTest);
+  } catch (err) {
+    box.replaceChildren(el("p", { class: "neg small", text: err.message }));
+  } finally {
+    for (const b of buttons) b.disabled = false;
+  }
+}
+
+function renderDiagnosis(r, orderTest) {
+  const items = r.steps.map((step) =>
+    el(
+      "li",
+      { class: step.ok ? "ok" : "fail" },
+      el("span", { class: "diag-icon", "aria-hidden": "true", text: step.ok ? "✓" : "✕" }),
+      el(
+        "div",
+        {},
+        el("b", { text: step.name }),
+        el("p", { class: "small", text: step.detail }),
+        step.hint ? el("p", { class: "muted small", text: step.hint }) : null,
+      ),
+    ),
+  );
+  let summary = "Hay algo que arreglar:";
+  if (r.ok) {
+    summary = orderTest
+      ? "Todo listo: el bot puede leer tu cuenta y enviar órdenes."
+      : "Todo listo para leer tu cuenta. Para comprobar también las órdenes, usa la prueba de orden.";
+  }
+  const nodes = [el("p", { class: "diag-summary " + (r.ok ? "pos" : "neg"), text: summary }), el("ul", { class: "diag-list" }, items)];
+  if (r.suggest_env) {
+    const label = r.suggest_env === "prod" ? "Real" : "Demo";
+    nodes.push(
+      el("button", {
+        class: "btn primary full",
+        type: "button",
+        text: `Cambiar a ${label} y volver a probar`,
+        onclick: async () => {
+          if (await setEnv(r.suggest_env)) runDiagnosis(false);
+        },
+      }),
+    );
+  }
+  $("#diag-results").replaceChildren(...nodes);
 }
 
 async function deleteCredentials() {
