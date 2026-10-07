@@ -92,6 +92,7 @@ class FakeKalshi:
         self.settled: dict = {}  # mercados liquidados (para research)
         self.trades: dict = {}  # ticker -> operaciones públicas
         self.events = None  # eventos con mercados anidados (para el escáner)
+        self.series_info: dict = {}  # ticker de serie -> datos (título, categoría)
         self.market_queries: list = []
         self._next_id = 1
 
@@ -137,6 +138,9 @@ class FakeKalshi:
 
     def get_trades(self, ticker, *, min_ts=None, max_ts=None, max_pages=3):
         return list(self.trades.get(ticker, []))
+
+    def get_series(self, ticker):
+        return dict(self.series_info.get(ticker, {}))
 
     def get_orderbook(self, ticker, depth=0):
         return self.books[ticker]

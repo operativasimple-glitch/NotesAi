@@ -214,6 +214,7 @@ async function init() {
   $("#market-search").addEventListener("submit", searchMarkets);
   $("#btn-scan").addEventListener("click", runScan);
   $("#btn-research").addEventListener("click", runResearch);
+  $("#btn-sweep").addEventListener("click", runSweep);
   $("#btn-save-settings").addEventListener("click", saveSettings);
   $("#btn-logout").addEventListener("click", logout);
   $("#btn-save-cred").addEventListener("click", saveCredentials);
@@ -862,6 +863,87 @@ async function runResearch() {
       progress.hidden = true;
     },
   });
+}
+
+async function runSweep() {
+  const button = $("#btn-sweep");
+  try {
+    await api("/api/sweep", { method: "POST", body: {} });
+  } catch (err) {
+    toast(err.message, "error");
+    return;
+  }
+  button.disabled = true;
+  const progress = $("#sweep-progress");
+  const bar = progress.querySelector(".progress-bar");
+  progress.hidden = false;
+  bar.style.width = "3%";
+  $("#sweep-status").textContent = "Buscando las series con más volumen…";
+  pollJob("/api/sweep", {
+    onProgress: (job) => {
+      if (job.total) {
+        bar.style.width = `${Math.max(3, Math.round((job.done / job.total) * 100))}%`;
+        $("#sweep-status").textContent = `Analizando ${job.done} de ${job.total} mercados liquidados…`;
+      }
+    },
+    onDone: renderSweep,
+    onFinally: () => {
+      button.disabled = false;
+      progress.hidden = true;
+    },
+  });
+}
+
+async function useSeries(series) {
+  const ok = await confirmDialog({
+    title: `Centrar el bot en ${series}`,
+    message: "El bot dejará de buscar en todos los mercados y operará solo esta serie. Puedes cambiarlo en Ajustes → Mercados.",
+    confirmLabel: "Usar esta serie",
+  });
+  if (!ok.ok) return;
+  try {
+    await api("/api/markets/use-series", { method: "POST", body: { series: [series] } });
+    toast(state.status && state.status.bot.state === "running" ? "Guardado. Reinicia el bot para aplicarlo." : "Serie guardada", "success");
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+function renderSweep(r) {
+  $("#sweep-status").textContent = `${r.series_analyzed} series · ${r.markets} mercados liquidados · ${fmt.time(r.generated_at)}`;
+  const items = r.rows.map((row) => {
+    const fav = row.favorites_maker;
+    const has = fav && fav.contracts && Number(fav.contracts) > 0;
+    const longshot = row.longshots_taker;
+    const sub = [row.category, `${row.markets} mercados`, `fiabilidad ${row.confidence}`].filter(Boolean).join(" · ");
+    const detail = has ? `${row.favorite_upsets} de ${row.favorite_markets} favoritos fallaron` : "sin compras de favoritos";
+    const longText = longshot && longshot.contracts && Number(longshot.contracts) ? ` · longshots ${fmt.pct(longshot.return_after_fees)}` : "";
+    const use = has && Number(fav.return_after_fees) > 0
+      ? el("button", { class: "btn small", type: "button", text: "Usar", onclick: () => useSeries(row.series) })
+      : null;
+    return el(
+      "div",
+      { class: "item" },
+      el(
+        "div",
+        { class: "item-main" },
+        el("div", { class: "item-title", text: `${row.series}${row.title ? " · " + row.title : ""}` }),
+        el("div", { class: "item-sub", text: sub }),
+        el("div", { class: "item-sub", text: detail + longText }),
+      ),
+      el(
+        "div",
+        { class: "item-side" },
+        el("div", { class: "big " + (has ? signClass(fav.return_after_fees) : ""), text: has ? fmt.pct(fav.return_after_fees, 2) : "—" }),
+        el("div", { class: "small muted", text: "favoritos" }),
+      ),
+      use,
+    );
+  });
+  $("#sweep-results").replaceChildren(
+    el("div", { class: "list" }, ...(items.length ? items : [empty("No hubo suficientes datos para comparar.")])),
+    el("ul", { class: "conclusions" }, ...r.conclusions.map((c) => el("li", { text: c }))),
+  );
 }
 
 function returnCell(stats) {

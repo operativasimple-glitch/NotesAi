@@ -294,3 +294,22 @@ def test_status_survives_broken_credentials(panel):
     os.environ["KALSHI_PRIVATE_KEY_PATH"] = "no-existe.pem"
     status, body, _ = panel.call("GET", "/api/status")
     assert status == 200 and "credenciales no válidas" in body["balance_error"]
+
+
+def test_sweep_job_and_use_series(panel):
+    panel.login()
+    from .test_favorites_scanner_research import sweep_fixture
+
+    data = sweep_fixture()
+    panel.fake.markets, panel.fake.settled = data.markets, data.settled
+    panel.fake.trades, panel.fake.series_info = data.trades, data.series_info
+    assert panel.call("POST", "/api/sweep", {"series_count": 5, "per_series": 20})[0] == 200
+    assert panel.wait(lambda: panel.call("GET", "/api/sweep")[1]["state"] == "done")
+    rows = panel.call("GET", "/api/sweep")[1]["result"]["rows"]
+    assert [r["series"] for r in rows] == ["KXGOOD", "KXBAD"]
+
+    status, body, _ = panel.call("POST", "/api/markets/use-series", {"series": ["kxgood"]})
+    assert status == 200 and body["series"] == ["KXGOOD"]
+    markets = panel.call("GET", "/api/settings")[1]["values"]["markets"]
+    assert markets["series"] == ["KXGOOD"] and markets["closing_within_hours"] == 0
+    assert panel.call("POST", "/api/markets/use-series", {"series": []})[0] == 400

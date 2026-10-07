@@ -18,7 +18,7 @@ from .client import KalshiAPIError
 from .config import ConfigError, Settings, load_settings
 from .engine import Bot, DryRunExecutor, Journal, LiveExecutor
 from .models import Market
-from .research import run_research
+from .research import run_research, run_sweep
 from .risk import RiskManager
 from .scanner import ScanParams, run_scan
 from .strategies import build_strategy
@@ -286,6 +286,8 @@ def cmd_scan(settings: Settings, args) -> int:
 
 def cmd_research(settings: Settings, args) -> int:
     client = settings.client(settings.signer())
+    if args.sweep:
+        return _print_sweep(client, args)
 
     def progress(done: int, total: int) -> None:
         if done == total or done % 10 == 0:
@@ -348,6 +350,31 @@ def cmd_web(settings: Settings, args) -> int:
         log.info("Apagando el panel: deteniendo el bot y cancelando sus órdenes...")
         server.server_close()
         controller.shutdown()
+    return 0
+
+
+def _print_sweep(client, args) -> int:
+    def progress(done: int, total: int) -> None:
+        if done == total or done % 25 == 0:
+            print(f"  {done}/{total} mercados", file=sys.stderr)
+
+    print("Comparando series: mercados liquidados y sus operaciones (puede tardar unos minutos)...", file=sys.stderr)
+    report = run_sweep(client, series_count=args.series_count, per_series=args.per_series, progress=progress)
+    print(f"\nSeries analizadas: {report['series_analyzed']} | mercados: {report['markets']}\n")
+    print(f"{'SERIE':<18} {'MERCADOS':>8} {'FAVORITOS (maker 90-100¢)':>27} {'LONGSHOTS (taker <10¢)':>24}  FIAB.")
+    for row in report["rows"]:
+        fav = row["favorites_maker"]
+        longshot = row["longshots_taker"]
+        fav_text = (
+            f"{fav['return_after_fees'] * 100:+.2f}% ({row['favorite_upsets']}/{row['favorite_markets']} fallos)"
+            if fav.get("contracts")
+            else "—"
+        )
+        long_text = f"{longshot['return_after_fees'] * 100:+.1f}%" if longshot.get("contracts") else "—"
+        print(f"{row['series']:<18} {row['markets']:>8} {fav_text:>27} {long_text:>24}  {row['confidence']}")
+    print()
+    for note in report["conclusions"]:
+        print(f"• {note}")
     return 0
 
 
@@ -461,6 +488,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--series", help="serie a estudiar (por defecto, todas)")
     p.add_argument("--markets", type=int, default=150, help="mercados liquidados a analizar")
     p.add_argument("--skip-last-minutes", type=int, default=0, help="ignorar operaciones cerca del cierre")
+    p.add_argument("--sweep", action="store_true", help="compara las series activas: ¿dónde ganan los favoritos?")
+    p.add_argument("--series-count", type=int, default=12, help="con --sweep: cuántas series comparar")
+    p.add_argument("--per-series", type=int, default=60, help="con --sweep: mercados liquidados por serie")
 
     p = sub.add_parser("web", help="abre el panel web para manejar el bot desde el móvil")
     p.add_argument("--host", default="0.0.0.0", help="interfaz de red (por defecto todas)")

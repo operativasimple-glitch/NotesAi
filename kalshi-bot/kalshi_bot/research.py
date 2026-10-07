@@ -37,6 +37,9 @@ BUCKETS = [
     (Decimal("0.95"), Decimal("1.00")),
 ]
 FEE_RATES = {"taker": TAKER_FEE_RATE, "maker": MAKER_FEE_RATE}
+FAVORITE_BUCKETS = [8, 9]  # 90–100¢
+LONGSHOT_BUCKETS = [0, 1]  # 0–10¢
+FAVORITE_FLOOR = Decimal("0.90")
 
 
 def bucket_index(price: Decimal) -> int:
@@ -85,12 +88,17 @@ class Research:
         self.tallies = {role: [Tally() for _ in BUCKETS] for role in ("taker", "maker")}
         self.markets = 0
         self.trades = 0
+        # A nivel de mercado (todas las operaciones de un mercado comparten resultado,
+        # así que la muestra efectiva es el número de mercados, no de contratos).
+        self.favorite_markets = 0  # mercados donde un maker compró a 90–100¢
+        self.favorite_upsets = 0  # ...y ese favorito perdió
 
     def add_market(self, result: str, trades: list) -> None:
         if result not in ("yes", "no"):
             return
         self.markets += 1
         yes_won = result == "yes"
+        favorite_sides: set = set()  # lados ("yes"/"no") comprados a 90–100¢ por makers
         for t in trades:
             if t.get("is_block_trade"):
                 continue
@@ -107,6 +115,15 @@ class Research:
             self.tallies[yes_role][bucket_index(price)].add(price, count, yes_won, FEE_RATES[yes_role])
             no_price = ONE - price
             self.tallies[no_role][bucket_index(no_price)].add(no_price, count, not yes_won, FEE_RATES[no_role])
+            if yes_role == "maker" and price >= FAVORITE_FLOOR:
+                favorite_sides.add("yes")
+            if no_role == "maker" and no_price >= FAVORITE_FLOOR:
+                favorite_sides.add("no")
+        if favorite_sides:
+            self.favorite_markets += 1
+            winner = "yes" if yes_won else "no"
+            if winner not in favorite_sides:
+                self.favorite_upsets += 1
 
     def report(self) -> dict:
         rows = []
@@ -207,3 +224,130 @@ def run_research(
         }
     )
     return report
+
+
+# --------------------------------------------------------------------------
+# Barrido: ¿en qué series funciona mejor comprar favoritos?
+# --------------------------------------------------------------------------
+
+
+def confidence(markets: int) -> str:
+    """Fiabilidad orientativa según el número de mercados (la muestra efectiva)."""
+    if markets >= 150:
+        return "alta"
+    if markets >= 50:
+        return "media"
+    return "baja"
+
+
+def series_summary(series: str, research: Research, info: Optional[dict] = None) -> dict:
+    every = list(range(len(BUCKETS)))
+    info = info or {}
+    return {
+        "series": series,
+        "title": info.get("title") or "",
+        "category": info.get("category") or "",
+        "markets": research.markets,
+        "trades": research.trades,
+        "favorites_maker": research._combined("maker", FAVORITE_BUCKETS).summary(),
+        "favorites_all": research._combined(None, FAVORITE_BUCKETS).summary(),
+        "longshots_taker": research._combined("taker", LONGSHOT_BUCKETS).summary(),
+        "takers": research._combined("taker", every).summary(),
+        "makers": research._combined("maker", every).summary(),
+        "favorite_markets": research.favorite_markets,
+        "favorite_upsets": research.favorite_upsets,
+        "confidence": confidence(research.markets),
+    }
+
+
+def _favorite_return(row: dict) -> Decimal:
+    stats = row["favorites_maker"]
+    return stats["return_after_fees"] if stats.get("contracts") else Decimal("-9")
+
+
+def run_sweep(
+    client,
+    *,
+    series_count: int = 12,
+    per_series: int = 60,
+    min_markets: int = 10,
+    closing_within_hours: float = 168,
+    trades_pages: int = 1,
+    progress: Optional[Callable[[int, int], None]] = None,
+    should_stop: Optional[Callable[[], bool]] = None,
+    now: Optional[datetime] = None,
+) -> dict:
+    """Compara las series que están activas ahora según cómo les fue a los favoritos.
+
+    1. Busca las series con más volumen entre los mercados que cierran pronto
+       (lo que el bot operaría).
+    2. Para cada serie descarga sus últimos mercados liquidados y sus operaciones.
+    3. Ordena las series por el rendimiento de comprar a 90–100¢ como maker.
+    """
+    now = now or datetime.now(timezone.utc)
+    start, end = int(now.timestamp()), int(now.timestamp() + closing_within_hours * 3600)
+    live = client.get_markets(
+        status=None, min_close_ts=start, max_close_ts=end, mve_filter="exclude", limit=1000, max_pages=3
+    )
+    volume: dict = {}
+    for market in live:
+        if market.is_active:
+            volume[market.series] = volume.get(market.series, ZERO) + market.volume_24h
+    candidates = sorted(volume, key=lambda s: volume[s], reverse=True)[:series_count]
+
+    plan: dict = {}
+    for series in candidates:
+        settled = client.get_markets(status="settled", series_ticker=series, limit=min(per_series, 200), max_pages=1)
+        settled = [m for m in settled if m.result in ("yes", "no") and m.market_type == "binary"][:per_series]
+        if len(settled) >= min_markets:
+            plan[series] = settled
+    total = sum(len(v) for v in plan.values())
+
+    rows, done = [], 0
+    for series, markets in plan.items():
+        research = Research()
+        for market in markets:
+            if should_stop and should_stop():
+                break
+            try:
+                trades = client.get_trades(market.ticker, max_pages=trades_pages)
+            except Exception as exc:  # noqa: BLE001
+                log.warning("No se pudieron leer las operaciones de %s: %s", market.ticker, exc)
+                trades = None
+            if trades is not None:
+                research.add_market(market.result, trades)
+            done += 1
+            if progress:
+                progress(done, total)
+        try:
+            info = client.get_series(series)
+        except Exception:  # noqa: BLE001 - el título es opcional
+            info = {}
+        rows.append(series_summary(series, research, info))
+
+    rows.sort(key=_favorite_return, reverse=True)
+    good = [r for r in rows if r["favorites_maker"].get("contracts") and _favorite_return(r) > 0]
+    notes = []
+    if good:
+        best = good[0]
+        notes.append(
+            f"Mejor serie para favoritos: {best['series']} ({best['title'] or 'sin título'}): "
+            f"{_favorite_return(best) * 100:+.2f}% tras comisiones en {best['markets']} mercados "
+            f"(fiabilidad {best['confidence']})."
+        )
+        notes.append(f"{len(good)} de {len(rows)} series dan rendimiento positivo comprando favoritos como maker.")
+    elif rows:
+        notes.append("Ninguna serie analizada da rendimiento positivo comprando favoritos: mejor no activarla ahora.")
+    else:
+        notes.append("No hubo suficientes mercados liquidados para comparar series.")
+    notes.append(
+        "Las operaciones de un mismo mercado comparten resultado: la muestra real es el número de mercados. "
+        "Con menos de 50, un solo batacazo cambia mucho el resultado."
+    )
+    return {
+        "generated_at": now.isoformat(),
+        "series_analyzed": len(rows),
+        "markets": total,
+        "rows": rows,
+        "conclusions": notes,
+    }

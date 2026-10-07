@@ -299,6 +299,11 @@ class KalshiClient:
         params = {"ticker": ticker, "min_ts": min_ts, "max_ts": max_ts, "limit": 1000}
         return self._paginate("/markets/trades", "trades", params, auth=False, max_pages=max_pages)
 
+    def get_series(self, series_ticker: str) -> dict:
+        """Datos de una serie (título, categoría, tipo de comisión...)."""
+        data = self.request("GET", f"/series/{quote(series_ticker, safe='')}", auth=False)
+        return data.get("series") or {}
+
     def get_event(self, event_ticker: str) -> dict:
         data = self.request(
             "GET", f"/events/{quote(event_ticker, safe='')}", params={"with_nested_markets": "true"}, auth=False

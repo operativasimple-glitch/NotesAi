@@ -5,7 +5,7 @@ import pytest
 
 from kalshi_bot.discovery import MarketFilter, discover
 from kalshi_bot.models import ASK, BID, GTC
-from kalshi_bot.research import Research, bucket_index, run_research
+from kalshi_bot.research import Research, bucket_index, run_research, run_sweep
 from kalshi_bot.scanner import ScanParams, event_arbitrage, run_scan, scan_markets
 from kalshi_bot.strategies.favorites import FavoritesStrategy
 
@@ -204,3 +204,50 @@ def test_run_research_with_fake_client():
     report = run_research(fake, series="KXOLD", progress=lambda done, total: calls.append((done, total)))
     assert report["markets"] == 1 and report["trades"] == 2 and calls == [(1, 1)]
     assert "Pocos mercados" in report["conclusions"][-1]
+
+
+# --- barrido de series ------------------------------------------------------------
+
+
+def test_research_counts_favorite_markets_and_upsets():
+    r = Research()
+    r.add_market("no", [trade("0.0500", 10, "yes")])  # maker NO a 95¢: el favorito ganó
+    r.add_market("yes", [trade("0.0400", 10, "yes")])  # maker NO a 96¢: el favorito perdió
+    r.add_market("yes", [trade("0.5000", 10, "yes")])  # sin favoritos
+    assert (r.favorite_markets, r.favorite_upsets) == (2, 1)
+
+
+def sweep_fixture():
+    fake = FakeKalshi(
+        markets=[
+            closing_in("KXGOOD-LIVE-1", 10, "5000", "KXGOOD-LIVE"),
+            closing_in("KXBAD-LIVE-1", 10, "3000", "KXBAD-LIVE"),
+            closing_in("KXTINY-LIVE-1", 10, "100", "KXTINY-LIVE"),
+        ]
+    )
+    for i in range(12):
+        good = make_market(f"KXGOOD-{i}", status="finalized", result="no")
+        bad = make_market(f"KXBAD-{i}", status="finalized", result="yes" if i % 2 else "no")
+        fake.settled[good.ticker] = good
+        fake.settled[bad.ticker] = bad
+        # En ambas series un taker compra el longshot SÍ a 6¢ y un maker queda con NO a 94¢.
+        fake.trades[good.ticker] = [trade("0.0600", 10, "yes")]
+        fake.trades[bad.ticker] = [trade("0.0600", 10, "yes")]
+    fake.settled["KXTINY-0"] = make_market("KXTINY-0", status="finalized", result="no")  # muy pocos mercados
+    fake.series_info = {"KXGOOD": {"title": "Serie buena", "category": "Clima"}}
+    return fake
+
+
+def test_sweep_ranks_series_by_favorite_returns():
+    fake = sweep_fixture()
+    calls = []
+    report = run_sweep(fake, now=NOW, progress=lambda d, t: calls.append((d, t)), min_markets=10)
+    assert [row["series"] for row in report["rows"]] == ["KXGOOD", "KXBAD"]  # KXTINY no llega al mínimo
+    good, bad = report["rows"]
+    assert good["title"] == "Serie buena" and good["category"] == "Clima"
+    assert good["favorite_markets"] == 12 and good["favorite_upsets"] == 0
+    assert good["favorites_maker"]["return_after_fees"] > 0 > bad["favorites_maker"]["return_after_fees"]
+    assert bad["favorite_upsets"] == 6
+    assert good["confidence"] == "baja"
+    assert "KXGOOD" in report["conclusions"][0]
+    assert calls[-1] == (24, 24)

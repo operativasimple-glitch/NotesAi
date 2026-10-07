@@ -10,6 +10,7 @@ Se maneja desde un **panel web pensado para el móvil** o desde la terminal.
   - usa el entorno demo (dinero ficticio) hasta que cambias a real;
   - tiene límites de riesgo y un freno de emergencia.
 - **Herramientas para buscar ventaja:**
+  - un barrido que compara las series activas y te dice dónde están ganando los favoritos;
   - un escáner de oportunidades;
   - una investigación que mide con datos reales quién gana a cada precio.
 
@@ -90,6 +91,8 @@ Abre `http://IP-DEL-ORDENADOR:8000` desde el móvil (en la misma wifi). Para ent
   - compra SÍ o NO con orden limitada (con coste, ganancia máxima y comisión estimada);
   - "Seguir con el bot".
 - **Oportunidades:**
+  - "¿Dónde gana más el bot?": ordena las series por lo que ganaron los favoritos y, con un toque,
+    centra el bot en la mejor;
   - escáner: favoritos, spreads amplios y arbitraje en eventos;
   - investigación: rendimiento por tramo de precio, takers frente a makers, con mercados ya liquidados.
 - **Ajustes:**
@@ -159,6 +162,7 @@ panel (`man-`) y las de la web de Kalshi no las cancela. Si corres varios bots, 
 cp config.example.toml config.toml && cp .env.example .env   # y rellena .env con tu key
 python -m kalshi_bot check                         # conexión, credenciales y saldo
 python -m kalshi_bot scan                          # oportunidades ahora mismo
+python -m kalshi_bot research --sweep              # ¿en qué series ganan los favoritos?
 python -m kalshi_bot research --series KXHIGHNY    # ¿quién gana a cada precio en esa serie?
 python -m kalshi_bot run                           # simulación
 python -m kalshi_bot run --live                    # órdenes de verdad (demo o real según KALSHI_ENV)
@@ -172,6 +176,7 @@ python -m kalshi_bot cancel-all                    # cancela las órdenes del bo
 | `events [--series S]` / `markets --series S \| --event E` / `book TICKER` | Explorar mercados. |
 | `scan [--hours 48] [--series S ...]` | Favoritos, spreads amplios y arbitraje en eventos. |
 | `research [--series S] [--markets 150]` | Rendimiento por tramo de precio (taker frente a maker) en mercados liquidados. |
+| `research --sweep [--series-count 12]` | Compara las series activas: en cuáles ganan los favoritos y en cuáles no. |
 | `positions` / `orders` | Tus posiciones y órdenes en reposo. |
 | `run [--live] [--once]` | Ejecuta el bot (simulación salvo `--live`). |
 | `cancel-all [--everything]` | Cancela las órdenes del bot (o todas). |

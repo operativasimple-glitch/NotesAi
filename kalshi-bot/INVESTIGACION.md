@@ -24,7 +24,117 @@ El bot incluye ahora:
 - la estrategia `favorites`;
 - un **escáner** de oportunidades;
 - una herramienta de **investigación** que mide el sesgo con datos reales de Kalshi, para que lo
-  compruebes antes de arriesgar dinero.
+  compruebes antes de arriesgar dinero;
+- un **barrido de series** que compara las series activas y te dice en cuáles están ganando los
+  favoritos.
+
+## ¿Dónde se gana dinero de verdad? (EE. UU., octubre 2026)
+
+En Kalshi el dinero pasa de los *takers* a los *makers*: entre julio de 2021 y mayo de 2026 los takers
+perdieron unos 584 millones de dólares ([Whelan y coautores](https://www2.gwu.edu/~forcpgm/2026-001.pdf)).
+Estos son los sitios donde se pierde y se gana más, de lo más grande a lo más pequeño.
+
+### 1. Las combinadas: nunca las compres, el dinero está en el otro lado
+
+Es el producto donde más pierde el apostante minorista:
+
+- En 2026, los minoristas perdieron más de 100 millones en combinadas solo entre enero y abril
+  ([Sportico](https://www.sportico.com/business/sports-betting/2026/kalshi-parlays-retail-bettor-losses-rfq-1234894471/)).
+  Según Bloomberg, hasta 294 millones hasta julio
+  ([Gambling Insider](https://www.gamblinginsider.com/news/185043/kalshi-parlay-bettors-lose-more-than-headline-numbers-show-money-betting-against-them-is-masking-it)).
+- Pierden 19 centavos de cada dólar en combinadas, frente a 6 en apuestas simples
+  ([Detroit News](https://www.detroitnews.com/story/business/personal-finance/2026/07/30/retail-bettors-lose-big-on-complex-combo-bets/91105579007/)).
+- Un estudio de 23 millones de operaciones muestra que las combinadas entre partidos distintos están
+  **sistemáticamente sobrevaloradas** respecto al producto de sus patas, y más cuantas más patas tienen
+  ([arXiv 2607.14430](https://arxiv.org/abs/2607.14430)).
+
+Quien gana es quien hace de "casa": los creadores de mercado que cotizan las combinadas. Uno de ellos,
+de 26 años y antes en FanDuel, gana siete cifras al mes
+([The American Prospect](https://prospect.org/2026/08/26/house-always-wins-kalshi-prediction-markets/)).
+
+¿Puede hacerlo un bot pequeño? Técnicamente sí: las peticiones de cotización (RFQ) están abiertas a
+cualquiera con API. Pero no es fácil:
+
+- **Competencia profesional:** dos bots responden a la mitad de las peticiones.
+- **Velocidad:** se emiten unas 135 peticiones por segundo por un canal público de WebSocket
+  ([Oddpool](https://www.oddpool.com/research/kalshi-rfq-market-makers)).
+- **Comisiones:** desde el 21 de agosto de 2026 quien cotiza paga el 50 % de la comisión de taker
+  ([Bitcoin.com News](https://news.bitcoin.com/igaming/kalshis-parlay-maker-fee-brought-26-million-four-weeks/)).
+- **Riesgo correlacionado:** si un fin de semana ganan todos los favoritos, pagas muchas combinadas a la vez.
+
+Un dato interesante del mismo estudio de Oddpool: en los mercados que no son de deportes **nadie
+respondía** a las peticiones de cotización. Ahí un bot pequeño podría ser el único que cotiza.
+
+### 2. Apuestas deportivas con valor contra Pinnacle
+
+Kalshi **no limita a quien gana**, a diferencia de DraftKings o FanDuel, porque es un mercado entre
+usuarios. Por eso los apostantes profesionales se están pasando a Kalshi
+([ClawArbs](https://clawarbs.com/blog/prediction-market-value-betting/),
+[SmartStake](https://www.smartstake.app/learn/kalshi-vs-sportsbook)).
+
+El método: se toma la cuota de Pinnacle sin su margen como probabilidad justa y se compra en Kalshi
+cuando su precio es mejor. Encaja con la estrategia `fair_value` si se le conecta una fuente de cuotas.
+
+El matiz: en la semana 1 de la NFL, los precios de Kalshi eran entre un 7 % y un 25 % más caros que los
+de DraftKings o FanDuel para el usuario normal
+([Yogonet](https://www.yogonet.com/international/news/2025/09/09/115258-kalshi-trading-hits-441m-in-first-nfl-week-but-analysts-flag-pricing-gap-with-sportsbooks)).
+La ventaja aparece en momentos y mercados concretos (props, ligas menos seguidas, antes de que se
+mueva la línea), no siempre.
+
+**Ojo con tu estado.** Los contratos deportivos están bloqueados en Massachusetts, Nevada, Washington y
+Michigan. En septiembre de 2026 el Sexto Circuito dio la razón a Ohio y Tennessee para regularlos
+([CoinDesk](https://www.coindesk.com/policy/2026/09/25/another-appeals-court-rules-against-prediction-market-provider-kalshi-says-sports-contracts-are-subject-to-state-regulations),
+[The Block](https://www.theblock.co/news/regulation/2026-09-26-kalshi-loses-appeal-over-ohio-and-tennessee-sports-betting-laws-widening-circuit-split-416937)).
+
+### 3. Favoritos: lo que ya hace el bot
+
+Es una ventaja pequeña pero estructural:
+
+- En mercados de temperatura, apostar contra los longshots dio entre +0,48 y +1,09¢ por contrato tras
+  comisiones, en 180 días y 7 ciudades
+  ([Schmiedey/kalshi-weather](https://github.com/Schmiedey/kalshi-weather)).
+- Hay indicios de que el sesgo se va reduciendo con el tiempo, y por eso conviene medirlo por serie.
+  Para eso está el barrido: `research --sweep` o la tarjeta "¿Dónde gana más el bot?" del panel.
+
+### 4. Nichos con datos públicos: clima, Rotten Tomatoes, TSA, gasolina, cultura
+
+Aquí es donde más ha ganado gente normal
+([MarketWatch](https://x.com/MarketWatch/status/1925585494504530351)):
+
+- Un trader ganó 100.000 $ en un mes con mercados como la Persona del Año de *Time* o la persona más
+  buscada en Google.
+- En Rotten Tomatoes, las críticas llegan por tandas y el contrato se liquida con la nota del lunes a
+  las 10:00 (hora del Este). Si la nota queda justo en el umbral, pierde: "por encima" es estricto
+  ([OddsShopper](https://www.oddsshopper.com/articles/prediction-markets/kalshi-rotten-tomatoes-markets)).
+
+Pero exige estudiar cada mercado y hay poca liquidez. En un backtest de 500 estrategias de temperatura
+en Nueva York, solo 70 salieron positivas y la mediana fue −41,6 %
+([BotForKalshi](https://www.botforkalshi.com/blog/kalshi-trading-strategies-guide)).
+
+### 5. Crear mercado donde no llegan los grandes
+
+- Un estudiante de Princeton ganó unos 150.000 $ como creador de mercado desde las elecciones de 2024
+  ([4AM Club](https://4amclub.substack.com/p/how-to-make-money-trading-on-kalshi)).
+- Otro trader, ~165.000 $ con un algoritmo que revisa los mercados nuevos buscando los buenos para
+  crear mercado ([MarketWatch](https://x.com/MarketWatch/status/1925585494504530351)).
+- Los grandes (Susquehanna) se concentran en los partidos más grandes.
+
+### Extras si vives en EE. UU.
+
+- **Intereses del 4,05 % anual** sobre saldo y posiciones con 250 $ o más
+  ([Kalshi](https://help.kalshi.com/faq/interest-apy-on-kalshi)).
+- **Promociones de bienvenida** con créditos para cuentas nuevas. Lee las condiciones.
+- **Incentivos de liquidez y volumen terminados.** Kalshi registró el 25 de septiembre de 2026 un nuevo
+  programa de recompensas por depósito y trading, pendiente de revisión de la CFTC
+  ([DefiRate](https://defirate.com/news/kalshi-volume-rewards-cftc-scrutinizes-prediction-markets/)).
+
+### Cuidado con TikTok
+
+Las plataformas de predicción pagan a creadores e *influencers* para aparecer en redes
+([Rolling Stone](https://www.rollingstone.com/culture/culture-features/kalshi-polymarket-viral-moments-1235625058/)).
+Los vídeos de "gané X dólares" son marketing o casos aislados: nadie publica sus pérdidas. Y hay un
+riesgo real de adicción, sobre todo entre hombres jóvenes
+([Fortune](https://fortune.com/2026/04/10/prediction-markets-gambling-addiction/)).
 
 ## 0. Antes de nada: ¿puedes operar en Kalshi?
 

@@ -35,7 +35,7 @@ from .config import (
 from .engine import Bot, DryRunExecutor, Journal, LiveExecutor
 from .fees import MAKER_FEE_RATE, TAKER_FEE_RATE
 from .models import ASK, BID, GTC, IOC, ONE, OrderIntent, ceil_to_tick, floor_to_tick, to_decimal
-from .research import run_research
+from .research import run_research, run_sweep
 from .risk import RiskManager
 from .scanner import ScanParams, run_scan
 from .strategies import BUILTIN, build_strategy
@@ -164,7 +164,7 @@ class BotController:
         self._mode: Optional[str] = None
         self._balance_cache: tuple = (0.0, None, None)  # (instante, saldo, error)
         self.logs = LogBuffer()
-        self.jobs = {"scan": Job("scan"), "research": Job("research")}
+        self.jobs = {"scan": Job("scan"), "research": Job("research"), "sweep": Job("sweep")}
         config_dir = Path(config_path).resolve().parent if config_path else Path.cwd()
         load_dotenv(config_dir / ".env")
         self.data_dir = data_dir_from_env(config_dir)
@@ -635,6 +635,35 @@ class BotController:
             )
         )
         return job.to_dict()
+
+    def start_sweep(self, params: dict) -> dict:
+        client = self.client()
+        series_count = max(3, min(int(params.get("series_count") or 12), 40))
+        per_series = max(10, min(int(params.get("per_series") or 60), 200))
+        job = self.jobs["sweep"]
+        job.start(
+            lambda j: run_sweep(
+                client,
+                series_count=series_count,
+                per_series=per_series,
+                progress=j.progress,
+                should_stop=lambda: j.cancel,
+            )
+        )
+        return job.to_dict()
+
+    def use_series(self, series: list) -> dict:
+        """Centra el bot en estas series (desde el barrido): deja de buscar en todos los mercados."""
+        clean = [str(s).strip().upper() for s in series or [] if str(s).strip()]
+        if not clean:
+            raise ControllerError("Indica al menos una serie")
+        overrides = self.overrides()
+        markets = dict(overrides.get("markets") or {})
+        markets["series"] = clean
+        markets["closing_within_hours"] = 0
+        self.save_settings({"markets": markets})
+        log.info("El bot se centra ahora en las series: %s", ", ".join(clean))
+        return {"series": clean}
 
     def add_ticker(self, ticker: str) -> dict:
         """Añade un mercado a la lista fija del bot (desde Oportunidades)."""

@@ -171,6 +171,9 @@ class PanelApp:
             ("POST", r"/api/research", lambda q, b: c.start_research(b)),
             ("GET", r"/api/research", lambda q, b: c.jobs["research"].to_dict()),
             ("POST", r"/api/research/cancel", self._cancel_research),
+            ("POST", r"/api/sweep", lambda q, b: c.start_sweep(b)),
+            ("GET", r"/api/sweep", lambda q, b: c.jobs["sweep"].to_dict()),
+            ("POST", r"/api/markets/use-series", lambda q, b: c.use_series(b.get("series") or [])),
         ]
 
     @staticmethod

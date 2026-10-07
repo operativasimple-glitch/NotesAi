@@ -260,3 +260,14 @@ def test_placeholder_key_path_without_id_is_ignored(clean_env):
     os.environ["KALSHI_PRIVATE_KEY_PATH"] = "./kalshi-key.pem"  # tal cual viene en .env.example
     s = load_settings()
     assert s.credentials_source == "" and s.signer() is None
+
+
+def test_cli_research_sweep(fake_cli, capsys):
+    from .test_favorites_scanner_research import sweep_fixture
+
+    data = sweep_fixture()
+    fake_cli.markets, fake_cli.settled = data.markets, data.settled
+    fake_cli.trades, fake_cli.series_info = data.trades, data.series_info
+    assert cli.main(["research", "--sweep", "--series-count", "5", "--per-series", "20"]) == 0
+    out = capsys.readouterr().out
+    assert "KXGOOD" in out and "Mejor serie para favoritos" in out

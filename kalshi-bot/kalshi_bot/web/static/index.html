@@ -89,13 +89,22 @@
       <!-- OPORTUNIDADES -->
       <section id="view-opps" class="view" data-title="Oportunidades" hidden>
         <div class="card">
+          <h2>¿Dónde gana más el bot?</h2>
+          <p class="muted small">Compara las series con más volumen ahora mismo según cuánto ganó quien compró favoritos (90–100¢) como maker en sus últimos mercados ya liquidados. Tarda unos minutos.</p>
+          <button id="btn-sweep" class="btn primary full">Buscar las mejores series</button>
+          <div id="sweep-progress" class="progress" hidden><div class="progress-bar"></div></div>
+          <p id="sweep-status" class="muted small"></p>
+          <div id="sweep-results"></div>
+        </div>
+
+        <div class="card">
           <h2>Escáner</h2>
           <p class="muted small">Busca ahora mismo favoritos (88–97¢), mercados con spread amplio y arbitrajes en eventos de varios resultados. Solo lee: no envía órdenes.</p>
           <div class="grid2">
             <label class="field">Cierran en (horas)<input id="scan-hours" type="number" inputmode="decimal" value="48" min="1"></label>
             <label class="field">Volumen mínimo 24 h<input id="scan-volume" type="number" inputmode="numeric" value="100" min="0"></label>
           </div>
-          <button id="btn-scan" class="btn primary full">Escanear</button>
+          <button id="btn-scan" class="btn full">Escanear</button>
           <p id="scan-status" class="muted small"></p>
         </div>
         <div id="scan-results"></div>
