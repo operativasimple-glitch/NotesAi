@@ -352,6 +352,24 @@ def test_band_margin_of_error_counts_events_not_contracts():
     assert verdict(many.band_summary()) == "gana"
 
 
+def test_margin_uses_delta_method_when_there_are_enough_losses():
+    r = Research()
+    # 200 eventos a 94¢ con 8 batacazos: hay fallos de sobra para la aproximación normal.
+    for i in range(200):
+        r.add_market("yes" if i < 8 else "no", [trade("0.0600", 10, "yes")], group=f"E{i}")
+    s = r.band_summary()
+    assert s["margin_method"] == "delta" and s["losing_groups"] == 8
+    assert s["ci_low"] < s["return_after_fees"] < s["ci_high"]
+    few = Research()
+    for i in range(30):
+        few.add_market("yes" if i == 0 else "no", [trade("0.0600", 10, "yes")], group=f"E{i}")
+    assert few.band_summary()["margin_method"] == "delta+wilson"  # 1 fallo: también Wilson
+    dump = few.band_groups_dump()
+    assert dump["band"] == ["0.88", "0.97"] and len(dump["groups"]) == 30
+    assert run_research(FakeKalshi(), series="KXNADA", keep_groups=True)["groups_dump"]["groups"] == {}
+    assert "groups_dump" not in run_research(FakeKalshi(), series="KXNADA")
+
+
 def test_wilson_interval():
     low, high = wilson(12, 12)
     assert 0.75 < low < 0.76 and high == 1.0

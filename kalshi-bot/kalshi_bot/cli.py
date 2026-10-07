@@ -331,8 +331,11 @@ def cmd_research(settings: Settings, args) -> int:
         skip_last_minutes=args.skip_last_minutes,
         trades_pages=args.pages,
         by_time=args.by_time,
+        keep_groups=bool(args.dump_groups),
         progress=progress,
     )
+    if args.dump_groups:
+        _save_json(report.pop("groups_dump"), args.dump_groups)
     _save_json(report, args.json)
     print(f"\nSerie: {report['series']} | mercados: {report['markets']} | operaciones: {report['trades']}")
     if report["by_series"]:
@@ -573,6 +576,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--category", help="analiza las series más negociadas de esta categoría (p. ej. Financials)")
     p.add_argument("--pages", type=int, default=2, help="páginas de 1000 operaciones por mercado (más = más historia)")
     p.add_argument("--by-time", action="store_true", help="separa el resultado según lo que faltaba para el cierre")
+    p.add_argument("--dump-groups", metavar="ARCHIVO", help="guarda los datos por evento (para combinar pruebas)")
     p.add_argument("--top", type=int, default=8, help="con --category: cuántas series")
 
     p = sub.add_parser("web", help="abre el panel web para manejar el bot desde el móvil")

@@ -43,6 +43,9 @@ LONGSHOT_BUCKETS = [0, 1]  # 0–10¢
 FAVORITE_FLOOR = Decimal("0.90")
 STRATEGY_BAND = (Decimal("0.88"), Decimal("0.97"))  # lo que compra la estrategia favorites
 Z95 = Decimal("1.96")
+# Con menos de 5 eventos perdidos (o ganados) la aproximación normal no vale: una racha sin
+# batacazos daría un margen casi nulo. Ahí el margen se amplía con el intervalo de Wilson.
+MIN_OUTCOMES = 5
 # Ventanas de tiempo antes del cierre, en minutos (en deportes, el cierre es el final del partido).
 TIME_WINDOWS = [(0, 15), (15, 30), (30, 60), (60, 180), (180, None)]
 
@@ -220,10 +223,11 @@ class Research:
         """Rendimiento de comprar dentro de la banda como maker, con su intervalo de confianza del 95 %.
 
         Todas las operaciones de un evento dependen del mismo resultado, así que el
-        error se calcula por eventos, no por contratos. Se toma el más amplio de dos
-        intervalos: el del cociente ganancia/coste (método delta) y el que sale de la
-        proporción de eventos ganados (Wilson). El segundo evita dar por segura una
-        serie solo porque en la muestra no hubo ningún batacazo.
+        error se calcula por eventos, no por contratos, con el método delta para el
+        cociente ganancia/coste. Si hay menos de MIN_OUTCOMES eventos perdidos (o
+        ganados), ese cálculo no es fiable y se toma también el intervalo de Wilson
+        sobre la proporción de eventos ganados, para no dar por segura una serie solo
+        porque en la muestra no hubo ningún batacazo.
         """
         lo, hi = self.band
         groups = [g for g in self.band_groups.values() if g[0] > 0]
@@ -248,12 +252,26 @@ class Research:
         if n >= 2:
             spread = sum(((g[1] - ratio * g[0]) ** 2 for g in groups), ZERO) / (n * (n - 1))
             error = Z95 * spread.sqrt() / (cost / n)
-            fee_share = (payout - cost - net) / cost
-            low_rate, high_rate = (Decimal(str(r)) for r in wilson(n - out["losing_groups"], n))
-            price = cost / contracts
-            out["ci_low"] = min(ratio - error, low_rate / price - ONE - fee_share).quantize(q)
-            out["ci_high"] = max(ratio + error, high_rate / price - ONE - fee_share).quantize(q)
+            low, high = ratio - error, ratio + error
+            losing = out["losing_groups"]
+            out["margin_method"] = "delta"
+            if min(losing, n - losing) < MIN_OUTCOMES:
+                fee_share = (payout - cost - net) / cost
+                low_rate, high_rate = (Decimal(str(r)) for r in wilson(n - losing, n))
+                price = cost / contracts
+                low = min(low, low_rate / price - ONE - fee_share)
+                high = max(high, high_rate / price - ONE - fee_share)
+                out["margin_method"] = "delta+wilson"
+            out["ci_low"], out["ci_high"] = low.quantize(q), high.quantize(q)
         return out
+
+    def band_groups_dump(self) -> dict:
+        """Los datos por evento (coste, neto, contratos, cobrado), para combinar pruebas."""
+        lo, hi = self.band
+        return {
+            "band": [str(lo), str(hi)],
+            "groups": {key: [str(v) for v in values] for key, values in self.band_groups.items()},
+        }
 
     def report(self) -> dict:
         rows = []
@@ -325,6 +343,7 @@ def run_research(
     skip_last_minutes: int = 0,
     trades_pages: int = 2,
     by_time: bool = False,
+    keep_groups: bool = False,
     progress: Optional[Callable[[int, int], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> dict:
@@ -381,6 +400,8 @@ def run_research(
             "skip_last_minutes": skip_last_minutes,
         }
     )
+    if keep_groups:
+        report["groups_dump"] = research.band_groups_dump()
     return report
 
 
