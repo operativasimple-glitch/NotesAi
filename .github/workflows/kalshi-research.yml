@@ -7,14 +7,11 @@ on:
   workflow_dispatch:
     inputs:
       run:
-        description: "Qué medir (separado por comas): live, timing, sports, category, sweep"
-        default: live,timing
+        description: "Qué medir (separado por comas): categories, live, timing, sports, sweep"
+        default: categories
       sports:
         description: Series de partidos (separadas por comas)
         default: KXNFLGAME,KXMLBGAME,KXNBAGAME,KXNHLGAME,KXNCAAFGAME
-      category:
-        description: Categoría extra (sus series más negociadas)
-        default: Financials
   push:
     branches: [claude/kalshi-bot-kjmcj6]
     paths:
@@ -27,18 +24,56 @@ concurrency:
   group: kalshi-research
   cancel-in-progress: true
 
+env:
+  KALSHI_ENV: prod
+
 jobs:
+  # Una categoría por máquina, en paralelo (cada una con su propio límite de peticiones).
+  categories:
+    if: contains(inputs.run || 'categories', 'categories')
+    strategy:
+      fail-fast: false
+      matrix:
+        category: ["Climate and Weather", "Crypto", "Economics", "Financials"]
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    defaults:
+      run:
+        working-directory: kalshi-bot
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar
+        run: |
+          pip install -r requirements.txt
+          printf '[http]\nreads_per_second = 10\n' > config.toml
+      - name: Series más negociadas
+        run: python -m kalshi_bot series --category "${{ matrix.category }}" --limit 15
+      - name: La estrategia del bot en esta categoría
+        run: |
+          python -m kalshi_bot research --category "${{ matrix.category }}" --top 5 --markets 800 \
+            --json category.json | tee category.txt
+      - name: Resumen
+        if: always()
+        run: |
+          set +e
+          { echo "## ${{ matrix.category }}"; echo '```'; cat category.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          echo "=== JSON category ==="; cat category.json; echo
+          exit 0
+
   research:
+    if: contains(inputs.run || 'categories', 'live') || contains(inputs.run || 'categories', 'timing') ||
+      contains(inputs.run || 'categories', 'sports') || contains(inputs.run || 'categories', 'sweep')
     runs-on: ubuntu-latest
     timeout-minutes: 120
     defaults:
       run:
         working-directory: kalshi-bot
     env:
-      KALSHI_ENV: prod
-      RUN: ${{ inputs.run || 'live,timing' }}
+      RUN: ${{ inputs.run || 'categories' }}
       SPORTS: ${{ inputs.sports || 'KXNFLGAME,KXMLBGAME,KXNBAGAME,KXNHLGAME,KXNCAAFGAME' }}
-      CATEGORY: ${{ inputs.category || 'Financials' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -77,13 +112,7 @@ jobs:
             --pages 8 --by-time --json timing.json | tee timing.txt
       - name: Partidos (ganador)
         if: contains(env.RUN, 'sports')
-        run: |
-          python -m kalshi_bot research --series "$SPORTS" --markets 800 --json sports.json | tee sports.txt
-      - name: Categoría extra (bolsa, etc.)
-        if: contains(env.RUN, 'category')
-        run: |
-          python -m kalshi_bot research --category "$CATEGORY" --top 6 --markets 1500 \
-            --json category.json | tee category.txt
+        run: python -m kalshi_bot research --series "$SPORTS" --markets 800 --json sports.json | tee sports.txt
       - name: Barrido de series activas
         if: contains(env.RUN, 'sweep')
         run: python -m kalshi_bot research --sweep --series-count 15 --per-series 400 --json sweep.json | tee sweep.txt
@@ -94,16 +123,10 @@ jobs:
           {
             echo '## ¿Gana el bot?'
             echo '```'
-            for f in timing sports category sweep; do [ -f "$f.txt" ] && cat "$f.txt"; done
+            for f in timing sports sweep; do [ -f "$f.txt" ] && cat "$f.txt"; done
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          for f in timing sports category sweep; do
+          for f in timing sports sweep; do
             if [ -f "$f.json" ]; then echo; echo "=== JSON $f ==="; cat "$f.json"; echo; fi
           done
           exit 0
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: kalshi-research
-          path: kalshi-bot/*.json
-          if-no-files-found: ignore
