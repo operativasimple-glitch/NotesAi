@@ -10,7 +10,7 @@
   **pequeños pero positivos**.
 - **Comprobado con datos reales de Kalshi (octubre 2026):** comprar el favorito a 88–97¢ como maker
   en los partidos dio **+3,9 % tras comisiones en 878 partidos**, con un margen de error que no llega a
-  cero (+1,3 % a +5,6 %). Detalle en la sección siguiente.
+  cero (+2,2 % a +5,6 %). Detalle en la sección siguiente.
 - **Lo más parecido a "el truco"** es ponerse en el lado contrario de quienes compran longshots:
   - comprar el lado **favorito** (88–97¢);
   - con **órdenes limitadas que esperan en el libro** (maker), que pagan la cuarta parte de comisión;
@@ -47,9 +47,9 @@ usar ninguna clave. También lo puedes repetir con `research` (ver README).
 
 | Mercados | Eventos | Rendimiento tras comisiones | Margen de error (95 %) | Veredicto |
 | --- | --- | --- | --- | --- |
-| **Partidos: quién gana** (NFL, MLB, NBA, NHL y universitario; hasta 800 mercados por liga) | 878 | **+3,91 %** | **+1,28 % a +5,64 %** | **gana** |
-| … de ellos, béisbol (MLB) | 342 | +5,75 % | +2,35 % a +6,81 % | gana |
-| … hockey (NHL) | 92 | +4,13 % | −11,51 % a +7,16 % | sin confirmar |
+| **Partidos: quién gana** (NFL, MLB, NBA, NHL y universitario; hasta 800 mercados por liga) | 878 | **+3,91 %** | **+2,17 % a +5,64 %** | **gana** |
+| … de ellos, béisbol (MLB) | 342 | +5,75 % | +4,69 % a +6,81 % | gana |
+| … hockey (NHL) | 92 | +4,13 % | +1,09 % a +7,16 % | gana |
 | … fútbol americano (NFL) | 79 | +1,80 % | −4,70 % a +7,75 % | sin confirmar |
 | … fútbol americano universitario | 353 | +0,89 % | −4,40 % a +6,18 % | sin confirmar |
 | Las 14 series más activas ese día (sobre todo NFL e inflación) | 274 | +1,88 % | −12,32 % a +5,53 % | sin confirmar |
@@ -101,7 +101,7 @@ la misma estrategia fuera de los deportes:
 | … Nueva York | 67 | +2,80 % | −0,96 % a +6,56 % | sin confirmar |
 | … Filadelfia | 67 | +2,30 % | −0,72 % a +5,31 % | sin confirmar |
 | … Chicago | 67 | +0,31 % | −3,87 % a +4,49 % | sin confirmar |
-| Bolsa: S&P 500 y Nasdaq-100 (rangos y por encima/debajo) | 125 días | +3,56 % | −1,19 % a +8,32 % | sin confirmar |
+| Bolsa: S&P 500 y Nasdaq-100 (rangos y por encima/debajo) | 125 días | +3,34 % | −1,59 % a +8,27 % | sin confirmar |
 | Economía (Fed, gasolina…) | 14 | +2,09 % | — | pocos datos |
 | Cripto | — | — | — | no encaja: los mercados más activos duran 15 minutos |
 
