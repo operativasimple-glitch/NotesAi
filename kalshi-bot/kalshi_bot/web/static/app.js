@@ -1041,7 +1041,8 @@ function fieldControl(def, value) {
   let read;
   if (def.type === "bool") {
     input = el("input", { type: "checkbox" });
-    input.checked = value === true || value === "true";
+    const v = value ?? def.default; // sin valor guardado manda el de la estrategia
+    input.checked = v === true || v === "true";
     read = () => input.checked;
     return { node: el("label", { class: "toggle" }, el("span", { text: def.label }), input), read };
   }
