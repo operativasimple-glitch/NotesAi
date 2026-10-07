@@ -44,7 +44,8 @@ const fmt = {
   pct(v, digits = 1) {
     if (v == null || v === "") return "—";
     const n = Number(v) * 100;
-    return (n > 0 ? "+" : n < 0 ? "−" : "") + Math.abs(n).toFixed(digits) + "%";
+    const abs = Math.abs(n).toLocaleString("es-ES", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    return (n > 0 ? "+" : n < 0 ? "−" : "") + abs + "%";
   },
   hours(h) {
     if (h == null) return "—";
@@ -177,6 +178,7 @@ const state = {
   strategy: null,
   readers: {},
   fairValues: [],
+  resultsDays: 30,
 };
 
 function showLogin() {
@@ -198,6 +200,7 @@ function switchView(name) {
   window.scrollTo(0, 0);
   if (name === "home") loadHome();
   if (name === "settings") loadSettings();
+  if (name === "results") loadResults();
   if (name === "markets" && $("#market-card").hidden && $("#event-card").hidden) loadEvents();
 }
 
@@ -211,6 +214,9 @@ async function init() {
   $("#btn-stop").addEventListener("click", stopBot);
   $("#btn-kill").addEventListener("click", killBot);
   $("#btn-refresh-portfolio").addEventListener("click", refreshPortfolio);
+  for (const button of $$("#results-period button")) {
+    button.addEventListener("click", () => loadResults(Number(button.dataset.days)));
+  }
   $("#market-search").addEventListener("submit", searchMarkets);
   $("#btn-scan").addEventListener("click", runScan);
   $("#btn-research").addEventListener("click", runResearch);
@@ -1358,5 +1364,402 @@ async function saveFairValues() {
     toast(err.message, "error");
   }
 }
+
+/* ===================== resultados ===================== */
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svg(tag, attrs) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs || {})) if (value != null) node.setAttribute(key, value);
+  return node;
+}
+
+// Las fechas llegan como "2026-10-07" (día local); al mediodía la zona horaria no cambia el día.
+function dayLabel(iso, options) {
+  return new Date(`${iso}T12:00:00`).toLocaleDateString("es-ES", options);
+}
+
+const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+async function loadResults(days) {
+  if (days) state.resultsDays = days;
+  for (const button of $$("#results-period button")) {
+    button.classList.toggle("active", Number(button.dataset.days) === state.resultsDays);
+  }
+  const body = $("#results-body");
+  const s = state.status;
+  if (s && !s.credentials.configured) {
+    body.replaceChildren(resultsNoKey());
+    return;
+  }
+  // Mientras carga se queda lo anterior, atenuado: sin saltos.
+  if (!body.childElementCount) body.replaceChildren(el("p", { class: "muted small center", text: "Cargando…" }));
+  body.classList.add("refreshing");
+  const ticket = (state.resultsTicket = (state.resultsTicket || 0) + 1);
+  try {
+    const tz = new Date().getTimezoneOffset();
+    const r = await api(`/api/results?days=${state.resultsDays}&tz=${tz}`);
+    if (ticket === state.resultsTicket) renderResults(r);
+  } catch (err) {
+    if (ticket !== state.resultsTicket) return;
+    body.replaceChildren(
+      el(
+        "div",
+        { class: "card" },
+        el("p", { class: "error-text", text: err.message }),
+        el("button", { class: "btn full", type: "button", text: "Reintentar", onclick: () => loadResults() }),
+      ),
+    );
+  } finally {
+    if (ticket === state.resultsTicket) body.classList.remove("refreshing");
+  }
+}
+
+function resultsNoKey() {
+  return el(
+    "div",
+    { class: "card" },
+    el("h2", { text: "Aún no hay resultados" }),
+    el("p", {
+      class: "muted small",
+      text: "Para ver lo que ganas o pierdes cada día, configura tu API key de Kalshi en Ajustes. Solo cuenta el dinero real: en simulación no hay resultados.",
+    }),
+    el("button", { class: "btn primary full", type: "button", text: "Ir a Ajustes", onclick: () => switchView("settings") }),
+  );
+}
+
+function statTile(label, value, sign) {
+  return el(
+    "div",
+    { class: "stat" },
+    el("div", { class: "stat-label", text: label }),
+    el("div", { class: "stat-value " + (sign == null ? "" : signClass(sign)), text: value }),
+  );
+}
+
+function renderResults(r) {
+  const t = r.totals;
+  const hero = el(
+    "div",
+    { class: "card results-hero" },
+    el("div", { class: "muted small", text: `Ganancia neta · últimos ${r.days} días` }),
+    el("div", { class: "hero-figure", text: fmt.money(t.net, true) }),
+    el("div", {
+      class: "muted small",
+      text: t.markets
+        ? `${plural(t.markets, "mercado cerrado", "mercados cerrados")} · ${t.wins} ganados · ${t.losses} perdidos`
+        : "Ningún mercado cerrado en este periodo",
+    }),
+  );
+  if (t.markets) {
+    hero.append(
+      el("p", {
+        class: "small",
+        text: `Rendimiento ${fmt.pct(t.return)} sobre ${fmt.money(t.cost)} invertidos (lo esperado: ≈ ${fmt.pct(r.expected_return, 0)}).`,
+      }),
+      el("p", { class: "muted small", text: `Comisiones pagadas: ${fmt.money(t.fees)}, ya descontadas.` }),
+    );
+    if (t.markets < 30) {
+      hero.append(
+        el("p", {
+          class: "muted small",
+          text: "Con menos de 30 mercados manda la suerte: un fallo cuesta lo que ganan unos 15 aciertos. Juzga el bot cuando lleve más.",
+        }),
+      );
+    }
+  } else {
+    hero.append(
+      el("p", {
+        class: "muted small",
+        text: "Un mercado cuenta cuando Kalshi lo liquida (los partidos, al terminar; el clima, a la mañana siguiente) o cuando se vende antes. En simulación no hay resultados: solo cuenta lo real.",
+      }),
+    );
+  }
+
+  const today = r.today_totals;
+  const yesterday = r.yesterday_totals;
+  const stats = el(
+    "div",
+    { class: "stats" },
+    statTile("Hoy", fmt.money(today.net, true), today.net),
+    statTile("Ayer", yesterday ? fmt.money(yesterday.net, true) : "—", yesterday && yesterday.net),
+    statTile(r.open.markets ? `En juego (${r.open.markets})` : "En juego", fmt.money(r.open.exposure)),
+  );
+
+  const chartHost = el("div", { class: "chart" });
+  const chartCard = el(
+    "div",
+    { class: "card" },
+    el("h2", { text: "Ganancia por día" }),
+    el("p", { class: "muted small", text: "Cada barra es un día: hacia arriba lo ganado y hacia abajo lo perdido. Toca el gráfico para ver el día." }),
+    el(
+      "div",
+      { class: "legend" },
+      el("span", {}, el("i", { class: "gain" }), "Ganancia"),
+      el("span", {}, el("i", { class: "loss" }), "Pérdida"),
+    ),
+    chartHost,
+    dayTable(r.by_day),
+  );
+
+  // Sin mercados cerrados el gráfico sería una línea plana: basta con el resumen.
+  const cards = t.markets ? [hero, stats, chartCard] : [hero, stats];
+  if (r.by_category.length) {
+    cards.push(
+      el(
+        "div",
+        { class: "card" },
+        el("h2", { text: "Por tipo de mercado" }),
+        el(
+          "div",
+          { class: "list" },
+          r.by_category.map((c) =>
+            el(
+              "div",
+              { class: "item" },
+              el(
+                "div",
+                { class: "item-main" },
+                el("div", { class: "item-title", text: c.label }),
+                el("div", {
+                  class: "item-sub wrap",
+                  text: `${plural(c.markets, "mercado", "mercados")} · ${c.wins} ganados · ${c.losses} perdidos · rendimiento ${fmt.pct(c.return)}`,
+                }),
+              ),
+              el("div", { class: "item-side" }, el("div", { class: "big " + signClass(c.net), text: fmt.money(c.net, true) })),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+  if (r.recent.length) {
+    const list = el("div", { class: "list" }, r.recent.slice(0, 10).map(resultItem));
+    const card = el("div", { class: "card" }, el("h2", { text: "Últimos mercados cerrados" }), list);
+    if (r.recent.length > 10) {
+      const more = el("button", {
+        class: "btn full",
+        type: "button",
+        text: `Ver ${r.recent.length - 10} más`,
+        onclick: () => {
+          list.append(...r.recent.slice(10).map(resultItem));
+          more.remove();
+        },
+      });
+      card.append(more);
+    }
+    cards.push(card);
+  }
+  cards.push(
+    el("p", {
+      class: "muted small center",
+      text: "Cuenta todo lo de tu cuenta de Kalshi, también lo que compres a mano.",
+    }),
+  );
+  $("#results-body").replaceChildren(...cards);
+  state.resultsChart = null;
+  if (t.markets) {
+    drawDailyChart(chartHost, r.by_day);
+    state.resultsChart = { host: chartHost, days: r.by_day, width: chartHost.clientWidth };
+  }
+}
+
+function resultItem(m) {
+  const side = m.side === "ambos" ? null : m.side;
+  const parts = [`${fmt.qty(m.contracts)} contratos`, `pagaste ${fmt.money(m.cost)}`, dayLabel(m.date, { day: "numeric", month: "short" })];
+  const outcome = m.sold_early ? "vendido antes" : m.net > 0 ? "ganado" : m.net < 0 ? "perdido" : "sin cambio";
+  return el(
+    "div",
+    { class: "item tappable", onclick: () => openMarket(m.ticker) },
+    el(
+      "div",
+      { class: "item-main" },
+      el("div", { class: "item-title", text: m.title }),
+      el(
+        "div",
+        { class: "item-sub wrap" },
+        side ? sideBadge(side) : null,
+        side ? " " : null,
+        [m.subtitle, ...parts].filter(Boolean).join(" · "),
+      ),
+    ),
+    el(
+      "div",
+      { class: "item-side" },
+      el("div", { class: "big " + signClass(m.net), text: fmt.money(m.net, true) }),
+      el("div", { class: "tag", text: outcome }),
+    ),
+  );
+}
+
+function dayTable(days) {
+  const active = days.filter((d) => d.markets > 0).reverse();
+  const details = el("details", {}, el("summary", { text: "Ver los días en una tabla" }));
+  if (!active.length) {
+    details.append(empty("Ningún mercado cerrado en este periodo."));
+    return details;
+  }
+  const rows = active.map((d) =>
+    el(
+      "tr",
+      {},
+      el("td", { text: dayLabel(d.date, { weekday: "short", day: "numeric", month: "short" }) }),
+      el("td", { text: `${d.markets} (${d.wins} ganados, ${d.losses} perdidos)` }),
+      el("td", { class: signClass(d.net), text: fmt.money(d.net, true) }),
+    ),
+  );
+  const head = el("tr", {}, el("th", { text: "Día" }), el("th", { text: "Mercados" }), el("th", { text: "Ganancia" }));
+  details.append(el("div", { class: "table-wrap" }, el("table", { class: "results-table" }, el("thead", {}, head), el("tbody", {}, rows))));
+  return details;
+}
+
+// Redondea hacia arriba a 1, 2, 2,5 o 5 por una potencia de 10 (para las marcas del eje).
+function niceCeil(value) {
+  if (value <= 0) return 0;
+  const power = 10 ** Math.floor(Math.log10(value));
+  for (const step of [1, 2, 2.5, 5, 10]) if (step * power >= value - 1e-9) return step * power;
+  return 10 * power;
+}
+
+function drawDailyChart(host, days) {
+  const width = Math.max(240, Math.floor(host.clientWidth || 300));
+  const left = 52;
+  const right = 4;
+  const top = 8;
+  const plotH = 150;
+  const axisH = 24;
+  const plotW = width - left - right;
+  const values = days.map((d) => Number(d.net));
+  let hi = niceCeil(Math.max(0, ...values));
+  let lo = -niceCeil(-Math.min(0, ...values));
+  if (hi === 0 && lo === 0) hi = 1;
+  const y = (v) => top + ((hi - v) / (hi - lo)) * plotH;
+  const band = plotW / days.length;
+  const barW = Math.max(1, Math.min(24, band - 2)); // 2 px de aire entre barras
+  const chart = svg("svg", {
+    viewBox: `0 0 ${width} ${top + plotH + axisH}`,
+    height: top + plotH + axisH,
+    role: "img",
+    tabindex: "0",
+    "aria-label": "Ganancia por día. Usa las flechas para recorrer los días; la tabla de debajo tiene los mismos datos.",
+  });
+
+  for (const v of [hi, lo]) {
+    if (v === 0) continue;
+    chart.append(svg("line", { class: "grid", x1: left, x2: width - right, y1: y(v) + 0.5, y2: y(v) + 0.5 }));
+  }
+  for (const v of new Set([hi, 0, lo])) {
+    const label = svg("text", { class: "tick", x: left - 8, y: y(v) + 4, "text-anchor": "end" });
+    label.textContent = v === 0 ? "$0" : fmt.money(v, true);
+    chart.append(label);
+  }
+
+  const bars = [];
+  days.forEach((d, i) => {
+    const v = Number(d.net);
+    if (!v) {
+      bars.push(null);
+      return;
+    }
+    const x = left + i * band + (band - barW) / 2;
+    const y0 = y(0);
+    const y1 = y(v);
+    const h = Math.abs(y1 - y0);
+    const r = Math.min(4, barW / 2, h);
+    // Esquinas redondeadas solo en la punta; la base, recta sobre el cero.
+    const path =
+      v > 0
+        ? `M${x},${y0} V${y1 + r} Q${x},${y1} ${x + r},${y1} H${x + barW - r} Q${x + barW},${y1} ${x + barW},${y1 + r} V${y0} Z`
+        : `M${x},${y0} V${y1 - r} Q${x},${y1} ${x + r},${y1} H${x + barW - r} Q${x + barW},${y1} ${x + barW},${y1 - r} V${y0} Z`;
+    const bar = svg("path", { class: `bar ${v > 0 ? "gain" : "loss"}`, d: path });
+    chart.append(bar);
+    bars.push(bar);
+  });
+  chart.append(svg("line", { class: "base", x1: left, x2: width - right, y1: y(0) + 0.5, y2: y(0) + 0.5 }));
+
+  // Con 7 días se rotula cada uno; con más, el primero, el del medio y el último.
+  const dense = days.length > 7;
+  const last = days.length - 1;
+  const ticks = dense ? [0, Math.floor(last / 2), last] : days.map((_, i) => i);
+  for (const i of ticks) {
+    const edge = dense && (i === 0 || i === last);
+    const x = edge ? (i === 0 ? left : width - right) : left + (i + 0.5) * band;
+    const anchor = edge ? (i === 0 ? "start" : "end") : "middle";
+    const label = svg("text", { class: "tick", x, y: top + plotH + 17, "text-anchor": anchor });
+    const options = dense ? { day: "numeric", month: "short" } : { weekday: "short", day: "numeric" };
+    label.textContent = dayLabel(days[i].date, options).replace(",", "");
+    chart.append(label);
+  }
+
+  const cross = svg("line", { class: "cross", y1: top, y2: top + plotH, visibility: "hidden" });
+  chart.append(cross);
+  const hit = svg("rect", { x: left, y: top, width: plotW, height: plotH, fill: "transparent" });
+  chart.append(hit);
+
+  const tip = el("div", { class: "chart-tip", hidden: true });
+  let selected = null;
+  const select = (i) => {
+    selected = i;
+    host.classList.toggle("selecting", i != null);
+    bars.forEach((bar, j) => bar && bar.classList.toggle("on", j === i));
+    if (i == null) {
+      tip.hidden = true;
+      cross.setAttribute("visibility", "hidden");
+      return;
+    }
+    const d = days[i];
+    const cx = left + (i + 0.5) * band;
+    cross.setAttribute("x1", cx);
+    cross.setAttribute("x2", cx);
+    cross.setAttribute("visibility", "visible");
+    const detail = d.markets
+      ? `${plural(d.markets, "mercado", "mercados")} · ${d.wins} ganados · ${d.losses} perdidos`
+      : "sin mercados cerrados";
+    tip.replaceChildren(
+      el("b", { text: fmt.money(d.net, true) }),
+      el("span", { text: `${dayLabel(d.date, { weekday: "short", day: "numeric", month: "short" })} · ${detail}` }),
+    );
+    tip.hidden = false;
+    const half = tip.offsetWidth / 2;
+    tip.style.left = `${Math.min(Math.max(cx, half), width - half)}px`;
+  };
+  const indexAt = (event) => {
+    const box = chart.getBoundingClientRect();
+    const x = ((event.clientX - box.left) / box.width) * width;
+    return Math.min(days.length - 1, Math.max(0, Math.floor((x - left) / band)));
+  };
+  hit.addEventListener("pointerdown", (event) => select(indexAt(event)));
+  hit.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "mouse" || event.buttons) select(indexAt(event));
+  });
+  hit.addEventListener("pointerleave", (event) => {
+    if (event.pointerType === "mouse") select(null);
+  });
+  chart.addEventListener("focus", () => {
+    if (selected == null) {
+      const last = days.map((d) => d.markets > 0).lastIndexOf(true);
+      select(last >= 0 ? last : days.length - 1);
+    }
+  });
+  chart.addEventListener("blur", () => select(null));
+  chart.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      const step = event.key === "ArrowLeft" ? -1 : 1;
+      select(Math.min(days.length - 1, Math.max(0, (selected ?? days.length - 1) + step)));
+    } else if (event.key === "Escape") {
+      select(null);
+    }
+  });
+  host.replaceChildren(chart, tip);
+}
+
+window.addEventListener("resize", () => {
+  const c = state.resultsChart;
+  if (!c || state.view !== "results" || !c.host.isConnected || c.host.clientWidth === c.width) return;
+  c.width = c.host.clientWidth;
+  drawDailyChart(c.host, c.days);
+});
 
 document.addEventListener("DOMContentLoaded", init);

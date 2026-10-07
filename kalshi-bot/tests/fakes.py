@@ -85,6 +85,8 @@ class FakeKalshi:
         self.positions: dict = {}
         self.orders: dict = {}
         self.fills: list = []
+        self.fill_history: list = []  # Fill ya interpretados (para resultados)
+        self.settlements: list = []  # Settlement (para resultados)
         self.created: list = []
         self.cancelled: list = []
         self.cancel_all_calls = 0
@@ -170,6 +172,16 @@ class FakeKalshi:
         assert self.authenticated, "get_positions sin credenciales"
         self._maybe_fail("get_positions")
         return {t: p for t, p in self.positions.items() if p.position != 0}
+
+    def get_fill_history(self, *, min_ts=None, max_pages=50):
+        assert self.authenticated, "get_fill_history sin credenciales"
+        self._maybe_fail("get_fill_history")
+        return [f for f in self.fill_history if min_ts is None or f.time is None or f.time.timestamp() >= min_ts]
+
+    def get_settlements(self, *, min_ts=None, max_pages=20):
+        assert self.authenticated, "get_settlements sin credenciales"
+        self._maybe_fail("get_settlements")
+        return [s for s in self.settlements if min_ts is None or s.time is None or s.time.timestamp() >= min_ts]
 
     def set_position(self, ticker, contracts, exposure="0"):
         self.positions[ticker] = Position(ticker, Decimal(str(contracts)), Decimal(exposure), Decimal(0), Decimal(0))

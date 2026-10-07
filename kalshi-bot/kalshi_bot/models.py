@@ -357,6 +357,92 @@ class Position:
         )
 
 
+# Campos antiguos de los llenados: comprar YES / vender NO = bid; vender YES / comprar NO = ask.
+_LEGACY_SIDES = {("buy", "yes"): BID, ("sell", "no"): BID, ("sell", "yes"): ASK, ("buy", "no"): ASK}
+
+
+@dataclass
+class Fill:
+    """Un llenado de tu cuenta, visto desde YES (BID = compra YES o vende NO)."""
+
+    ticker: str
+    side: str  # BID / ASK
+    price: Decimal  # precio YES
+    count: Decimal
+    fee: Decimal  # dólares
+    time: Optional[datetime]
+    order_id: str = ""
+
+    @classmethod
+    def from_api(cls, d: dict) -> Optional["Fill"]:
+        side = d.get("book_side")
+        if side not in (BID, ASK):
+            side = _LEGACY_SIDES.get((d.get("action"), d.get("side")))
+        price = to_decimal(d.get("yes_price_dollars"))
+        if price is None and d.get("yes_price") is not None:
+            price = to_decimal(d.get("yes_price"), ZERO) / 100
+        count = to_decimal(d.get("count_fp"), to_decimal(d.get("count")))
+        ticker = d.get("ticker") or d.get("market_ticker")
+        if side is None or price is None or count is None or count <= 0 or not ticker:
+            return None
+        return cls(
+            ticker=ticker,
+            side=side,
+            price=price,
+            count=count,
+            fee=to_decimal(d.get("fee_cost"), ZERO),
+            time=parse_time(d.get("created_time")) or parse_time(d.get("ts")),
+            order_id=d.get("order_id") or "",
+        )
+
+
+@dataclass
+class Settlement:
+    """Un mercado liquidado en el que tenías contratos."""
+
+    ticker: str
+    event_ticker: str
+    result: str  # "yes", "no" o "scalar"
+    yes_count: Decimal
+    no_count: Decimal
+    cost: Decimal  # lo que costaron los contratos que tenías al liquidarse
+    payout: Decimal  # lo que cobraste
+    fees: Decimal
+    time: Optional[datetime]
+    yes_value: Optional[Decimal] = None  # lo que pagó cada contrato YES (dólares)
+
+    @classmethod
+    def from_api(cls, d: dict) -> "Settlement":
+        def dollars(key: str) -> Decimal:
+            value = to_decimal(d.get(f"{key}_dollars"))
+            return value if value is not None else to_decimal(d.get(key), ZERO) / 100
+
+        value = to_decimal(d.get("value"))
+        return cls(
+            ticker=d.get("ticker", ""),
+            event_ticker=d.get("event_ticker", ""),
+            result=str(d.get("market_result") or ""),
+            yes_count=to_decimal(d.get("yes_count_fp"), to_decimal(d.get("yes_count"), ZERO)),
+            no_count=to_decimal(d.get("no_count_fp"), to_decimal(d.get("no_count"), ZERO)),
+            cost=dollars("yes_total_cost") + dollars("no_total_cost"),
+            payout=dollars("revenue"),
+            fees=to_decimal(d.get("fee_cost"), ZERO),
+            time=parse_time(d.get("settled_time")),
+            yes_value=value / 100 if value is not None else None,
+        )
+
+    @property
+    def position(self) -> Decimal:
+        """Contratos al liquidarse, vistos desde YES (+YES / −NO)."""
+        return self.yes_count - self.no_count
+
+    def yes_payout(self) -> Decimal:
+        """Lo que cobró cada contrato YES."""
+        if self.yes_value is not None:
+            return self.yes_value
+        return ONE if self.result == "yes" else ZERO
+
+
 @dataclass
 class Order:
     """Orden existente en el exchange (o simulada en modo dry-run)."""

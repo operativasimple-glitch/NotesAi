@@ -19,6 +19,11 @@
   --radius: 16px;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 2px 6px rgba(16, 24, 40, 0.05);
   --tabbar-h: 62px;
+  /* Gráfico de resultados: azul = ganancia, rojo = pérdida (pareja validada para daltonismo). */
+  --chart-gain: #2a78d6;
+  --chart-loss: #e34948;
+  --chart-grid: #e4e6ed;
+  --chart-base: #b9bdc9;
   color-scheme: light dark;
 }
 
@@ -42,6 +47,10 @@
     --blue: #6aa8ff;
     --blue-soft: #14243d;
     --shadow: none;
+    --chart-gain: #3987e5;
+    --chart-loss: #e66767;
+    --chart-grid: #272c3b;
+    --chart-base: #4a5168;
   }
 }
 
@@ -95,7 +104,7 @@ main { max-width: 640px; margin: 0 auto; padding: 0 16px 16px; }
   bottom: 0;
   z-index: 20;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   padding-bottom: env(safe-area-inset-bottom);
   background: var(--card);
@@ -120,6 +129,7 @@ main { max-width: 640px; margin: 0 auto; padding: 0 16px 16px; }
   -webkit-tap-highlight-color: transparent;
 }
 .tab svg { width: 24px; height: 24px; fill: currentColor; stroke: currentColor; }
+.tab span { max-width: 100%; font-size: 10.5px; letter-spacing: -0.01em; white-space: nowrap; }
 .tab.active { color: var(--accent); }
 
 /* --- tarjetas, listas, estadísticas --------------------------------------------- */
@@ -402,3 +412,47 @@ td.neg { background: var(--red-soft); }
 }
 .diag-list li.fail .diag-icon { background: var(--red); }
 .item-sub.wrap { white-space: normal; overflow: visible; text-overflow: clip; }
+
+/* ---------- resultados ---------- */
+#results-body { transition: opacity 0.2s; }
+#results-body.refreshing { opacity: 0.55; }
+.hero-figure { font-size: 46px; font-weight: 750; letter-spacing: -0.03em; line-height: 1.1; margin: 4px 0 6px; }
+.results-hero p { margin: 8px 0 0; }
+.legend { display: flex; gap: 14px; font-size: 12px; color: var(--muted); margin: 4px 0 2px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+.legend i.gain { background: var(--chart-gain); }
+.legend i.loss { background: var(--chart-loss); }
+.chart { position: relative; margin-top: 6px; touch-action: pan-y; }
+.chart svg { display: block; width: 100%; overflow: visible; }
+.chart svg:focus { outline: none; }
+.chart svg:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 6px; }
+.chart .grid { stroke: var(--chart-grid); stroke-width: 1; }
+.chart .base { stroke: var(--chart-base); stroke-width: 1; }
+.chart .cross { stroke: var(--muted); stroke-width: 1; }
+.chart .tick { fill: var(--muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.chart .bar.gain { fill: var(--chart-gain); }
+.chart .bar.loss { fill: var(--chart-loss); }
+.chart .bar { transition: opacity 0.15s; }
+.chart.selecting .bar { opacity: 0.35; }
+.chart.selecting .bar.on { opacity: 1; }
+.chart-tip {
+  position: absolute;
+  top: -6px;
+  transform: translate(-50%, -100%);
+  background: var(--card);
+  color: var(--text);
+  border-radius: 10px;
+  padding: 6px 10px;
+  box-shadow: 0 4px 16px rgba(16, 24, 40, 0.18);
+  border: 1px solid var(--line);
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 2;
+}
+.chart-tip b { display: block; font-size: 15px; font-variant-numeric: tabular-nums; }
+.chart-tip span { color: var(--muted); }
+.results-table td:last-child { color: var(--text); font-weight: 600; }
+.results-table td.pos, .results-table td.neg { background: none; }
+.item-side .tag { font-size: 12px; color: var(--muted); }

@@ -16,7 +16,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from kalshi_bot.client import KalshiAPIError
 from kalshi_bot.config import write_overrides
 from kalshi_bot.controller import BotController
-from kalshi_bot.models import ASK, BID
+from kalshi_bot.models import ASK, BID, Fill, Settlement
 from kalshi_bot.web import server as web_server
 from kalshi_bot.web.server import Sessions, make_server
 
@@ -399,3 +399,30 @@ def test_credentials_reject_a_private_key_in_the_key_id_field(panel, pem):
     panel.login()
     status, body, _ = panel.call("POST", "/api/credentials", {"key_id": pem, "private_key": pem, "env": "demo"})
     assert status == 400 and "Key ID" in body["error"]
+
+
+def test_results_api(panel, pem):
+    panel.login()
+    status, body, _ = panel.call("GET", "/api/results")
+    assert status == 400 and "API key" in body["error"]
+    panel.call("POST", "/api/credentials", {"key_id": "abc12345", "private_key": pem, "env": "demo"})
+    now = datetime.now(timezone.utc)
+    panel.fake.fill_history = [Fill(T, BID, D("0.92"), D("5"), D("0.01"), now - timedelta(hours=3))]
+    panel.fake.settlements = [
+        Settlement.from_api(
+            {
+                "ticker": T,
+                "market_result": "yes",
+                "yes_count_fp": "5.00",
+                "yes_total_cost_dollars": "4.60",
+                "revenue": 500,
+                "fee_cost": "0.01",
+                "settled_time": (now - timedelta(hours=1)).isoformat(),
+            }
+        )
+    ]
+    status, body, _ = panel.call("GET", "/api/results?days=500&tz=300")
+    assert status == 200 and body["days"] == 90 and len(body["by_day"]) == 90
+    assert D(body["totals"]["net"]) == D("0.39") and body["totals"]["wins"] == 1
+    assert body["recent"][0]["title"] == "¿Mercado de prueba?" and body["by_category"][0]["key"] == "otros"
+    assert panel.call("GET", "/api/results?days=semana")[0] == 400

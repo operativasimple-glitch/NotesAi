@@ -38,6 +38,7 @@ from .engine import Bot, DryRunExecutor, Journal, LiveExecutor
 from .fees import MAKER_FEE_RATE, TAKER_FEE_RATE
 from .models import ASK, BID, GTC, IOC, ONE, OrderIntent, ceil_to_tick, floor_to_tick, to_decimal
 from .research import run_research, run_sweep
+from .results import build_results
 from .risk import RiskManager
 from .scanner import ScanParams, run_scan
 from .strategies import BUILTIN, build_strategy
@@ -185,6 +186,7 @@ class BotController:
         self._balance_cache: tuple = (0.0, None, None)  # (instante, saldo, error)
         self.logs = LogBuffer()
         self.jobs = {"scan": Job("scan"), "research": Job("research"), "sweep": Job("sweep")}
+        self._results_cache: dict = {}  # (días, zona horaria) -> (instante, resultado)
         config_dir = Path(config_path).resolve().parent if config_path else Path.cwd()
         load_dotenv(config_dir / ".env")
         self.data_dir = data_dir_from_env(config_dir)
@@ -257,12 +259,14 @@ class BotController:
         except ValueError as exc:
             raise ControllerError(str(exc)) from exc
         log.info("Credenciales guardadas desde el panel (entorno %s)", env)
+        self._results_cache = {}
         return self.credentials_info()
 
     def delete_credentials(self) -> dict:
         if self.is_running():
             raise ControllerError("Detén el bot antes de borrar las credenciales")
         delete_panel_credentials(self.data_dir)
+        self._results_cache = {}
         return self.credentials_info()
 
     def set_env(self, env: str) -> dict:
@@ -272,6 +276,7 @@ class BotController:
         if self.is_running():
             raise ControllerError("Detén el bot antes de cambiar de entorno")
         save_panel_env(self.data_dir, env)
+        self._results_cache = {}
         return self.credentials_info()
 
     # --- ciclo de vida del bot ---------------------------------------------------
@@ -475,6 +480,21 @@ class BotController:
             }
             for p in sorted(client.get_positions().values(), key=lambda p: p.ticker)
         ]
+
+    def results(self, days: Any = 30, tz_offset_minutes: Any = 0) -> dict:
+        """Lo ganado o perdido en los mercados cerrados de los últimos `days` días."""
+        try:
+            days, tz = int(days), int(tz_offset_minutes)
+        except (TypeError, ValueError) as exc:
+            raise ControllerError("Periodo no válido") from exc
+        days, tz = min(max(days, 1), 90), min(max(tz, -14 * 60), 14 * 60)
+        cached = self._results_cache.get((days, tz))
+        if cached and time.monotonic() - cached[0] < 20:
+            return cached[1]
+        client = self.client(require_auth=True)
+        data = build_results(client, now=datetime.now(timezone.utc), days=days, tz_offset_minutes=tz)
+        self._results_cache = {(days, tz): (time.monotonic(), data)}
+        return data
 
     def orders(self) -> list:
         settings = self.settings()

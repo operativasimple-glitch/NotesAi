@@ -75,6 +75,16 @@
         </div>
       </section>
 
+      <!-- RESULTADOS -->
+      <section id="view-results" class="view" data-title="Resultados" hidden>
+        <div class="segmented" id="results-period" role="group" aria-label="Periodo">
+          <button type="button" data-days="7">7 días</button>
+          <button type="button" data-days="30">30 días</button>
+          <button type="button" data-days="90">90 días</button>
+        </div>
+        <div id="results-body"></div>
+      </section>
+
       <!-- MERCADOS -->
       <section id="view-markets" class="view" data-title="Mercados" hidden>
         <form id="market-search" class="search">
@@ -182,6 +192,10 @@
       <button class="tab active" data-view="home" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>
         <span>Inicio</span>
+      </button>
+      <button class="tab" data-view="results" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 6-6 4 4 8-8M15 7h6v6" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <span>Resultados</span>
       </button>
       <button class="tab" data-view="markets" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16V9m6 7V5m6 11v-6" fill="none" stroke-width="2.2" stroke-linecap="round"/></svg>
