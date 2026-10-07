@@ -329,3 +329,15 @@ def test_cli_series_and_research_by_category(fake_cli, capsys):
     assert set(lines) == {"KXINX", "KXNASDAQ100"} and "TODAS JUNTAS" in captured.out
 
     assert cli.main(["research", "--category", "Nada"]) == 1
+
+
+def test_series_rules_in_config(clean_env):
+    s = load_settings()
+    assert s.engine.series_rules == {"KXHIGH": {"max_hours_to_close": 40.0, "max_markets_per_event": 4}}
+    rules = {"kxinx": {"max_hours_to_close": "8", "max_markets_per_event": "2"}}
+    s = load_settings(overrides={"markets": {"series_rules": rules}})
+    assert s.engine.series_rules == {"KXINX": {"max_hours_to_close": 8.0, "max_markets_per_event": 2}}
+    assert s.engine.market_filter().rule("KXINXU", "max_markets_per_event") == 2
+    for bad in ({"KXA": {"velocidad": 1}}, {"KXA": 3}, "KXA"):
+        with pytest.raises(ConfigError, match="series_rules"):
+            load_settings(overrides={"markets": {"series_rules": bad}})

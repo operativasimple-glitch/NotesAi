@@ -20,7 +20,7 @@ log_dir = "logs"                 # aquí van bot.log y journal.jsonl
 series = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
 max_hours_to_close = 6           # solo partidos que terminan en las próximas 6 h (en juego o a punto de empezar)
 min_hours_to_close = 0           # el riesgo deja de operar 15 min antes del final previsto
-max_markets = 15                 # como mucho, los N de más volumen
+max_markets = 20                 # como mucho, los N de más volumen
 max_markets_per_event = 1        # uno por evento: cada partido tiene dos mercados que son la misma apuesta
 min_volume_24h = 1000            # volumen mínimo en las últimas 24 h (contratos)
 exclude_series = []              # series a evitar
@@ -30,6 +30,11 @@ closing_within_hours = 0
 tickers = []
 events = []
 refresh_minutes = 5              # cada cuánto se vuelve a buscar mercados
+
+# Ajustes propios por serie (por el principio del ticker). El clima abre la víspera y cierra a
+# medianoche (hora local), con varios tramos de temperatura por día:
+[markets.series_rules]
+KXHIGH = { max_hours_to_close = 40, max_markets_per_event = 4 }
 
 [risk]
 max_order_contracts = 10         # contratos por orden (con menos, el redondeo de la comisión pesa)

@@ -105,6 +105,27 @@ def test_discover_markets_closing_soon_one_per_event():
     assert query["status"] is None and query["max_close_ts"] == int((NOW + timedelta(hours=48 + 72)).timestamp())
 
 
+def test_series_rules_give_weather_its_own_window_and_markets_per_event():
+    fake = FakeKalshi(
+        markets=[closing_in(f"KXHIGHNY-26OCT08-B{i}", 30, str(900 - i), "KXHIGHNY-26OCT08") for i in range(6)]
+        + [
+            closing_in("KXNFLGAME-26OCT08-DAL", 30, "5000", "KXNFLGAME-26OCT08"),  # termina en 30 h: aún no
+            closing_in("KXNFLGAME-26OCT07-KC", 3, "4000", "KXNFLGAME-26OCT07"),
+            closing_in("KXNFLGAME-26OCT07-BUF", 3, "3000", "KXNFLGAME-26OCT07"),  # mismo partido
+        ]
+    )
+    flt = MarketFilter(
+        series=["KXHIGHNY", "KXNFLGAME"],
+        max_hours_to_close=6,
+        max_markets=20,
+        max_markets_per_event=1,
+        series_rules={"KXHIGH": {"max_hours_to_close": 40, "max_markets_per_event": 4}},
+    )
+    found = [m.ticker for m in discover(fake, flt, NOW)]
+    assert found == ["KXNFLGAME-26OCT07-KC"] + [f"KXHIGHNY-26OCT08-B{i}" for i in range(4)]
+    assert flt.rule("KXHIGHNY", "max_hours_to_close") == 40 and flt.rule("KXNFLGAME", "max_hours_to_close") == 6
+
+
 def test_markets_end_at_the_expected_end_when_it_comes_first():
     game = make_market(
         "KXMLBGAME-26OCT07-CWS",

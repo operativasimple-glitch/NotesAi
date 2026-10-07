@@ -34,6 +34,7 @@ except ModuleNotFoundError:  # pragma: no cover - Python 3.10
 
 from .auth import KalshiSigner, canonical_pem
 from .client import ENVIRONMENTS, FALLBACK_URLS, KalshiClient
+from .discovery import RULE_KEYS
 from .engine import EngineConfig
 from .models import to_decimal
 from .risk import RiskLimits
@@ -42,6 +43,9 @@ log = logging.getLogger(__name__)
 
 # Partidos (quién gana): donde la prueba con datos reales dio ventaja. Ver INVESTIGACION.md.
 DEFAULT_SERIES = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
+# El clima abre la víspera y cierra a medianoche (hora local), con varios tramos de
+# temperatura por día: necesita una ventana más larga y más de un mercado por evento.
+DEFAULT_SERIES_RULES = {"KXHIGH": {"max_hours_to_close": 40, "max_markets_per_event": 4}}
 
 CREDENTIALS_FILE = "credentials.json"
 KEY_FILE = "kalshi-key.pem"
@@ -70,6 +74,7 @@ KNOWN_KEYS = {
         "max_hours_to_close",
         "min_volume_24h",
         "exclude_series",
+        "series_rules",
         "refresh_minutes",
     },
     "risk": {
@@ -182,6 +187,7 @@ class Settings:
                 "max_hours_to_close": e.max_hours_to_close,
                 "min_volume_24h": e.min_volume_24h,
                 "exclude_series": list(e.exclude_series),
+                "series_rules": {k: dict(v) for k, v in e.series_rules.items()},
             },
             "risk": {
                 "max_order_contracts": r.max_order_contracts,
@@ -231,6 +237,27 @@ def _list(value: Any, name: str) -> list:
     if not isinstance(value, list):
         raise ConfigError(f"'{name}' debe ser una lista, p. ej. [\"ABC\"]")
     return [str(v).strip() for v in value if str(v).strip()]
+
+
+def _series_rules(value: Any) -> dict:
+    """[markets.series_rules]: {prefijo: {min_hours_to_close, max_hours_to_close, max_markets_per_event}}."""
+    if not value:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError("series_rules debe ser una tabla, p. ej. KXHIGH = { max_hours_to_close = 40 }")
+    rules = {}
+    for prefix, values in value.items():
+        name = f"series_rules.{prefix}"
+        if not isinstance(values, dict):
+            raise ConfigError(f"{name} debe ser una tabla, p. ej. {{ max_hours_to_close = 40 }}")
+        unknown = set(values) - set(RULE_KEYS)
+        if unknown:
+            raise ConfigError(f"{name}: claves desconocidas ({', '.join(sorted(unknown))})")
+        rules[str(prefix).strip().upper()] = {
+            key: _num(val, f"{name}.{key}", int if key == "max_markets_per_event" else float)
+            for key, val in values.items()
+        }
+    return rules
 
 
 def _section(data: dict, name: str) -> dict:
@@ -405,13 +432,14 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
         tickers=_list(markets.get("tickers"), "tickers"),
         series=_list(markets.get("series", DEFAULT_SERIES), "series"),
         events=_list(markets.get("events"), "events"),
-        max_markets=_num(markets.get("max_markets", 15), "max_markets", int),
+        max_markets=_num(markets.get("max_markets", 20), "max_markets", int),
         min_hours_to_close=_num(markets.get("min_hours_to_close", 0), "min_hours_to_close"),
         max_hours_to_close=_num(markets.get("max_hours_to_close", 6), "max_hours_to_close"),
         min_volume_24h=_dec(markets.get("min_volume_24h", 1000), "min_volume_24h"),
         closing_within_hours=_num(markets.get("closing_within_hours", 0), "closing_within_hours"),
         max_markets_per_event=_num(markets.get("max_markets_per_event", 1), "max_markets_per_event", int),
         exclude_series=_list(markets.get("exclude_series"), "exclude_series"),
+        series_rules=_series_rules(markets.get("series_rules", DEFAULT_SERIES_RULES)),
         refresh_markets_minutes=_num(markets.get("refresh_minutes", 5), "refresh_minutes"),
     )
     if engine.poll_interval < 1:

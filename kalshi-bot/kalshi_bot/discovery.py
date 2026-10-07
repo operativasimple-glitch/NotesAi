@@ -15,6 +15,8 @@ log = logging.getLogger(__name__)
 # En deportes el cierre oficial llega hasta ~3 días después del partido: se pide
 # a la API un margen y se filtra después por el fin previsto (Market.ends_at).
 CLOSE_BUFFER_HOURS = 72
+# Lo que una regla por serie puede cambiar (ver MarketFilter.series_rules).
+RULE_KEYS = ("min_hours_to_close", "max_hours_to_close", "max_markets_per_event")
 
 
 @dataclass
@@ -28,10 +30,21 @@ class MarketFilter:
     max_markets: int = 10
     max_markets_per_event: int = 0  # 0 = sin límite
     exclude_series: list = field(default_factory=list)
+    # Ajustes propios por prefijo de serie, p. ej. el clima (abre la víspera y tiene
+    # varios tramos de temperatura por día): {"KXHIGH": {"max_hours_to_close": 40}}.
+    series_rules: dict = field(default_factory=dict)
 
     @property
     def searches(self) -> bool:
         return bool(self.series or self.events or self.closing_within_hours > 0)
+
+    def rule(self, series: str, key: str):
+        """El ajuste `key` para esta serie: el de la regla de prefijo más largo, o el general."""
+        best_prefix, value = "", getattr(self, key)
+        for prefix, values in self.series_rules.items():
+            if series.startswith(prefix) and key in values and len(prefix) > len(best_prefix):
+                best_prefix, value = prefix, values[key]
+        return value
 
 
 def passes(market: Market, flt: MarketFilter, now: datetime) -> bool:
@@ -39,9 +52,10 @@ def passes(market: Market, flt: MarketFilter, now: datetime) -> bool:
         return False
     hours = market.hours_to_close(now)
     if hours is not None:
-        if hours < flt.min_hours_to_close:
+        if hours < flt.rule(market.series, "min_hours_to_close"):
             return False
-        if flt.max_hours_to_close and hours > flt.max_hours_to_close:
+        max_hours = flt.rule(market.series, "max_hours_to_close")
+        if max_hours and hours > max_hours:
             return False
         if flt.closing_within_hours > 0 and hours > flt.closing_within_hours:
             return False
@@ -76,7 +90,8 @@ def discover(client, flt: MarketFilter, now: datetime, *, exclude: Iterable = ()
         if len(selected) >= max(0, flt.max_markets):
             break
         count = per_event.get(market.event_ticker, 0)
-        if flt.max_markets_per_event and count >= flt.max_markets_per_event:
+        per_event_limit = flt.rule(market.series, "max_markets_per_event")
+        if per_event_limit and count >= per_event_limit:
             continue
         per_event[market.event_ticker] = count + 1
         selected.append(market)
