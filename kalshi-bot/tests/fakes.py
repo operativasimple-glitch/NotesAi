@@ -93,6 +93,7 @@ class FakeKalshi:
         self.trades: dict = {}  # ticker -> operaciones públicas
         self.events = None  # eventos con mercados anidados (para el escáner)
         self.series_info: dict = {}  # ticker de serie -> datos (título, categoría)
+        self.series_list: list = []  # lo que devuelve GET /series
         self.market_queries: list = []
         self._next_id = 1
 
@@ -141,6 +142,9 @@ class FakeKalshi:
 
     def get_series(self, ticker):
         return dict(self.series_info.get(ticker, {}))
+
+    def get_series_list(self, category=None, include_volume=True):
+        return [dict(s) for s in self.series_list if category is None or category in s.get("categories", [])]
 
     def get_orderbook(self, ticker, depth=0):
         return self.books[ticker]

@@ -245,3 +245,11 @@ def test_falls_back_to_the_other_official_host_on_connection_errors():
         assert len(session.calls) == 1
     finally:
         client_module._working_url.clear()
+
+
+def test_series_list_is_public_and_filtered_by_category():
+    client, session, _ = make_client([FakeResponse(200, {"series": [{"ticker": "KXINX", "volume_fp": "10.00"}]})])
+    assert client.get_series_list(category="Financials") == [{"ticker": "KXINX", "volume_fp": "10.00"}]
+    call = session.calls[0]
+    assert call["url"] == BASE + "/series" and call["params"] == {"category": "Financials", "include_volume": "true"}
+    assert "KALSHI-ACCESS-KEY" not in call["headers"]

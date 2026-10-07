@@ -303,17 +303,26 @@ def run_research(
     progress: Optional[Callable[[int, int], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> dict:
-    """Descarga mercados liquidados (y sus operaciones) y devuelve el informe."""
-    markets = client.get_markets(
-        status="settled",
-        series_ticker=series or None,
-        mve_filter=None if series else "exclude",
-        limit=200,
-        max_pages=max(1, -(-max_markets // 200)),
-    )
-    markets = [m for m in markets if m.result in ("yes", "no") and m.market_type == "binary"][:max_markets]
+    """Descarga mercados liquidados (y sus operaciones) y devuelve el informe.
+
+    `series` admite varias separadas por comas: entonces se analizan hasta
+    `max_markets` de cada una y el informe suma todas (con el detalle por serie).
+    """
+    names = [s.strip().upper() for s in (series or "").split(",") if s.strip()]
+    plan: list = []
+    for name in names or [None]:
+        found = client.get_markets(
+            status="settled",
+            series_ticker=name,
+            mve_filter=None if name else "exclude",
+            limit=200,
+            max_pages=max(1, -(-max_markets // 200)),
+        )
+        found = [m for m in found if m.result in ("yes", "no") and m.market_type == "binary"][:max_markets]
+        plan += [(name, m) for m in found]
     research = Research()
-    for i, market in enumerate(markets, start=1):
+    by_series = {name: Research() for name in names} if len(names) > 1 else {}
+    for i, (name, market) in enumerate(plan, start=1):
         if should_stop and should_stop():
             break
         max_ts = None
@@ -325,12 +334,15 @@ def run_research(
             log.warning("No se pudieron leer las operaciones de %s: %s", market.ticker, exc)
             continue
         research.add_market(market.result, trades, group=market.event_ticker)
+        if name in by_series:
+            by_series[name].add_market(market.result, trades, group=market.event_ticker)
         if progress:
-            progress(i, len(markets))
+            progress(i, len(plan))
     report = research.report()
     report.update(
         {
-            "series": series or "(todas)",
+            "series": ", ".join(names) or "(todas)",
+            "by_series": {name: r.band_summary() for name, r in by_series.items()},
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "skip_last_minutes": skip_last_minutes,
         }

@@ -6,15 +6,21 @@ name: "Kalshi: ¿gana el bot?"
 on:
   workflow_dispatch:
     inputs:
-      series_count:
-        description: Series a comparar
-        default: "15"
-      per_series:
-        description: Mercados liquidados por serie
-        default: "400"
-      markets:
-        description: Mercados recientes para la investigación general
-        default: "1000"
+      sports:
+        description: Series de partidos a analizar (separadas por comas)
+        default: KXNFLGAME,KXMLBGAME,KXNBAGAME,KXNHLGAME,KXNCAAFGAME
+      sports_markets:
+        description: Mercados liquidados por serie de partidos
+        default: "800"
+      category:
+        description: Categoría extra (sus series más negociadas)
+        default: Financials
+      category_markets:
+        description: Mercados liquidados por serie de esa categoría
+        default: "1500"
+      sweep:
+        description: Repetir también el barrido de series activas (yes/no)
+        default: "no"
   push:
     branches: [claude/kalshi-bot-kjmcj6]
     paths:
@@ -30,15 +36,17 @@ concurrency:
 jobs:
   research:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    timeout-minutes: 120
     defaults:
       run:
         working-directory: kalshi-bot
     env:
       KALSHI_ENV: prod
-      SERIES_COUNT: ${{ inputs.series_count || '15' }}
-      PER_SERIES: ${{ inputs.per_series || '400' }}
-      MARKETS: ${{ inputs.markets || '1000' }}
+      SPORTS: ${{ inputs.sports || 'KXNFLGAME,KXMLBGAME,KXNBAGAME,KXNHLGAME,KXNCAAFGAME' }}
+      SPORTS_MARKETS: ${{ inputs.sports_markets || '800' }}
+      CATEGORY: ${{ inputs.category || 'Financials' }}
+      CATEGORY_MARKETS: ${{ inputs.category_markets || '1500' }}
+      SWEEP: ${{ inputs.sweep || 'no' }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -47,31 +55,54 @@ jobs:
       - name: Instalar
         run: |
           pip install -r requirements.txt
-          printf '[http]\nreads_per_second = 12\n' > config.toml
+          printf '[http]\nreads_per_second = 10\n' > config.toml
       - name: Conexión con Kalshi
         run: python -m kalshi_bot check
-      - name: Barrido por series (la estrategia del bot)
+      - name: Series más negociadas
         run: |
-          python -m kalshi_bot research --sweep --series-count "$SERIES_COUNT" --per-series "$PER_SERIES" \
-            --json sweep.json | tee sweep.txt
-      - name: Investigación general (todas las series)
-        run: python -m kalshi_bot research --markets "$MARKETS" --json research.json | tee research.txt
+          python -m kalshi_bot series --limit 40
+          python -m kalshi_bot series --category "$CATEGORY" --limit 20
+      - name: Horarios de los mercados (para interpretar los datos)
+        run: |
+          python - <<'PY'
+          from kalshi_bot.config import load_settings
+          client = load_settings().client()
+          for series in ("KXNFLGAME", "KXMLBGAME"):
+              for m in client.get_markets(status="settled", series_ticker=series, limit=4, max_pages=1)[:3]:
+                  raw = m.raw
+                  print(series, m.ticker, "| abre", raw.get("open_time"), "| cierra", raw.get("close_time"),
+                        "| esperado", raw.get("expected_expiration_time"), "| resultado", m.result)
+                  trades = client.get_trades(m.ticker, max_pages=1)
+                  times = sorted(t.get("created_time") for t in trades if t.get("created_time"))
+                  if times:
+                      print("   ", len(trades), "operaciones entre", times[0], "y", times[-1])
+          PY
+      - name: Partidos (ganador)
+        run: |
+          python -m kalshi_bot research --series "$SPORTS" --markets "$SPORTS_MARKETS" \
+            --json sports.json | tee sports.txt
+      - name: Categoría extra (bolsa, etc.)
+        run: |
+          python -m kalshi_bot research --category "$CATEGORY" --top 6 --markets "$CATEGORY_MARKETS" \
+            --json category.json | tee category.txt
+      - name: Barrido de series activas
+        if: env.SWEEP == 'yes'
+        run: python -m kalshi_bot research --sweep --series-count 15 --per-series 400 --json sweep.json | tee sweep.txt
       - name: Resumen
         if: always()
         run: |
           {
             echo '## ¿Gana el bot?'
             echo '```'
-            cat sweep.txt research.txt 2>/dev/null
+            cat sports.txt category.txt sweep.txt 2>/dev/null
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
-          echo "=== JSON barrido ==="; cat sweep.json 2>/dev/null || true
-          echo "=== JSON investigación ==="; cat research.json 2>/dev/null || true
+          for f in sports category sweep; do
+            if [ -f "$f.json" ]; then echo; echo "=== JSON $f ==="; cat "$f.json"; echo; fi
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: kalshi-research
-          path: |
-            kalshi-bot/sweep.*
-            kalshi-bot/research.*
+          path: kalshi-bot/*.json
           if-no-files-found: ignore

@@ -338,6 +338,12 @@ class KalshiClient:
         data = self.request("GET", f"/series/{quote(series_ticker, safe='')}", auth=False)
         return data.get("series") or {}
 
+    def get_series_list(self, category: Optional[str] = None, include_volume: bool = True) -> list:
+        """Todas las series (o las de una categoría, p. ej. "Financials"), con su volumen total."""
+        params = {"category": category, "include_volume": "true" if include_volume else None}
+        data = self.request("GET", "/series", params=params, auth=False)
+        return list(data.get("series") or [])
+
     def get_event(self, event_ticker: str) -> dict:
         data = self.request(
             "GET", f"/events/{quote(event_ticker, safe='')}", params={"with_nested_markets": "true"}, auth=False

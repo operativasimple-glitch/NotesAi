@@ -278,3 +278,48 @@ def test_cli_research_sweep(fake_cli, capsys, tmp_path):
     assert "KXGOOD" in out and "Mejor serie: KXGOOD" in out and "TODAS JUNTAS" in out
     good_line = next(line for line in out.splitlines() if line.startswith("KXGOOD"))
     assert good_line.endswith("dudoso") and "0/12" in good_line
+
+
+def test_cli_series_and_research_by_category(fake_cli, capsys):
+    from .test_favorites_scanner_research import trade
+
+    fake_cli.series_list = [
+        {
+            "ticker": "KXNASDAQ100",
+            "title": "Nasdaq-100 al cierre",
+            "category": "Financials",
+            "categories": ["Financials"],
+            "volume_fp": "900000.00",
+        },
+        {
+            "ticker": "KXINX",
+            "title": "S&P 500 al cierre",
+            "category": "Financials",
+            "categories": ["Financials"],
+            "volume_fp": "2500000.00",
+        },
+        {
+            "ticker": "KXHIGHNY",
+            "title": "Máxima en NYC",
+            "category": "Climate and Weather",
+            "categories": ["Climate and Weather"],
+            "volume_fp": "5000000.00",
+        },
+    ]
+    for series in ("KXINX", "KXNASDAQ100"):
+        for i in range(3):
+            m = make_market(f"{series}-{i}", status="finalized", result="no", event_ticker=f"{series}-E{i}")
+            fake_cli.settled[m.ticker] = m
+            fake_cli.trades[m.ticker] = [trade("0.0500", 10, "yes")]
+
+    assert cli.main(["series", "--category", "Financials"]) == 0
+    out = capsys.readouterr().out
+    assert out.index("KXINX") < out.index("KXNASDAQ100") and "KXHIGHNY" not in out  # por volumen, solo esa categoría
+
+    assert cli.main(["research", "--category", "Financials", "--top", "2", "--markets", "5"]) == 0
+    captured = capsys.readouterr()
+    assert "KXINX, KXNASDAQ100" in captured.err
+    lines = {line.split()[0]: line for line in captured.out.splitlines() if line.startswith(("KXINX", "KXNASDAQ100"))}
+    assert set(lines) == {"KXINX", "KXNASDAQ100"} and "TODAS JUNTAS" in captured.out
+
+    assert cli.main(["research", "--category", "Nada"]) == 1

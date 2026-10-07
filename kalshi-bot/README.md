@@ -82,8 +82,10 @@ chequeo de salud (`/healthz`) y reinicie el bot si se cae.
 El repositorio trae un trabajo de GitHub Actions (`.github/workflows/kalshi-research.yml`) que descarga
 mercados ya liquidados de Kalshi y simula la estrategia del bot: comprar a 88–97¢ como maker, sin los
 últimos 15 minutos antes del cierre, con comisiones. Da el rendimiento por serie con su margen de error y
-solo dice "gana" si no puede ser casualidad. No usa tu clave ni envía órdenes, y en repositorios públicos
-es gratis. El resultado sale en el resumen de cada ejecución, en la pestaña **Actions**.
+solo dice "gana" si no puede ser casualidad. Mide los partidos (NFL, MLB, NBA, NHL y fútbol americano
+universitario) y las series de bolsa más negociadas (Nasdaq-100, S&P 500…). No usa tu clave ni envía
+órdenes, y en repositorios públicos es gratis. El resultado sale en el resumen de cada ejecución, en la
+pestaña **Actions**.
 
 Si prefieres no guardar la clave en el panel, ponla como variables del servidor (`KALSHI_API_KEY_ID`,
 `KALSHI_PRIVATE_KEY` con el PEM y `KALSHI_ENV`). Las variables tienen prioridad sobre el panel.
@@ -199,9 +201,11 @@ python -m kalshi_bot cancel-all                    # cancela las órdenes del bo
 | --- | --- |
 | `web [--host H] [--port P]` | Panel web. Necesita `DASHBOARD_PASSWORD`. |
 | `check` | Conexión, credenciales, saldo y nivel de API. |
+| `series [--category Financials]` | Las series más negociadas, todas o de una categoría. |
 | `events [--series S]` / `markets --series S \| --event E` / `book TICKER` | Explorar mercados. |
 | `scan [--hours 48] [--series S ...]` | Favoritos, spreads amplios y arbitraje en eventos. |
-| `research [--series S] [--markets 150]` | Rendimiento por tramo de precio (taker frente a maker) en mercados liquidados. |
+| `research [--series S,T] [--markets 150]` | Rendimiento por tramo de precio (taker frente a maker) y de la estrategia del bot, con margen de error, en mercados liquidados. |
+| `research --category Financials [--top 8]` | Lo mismo con las series más negociadas de una categoría (p. ej. bolsa). |
 | `research --sweep [--series-count 12]` | Compara las series activas: en cuáles ganan los favoritos y en cuáles no. |
 | `positions` / `orders` | Tus posiciones y órdenes en reposo. |
 | `run [--live] [--once]` | Ejecuta el bot (simulación salvo `--live`). |

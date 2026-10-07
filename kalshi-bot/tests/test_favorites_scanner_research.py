@@ -206,6 +206,20 @@ def test_run_research_with_fake_client():
     assert "Pocos mercados" in report["conclusions"][-1]
 
 
+def test_run_research_over_several_series():
+    fake = FakeKalshi()
+    for series, result in (("KXAAA", "no"), ("KXBBB", "yes")):
+        for i in range(3):
+            m = make_market(f"{series}-{i}", status="finalized", result=result, event_ticker=f"{series}-E{i}")
+            fake.settled[m.ticker] = m
+            fake.trades[m.ticker] = [trade("0.0600", 10, "yes")]  # maker con NO a 94¢
+    report = run_research(fake, series="kxaaa, KXBBB", max_markets=2)
+    assert report["series"] == "KXAAA, KXBBB" and report["markets"] == 4  # 2 por serie
+    by = report["by_series"]
+    assert by["KXAAA"]["return_after_fees"] > 0 > by["KXBBB"]["return_after_fees"]
+    assert report["strategy"]["groups"] == 4 and report["strategy"]["losing_groups"] == 2
+
+
 # --- barrido de series ------------------------------------------------------------
 
 

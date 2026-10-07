@@ -18,7 +18,7 @@ from typing import Optional
 from .client import KalshiAPIError
 from .config import ConfigError, Settings, load_settings
 from .engine import Bot, DryRunExecutor, Journal, LiveExecutor
-from .models import Market
+from .models import Market, to_decimal
 from .research import pct, run_research, run_sweep, verdict
 from .risk import RiskManager
 from .scanner import ScanParams, run_scan
@@ -115,6 +115,28 @@ def cmd_events(settings: Settings, args) -> int:
         ticker, series, title = ev.get("event_ticker") or "", ev.get("series_ticker") or "", ev.get("title") or ""
         print(f"{ticker:<34} {series:<16} {short(title, 70)}")
     print("\nVer sus mercados: python -m kalshi_bot markets --event <EVENTO>")
+    return 0
+
+
+def top_series(client, category: Optional[str], top: int) -> list:
+    """Series ordenadas por volumen total (las más negociadas primero)."""
+    rows = client.get_series_list(category=category)
+    rows.sort(key=lambda r: to_decimal(r.get("volume_fp"), to_decimal(r.get("volume"), Decimal(0))), reverse=True)
+    return rows[:top]
+
+
+def cmd_series(settings: Settings, args) -> int:
+    client = settings.client(settings.signer())
+    rows = top_series(client, args.category, args.limit)
+    if not rows:
+        print("No hay series con ese filtro. Prueba con Financials, Economics, Sports o Climate and Weather.")
+        return 0
+    print(f"{'SERIE':<24} {'CATEGORÍA':<22} {'VOLUMEN':>14}  TÍTULO")
+    for r in rows:
+        ticker, category, title = r.get("ticker") or "", r.get("category") or "", r.get("title") or ""
+        volume = to_decimal(r.get("volume_fp"), to_decimal(r.get("volume"), Decimal(0)))
+        print(f"{ticker:<24} {short(category, 22):<22} {volume:>14,.0f}  {short(title, 60)}")
+    print("\nAnaliza las más negociadas: python -m kalshi_bot research --category <CATEGORÍA> --top 8")
     return 0
 
 
@@ -289,6 +311,13 @@ def cmd_research(settings: Settings, args) -> int:
     client = settings.client(settings.signer())
     if args.sweep:
         return _print_sweep(client, args)
+    if args.category:
+        chosen = [r.get("ticker") for r in top_series(client, args.category, args.top) if r.get("ticker")]
+        if not chosen:
+            print(f"No hay series en la categoría {args.category!r} (mira 'series' para ver las que hay).")
+            return 1
+        print(f"Series más negociadas de {args.category}: {', '.join(chosen)}", file=sys.stderr)
+        args.series = ",".join(chosen)
 
     def progress(done: int, total: int) -> None:
         if done == total or done % 10 == 0:
@@ -304,6 +333,12 @@ def cmd_research(settings: Settings, args) -> int:
     )
     _save_json(report, args.json)
     print(f"\nSerie: {report['series']} | mercados: {report['markets']} | operaciones: {report['trades']}")
+    if report["by_series"]:
+        print("\n" + BAND_HEADER)
+        for name, stats in report["by_series"].items():
+            print(_band_line(name, stats))
+        print(_band_line("TODAS JUNTAS", report["strategy"]))
+        print()
     print(f"{'TRAMO':<10} {'TAKER':>18} {'MAKER':>18} {'TODOS':>18}")
     print(f"{'':<10} {'rend. (tras com.)':>18} {'rend. (tras com.)':>18} {'acierto/precio':>18}")
     for row in report["buckets"]:
@@ -371,25 +406,32 @@ def _print_sweep(client, args) -> int:
     _save_json(report, args.json)
     print(f"\nSeries analizadas: {report['series_analyzed']} | mercados: {report['markets']}")
     print(f"Estrategia del bot: comprar a 88–97¢ como maker (sin los últimos {report['skip_last_minutes']} min)\n")
-    print(f"{'SERIE':<20} {'EVENTOS':>7} {'RENDIMIENTO':>12} {'MARGEN DE ERROR (95 %)':>24} {'FALLOS':>7}  VEREDICTO")
-
-    def line(name: str, stats: dict) -> str:
-        if not stats.get("contracts"):
-            return f"{name:<20} {stats.get('groups', 0):>7} {'—':>12} {'—':>24} {'—':>7}  sin datos"
-        margin = f"{pct(stats['ci_low'])} a {pct(stats['ci_high'])}" if "ci_low" in stats else "—"
-        upsets = f"{stats['losing_groups']}/{stats['groups']}"
-        return (
-            f"{name:<20} {stats['groups']:>7} {pct(stats['return_after_fees']):>12} {margin:>24} {upsets:>7}  "
-            f"{verdict(stats)}"
-        )
+    print(BAND_HEADER)
 
     for row in report["rows"]:
-        print(line(row["series"], row["strategy"]))
-    print(line("TODAS JUNTAS", report["overall"]))
+        print(_band_line(row["series"], row["strategy"]))
+    print(_band_line("TODAS JUNTAS", report["overall"]))
     print()
     for note in report["conclusions"]:
         print(f"• {note}")
     return 0
+
+
+BAND_HEADER = (
+    f"{'SERIE':<20} {'EVENTOS':>7} {'RENDIMIENTO':>12} {'MARGEN DE ERROR (95 %)':>24} {'FALLOS':>7}  VEREDICTO"
+)
+
+
+def _band_line(name: str, stats: dict) -> str:
+    """Una fila de la tabla: eventos, rendimiento, margen de error, fallos y veredicto."""
+    if not stats.get("contracts"):
+        return f"{name:<20} {stats.get('groups', 0):>7} {'—':>12} {'—':>24} {'—':>7}  sin datos"
+    margin = f"{pct(stats['ci_low'])} a {pct(stats['ci_high'])}" if "ci_low" in stats else "—"
+    upsets = f"{stats['losing_groups']}/{stats['groups']}"
+    return (
+        f"{name:<20} {stats['groups']:>7} {pct(stats['return_after_fees']):>12} {margin:>24} {upsets:>7}  "
+        f"{verdict(stats)}"
+    )
 
 
 def _save_json(report: dict, path: Optional[str]) -> None:
@@ -466,6 +508,7 @@ COMMANDS = {
     "run": cmd_run,
     "scan": cmd_scan,
     "research": cmd_research,
+    "series": cmd_series,
     "web": cmd_web,
 }
 
@@ -477,6 +520,10 @@ def build_parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command", required=True, metavar="comando")
 
     sub.add_parser("check", help="verifica conexión, credenciales y saldo")
+
+    p = sub.add_parser("series", help="lista las series más negociadas (todas o de una categoría)")
+    p.add_argument("--category", help="p. ej. Financials, Economics, Sports")
+    p.add_argument("--limit", type=int, default=40)
 
     p = sub.add_parser("events", help="lista eventos abiertos")
     p.add_argument("--series", help="filtra por serie, p. ej. KXHIGHNY")
@@ -504,7 +551,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--no-arbitrage", action="store_true", help="no revisar eventos de varios resultados")
 
     p = sub.add_parser("research", help="mide con datos reales quién gana a cada precio")
-    p.add_argument("--series", help="serie a estudiar (por defecto, todas)")
+    p.add_argument("--series", help="serie a estudiar, o varias separadas por comas (por defecto, todas)")
     p.add_argument("--markets", type=int, default=150, help="mercados liquidados a analizar")
     p.add_argument(
         "--skip-last-minutes",
@@ -516,6 +563,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--series-count", type=int, default=12, help="con --sweep: cuántas series comparar")
     p.add_argument("--per-series", type=int, default=60, help="con --sweep: mercados liquidados por serie")
     p.add_argument("--json", metavar="ARCHIVO", help="guarda también el informe completo en JSON")
+    p.add_argument("--category", help="analiza las series más negociadas de esta categoría (p. ej. Financials)")
+    p.add_argument("--top", type=int, default=8, help="con --category: cuántas series")
 
     p = sub.add_parser("web", help="abre el panel web para manejar el bot desde el móvil")
     p.add_argument("--host", default="0.0.0.0", help="interfaz de red (por defecto todas)")
