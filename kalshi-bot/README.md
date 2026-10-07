@@ -3,8 +3,9 @@
 Bot en Python que opera en [Kalshi](https://kalshi.com) (mercados de predicción) con la API oficial v2.
 Se maneja desde un **panel web pensado para el móvil** o desde la terminal.
 
-- **Estrategia basada en datos:** compra el lado favorito como *maker*. Por qué, con fuentes, en
-  [INVESTIGACION.md](INVESTIGACION.md).
+- **Estrategia basada en datos:** compra el lado favorito como *maker* en los partidos. Con datos reales
+  de Kalshi dio **+3,9 % tras comisiones en 878 partidos** (margen de error: +1,3 % a +5,6 %). Por qué,
+  con fuentes, en [INVESTIGACION.md](INVESTIGACION.md).
 - **Seguro por defecto:**
   - simula hasta que le pides operar;
   - usa el entorno demo (dinero ficticio) hasta que cambias a real;
@@ -155,7 +156,8 @@ Resumen de [INVESTIGACION.md](INVESTIGACION.md):
   - deja órdenes de compra *post-only* (nunca paga comisión de taker) en el lado favorito, SÍ o NO;
   - solo entre 88¢ y 97¢ y sin cruzar el spread;
   - 10 contratos por orden;
-  - mercados que cierran en las próximas 48 h, uno por evento.
+  - en los partidos (MLB, NFL, NHL, NBA y universitario) que terminan en las próximas 6 h, uno por
+    partido, hasta 15 min antes del final previsto.
 - **La ventaja es pequeña** (unos céntimos por contrato) y **un fallo a 95¢ borra 19 aciertos**. Por
   eso importan los límites de riesgo y la diversificación.
 - **Antes de arriesgar dinero**, usa **Investigación** en el panel (o `python -m kalshi_bot research`)
@@ -290,7 +292,8 @@ Lo primero: **Ajustes → Probar conexión**. Dice qué paso falla y qué hacer.
 - **HTTP 401/403**: el Key ID no corresponde a la clave, la key es de otro entorno (demo frente a real) o
   el reloj del servidor va desfasado.
 - **No conecta con Kalshi**: el servidor debe estar en una región de EE. UU.
-- **"No hay mercados que seguir"**: revisa **Ajustes → Mercados** (o `[markets]`). Por defecto busca
-  mercados que cierran en 48 h con volumen de 200 o más.
+- **"No hay mercados que seguir"**: por defecto el bot sigue los partidos que terminan en las próximas
+  6 h, así que de madrugada o fuera de temporada puede no haber ninguno. Revisa **Ajustes → Mercados** (o
+  `[markets]`).
 - **HTTP 429**: demasiadas peticiones. Sube `poll_interval_seconds` o baja `reads_per_second`.
 - **No puedo entrar al panel**: comprueba `DASHBOARD_PASSWORD`. Tras 5 fallos, espera un minuto.

@@ -1009,12 +1009,13 @@ function renderResearch(r) {
 /* ===================== ajustes ===================== */
 
 const MARKET_FIELDS = [
-  { key: "closing_within_hours", label: "Buscar en todos los mercados que cierran en (horas)", type: "number", help: "0 = no buscar; usa solo series, eventos o mercados fijos." },
+  { key: "series", label: "Series", type: "list", help: "Por defecto, los partidos (KXMLBGAME, KXNFLGAME, KXNHLGAME, KXNBAGAME, KXNCAAFGAME): donde los datos dieron ventaja." },
+  { key: "max_hours_to_close", label: "Solo los que terminan en las próximas (horas)", type: "number", help: "0 = sin límite. En los partidos cuenta el final previsto, no el cierre oficial." },
   { key: "max_markets", label: "Mercados máximos a la vez", type: "number" },
-  { key: "max_markets_per_event", label: "Máximo por evento", type: "number", help: "1 evita apostar varias veces a lo mismo." },
+  { key: "max_markets_per_event", label: "Máximo por evento", type: "number", help: "1 evita apostar varias veces a lo mismo (cada partido tiene dos mercados)." },
   { key: "min_volume_24h", label: "Volumen mínimo en 24 h (contratos)", type: "number" },
-  { key: "min_hours_to_close", label: "Ignorar si cierra en menos de (horas)", type: "number" },
-  { key: "series", label: "Series", type: "list", help: "Separadas por comas, p. ej. KXHIGHNY" },
+  { key: "min_hours_to_close", label: "Ignorar si termina en menos de (horas)", type: "number" },
+  { key: "closing_within_hours", label: "Buscar además en todos los mercados que terminan en (horas)", type: "number", help: "0 = no buscar; usa solo series, eventos o mercados fijos." },
   { key: "tickers", label: "Mercados fijos", type: "list", help: "Tickers separados por comas." },
   { key: "exclude_series", label: "Series a evitar", type: "list" },
 ];

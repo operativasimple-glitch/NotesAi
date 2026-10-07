@@ -40,6 +40,9 @@ from .risk import RiskLimits
 
 log = logging.getLogger(__name__)
 
+# Partidos (quién gana): donde la prueba con datos reales dio ventaja. Ver INVESTIGACION.md.
+DEFAULT_SERIES = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
+
 CREDENTIALS_FILE = "credentials.json"
 KEY_FILE = "kalshi-key.pem"
 OVERRIDES_FILE = "runtime.json"
@@ -391,7 +394,7 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
         raise ConfigError("order_prefix debe tener de 1 a 8 letras o números")
 
     engine = EngineConfig(
-        poll_interval=_num(bot.get("poll_interval_seconds", 10), "poll_interval_seconds"),
+        poll_interval=_num(bot.get("poll_interval_seconds", 5), "poll_interval_seconds"),
         cancel_on_exit=_bool(bot.get("cancel_on_exit", True), "cancel_on_exit"),
         order_prefix=prefix,
         order_ttl_seconds=_num(bot.get("order_ttl_seconds", 600), "order_ttl_seconds", int),
@@ -400,13 +403,13 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
         max_consecutive_errors=_num(bot.get("max_consecutive_errors", 10), "max_consecutive_errors", int),
         paper_cash=_dec(bot.get("paper_cash", 1000), "paper_cash"),
         tickers=_list(markets.get("tickers"), "tickers"),
-        series=_list(markets.get("series"), "series"),
+        series=_list(markets.get("series", DEFAULT_SERIES), "series"),
         events=_list(markets.get("events"), "events"),
         max_markets=_num(markets.get("max_markets", 15), "max_markets", int),
-        min_hours_to_close=_num(markets.get("min_hours_to_close", 1), "min_hours_to_close"),
-        max_hours_to_close=_num(markets.get("max_hours_to_close", 0), "max_hours_to_close"),
-        min_volume_24h=_dec(markets.get("min_volume_24h", 200), "min_volume_24h"),
-        closing_within_hours=_num(markets.get("closing_within_hours", 48), "closing_within_hours"),
+        min_hours_to_close=_num(markets.get("min_hours_to_close", 0), "min_hours_to_close"),
+        max_hours_to_close=_num(markets.get("max_hours_to_close", 6), "max_hours_to_close"),
+        min_volume_24h=_dec(markets.get("min_volume_24h", 1000), "min_volume_24h"),
+        closing_within_hours=_num(markets.get("closing_within_hours", 0), "closing_within_hours"),
         max_markets_per_event=_num(markets.get("max_markets_per_event", 1), "max_markets_per_event", int),
         exclude_series=_list(markets.get("exclude_series"), "exclude_series"),
         refresh_markets_minutes=_num(markets.get("refresh_minutes", 5), "refresh_minutes"),

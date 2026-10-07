@@ -6,6 +6,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal as D
 
 import pytest
@@ -13,6 +14,7 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from kalshi_bot.client import KalshiAPIError
+from kalshi_bot.config import write_overrides
 from kalshi_bot.controller import BotController
 from kalshi_bot.models import ASK, BID
 from kalshi_bot.web import server as web_server
@@ -81,11 +83,14 @@ def panel(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(web_server.time, "sleep", lambda s: None)  # sin esperas en los fallos de login
 
+    # Un mercado que se decide dentro de 3 h (con la hora real: el panel usa el reloj de verdad).
+    soon = (datetime.now(timezone.utc) + timedelta(hours=3)).isoformat()
     fake = FakeKalshi(
-        markets=[make_market(T)],
+        markets=[make_market(T, close_time=soon)],
         books={T: make_book(T, bids=[("0.90", 50)], asks=[("0.92", 50)])},
         authenticated=False,
     )
+    write_overrides(tmp_path, {"markets": {"series": ["KXTEST"]}})  # en vez de las series de partidos
 
     def factory(settings, signer):
         fake.authenticated = signer is not None

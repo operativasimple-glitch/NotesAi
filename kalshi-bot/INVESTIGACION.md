@@ -8,6 +8,9 @@
 - **Hay un patrón sólido y documentado: el sesgo favorito–longshot.** Quien compra contratos de menos
   de 10¢ pierde **más del 60 %** de lo que invierte. Los contratos de más de 50¢ dan rendimientos
   **pequeños pero positivos**.
+- **Comprobado con datos reales de Kalshi (octubre 2026):** comprar el favorito a 88–97¢ como maker
+  en los partidos dio **+3,9 % tras comisiones en 878 partidos**, con un margen de error que no llega a
+  cero (+1,3 % a +5,6 %). Detalle en la sección siguiente.
 - **Lo más parecido a "el truco"** es ponerse en el lado contrario de quienes compran longshots:
   - comprar el lado **favorito** (88–97¢);
   - con **órdenes limitadas que esperan en el libro** (maker), que pagan la cuarta parte de comisión;
@@ -27,6 +30,59 @@ El bot incluye ahora:
   compruebes antes de arriesgar dinero;
 - un **barrido de series** que compara las series activas y te dice en cuáles están ganando los
   favoritos.
+
+## Prueba con datos reales de Kalshi (7 de octubre de 2026)
+
+Antes de arriesgar dinero, se simuló exactamente lo que compra el bot con las operaciones públicas de
+mercados ya liquidados:
+
+- compras de *makers* entre 88¢ y 97¢ (la banda de la estrategia `favorites`), con su comisión;
+- sin los últimos 15 minutos antes del cierre, que el bot no opera;
+- con un margen de error del 95 % calculado **por eventos**: todos los mercados de un evento comparten
+  resultado. Se toma el más amplio de dos intervalos, el de la ganancia sobre lo invertido y el de la
+  proporción de eventos ganados (Wilson), para no dar por buena una racha corta sin fallos.
+
+Lo hace el trabajo de GitHub Actions `.github/workflows/kalshi-research.yml` del repositorio, gratis y sin
+usar ninguna clave. También lo puedes repetir con `research` (ver README).
+
+| Mercados | Eventos | Rendimiento tras comisiones | Margen de error (95 %) | Veredicto |
+| --- | --- | --- | --- | --- |
+| **Partidos: quién gana** (NFL, MLB, NBA, NHL y universitario; hasta 800 mercados por liga) | 878 | **+3,91 %** | **+1,28 % a +5,64 %** | **gana** |
+| … de ellos, béisbol (MLB) | 342 | +5,75 % | +2,35 % a +6,81 % | gana |
+| … hockey (NHL) | 92 | +4,13 % | −11,51 % a +7,16 % | sin confirmar |
+| … fútbol americano (NFL) | 79 | +1,80 % | −4,70 % a +7,75 % | sin confirmar |
+| … fútbol americano universitario | 353 | +0,89 % | −4,40 % a +6,18 % | sin confirmar |
+| Las 14 series más activas ese día (sobre todo NFL e inflación) | 274 | +1,88 % | −12,32 % a +5,53 % | sin confirmar |
+| Bolsa: S&P 500 y Nasdaq-100 (rangos y por encima/debajo) | 116 | +2,27 % | −19,16 % a +9,06 % | sin confirmar |
+
+**¿En qué momento del partido?** En 323 partidos (MLB, NHL, NFL y universitario), según lo que faltaba
+para el final:
+
+| Momento | Eventos | Rendimiento tras comisiones |
+| --- | --- | --- |
+| Más de 3 h antes | 35 | +4,32 % |
+| De 1 a 3 h antes | 195 | +6,04 % |
+| De 30 min a 1 h antes | 211 | +4,36 % |
+| De 15 a 30 min antes | 185 | +2,40 % |
+
+La ventaja no está solo en los últimos minutos, donde manda la velocidad. Es mayor a mitad de partido.
+Por separado, cada tramo tiene un margen de error amplio. En el otro lado, quien compró por debajo de 10¢
+en los partidos perdió un **45 %** tras comisiones.
+
+Qué significa y qué no:
+
+- Es lo que ganó **la media de los makers**. El bot mira el mercado cada 5 segundos y los profesionales
+  en milisegundos, así que puede llevarse menos: si un partido da un vuelco, su orden puede llenarse justo
+  antes de que la cancele. Eso solo se sabe probándolo con poco dinero.
+- Son los últimos meses de datos; el sesgo puede cambiar. Conviene repetir la prueba de vez en cuando.
+- A 93¢, **un fallo borra unos 13 aciertos**. Habrá semanas en negativo aunque la estrategia sea buena.
+- La bolsa da positivo, pero con pocos días de datos: todavía no se puede confirmar.
+
+Por todo esto, el bot sigue por defecto los **partidos** (series `KXMLBGAME`, `KXNFLGAME`, `KXNHLGAME`,
+`KXNBAGAME` y `KXNCAAFGAME`) que terminan en las próximas 6 horas, uno por partido, y deja de operar 15
+minutos antes del **final previsto**. En los partidos, Kalshi pone el cierre oficial dos o tres días
+después del encuentro (y cierra el mercado en cuanto acaba), así que el bot usa el campo
+`expected_expiration_time` para saber cuándo termina de verdad.
 
 ## ¿Dónde se gana dinero de verdad? (EE. UU., octubre 2026)
 
@@ -297,7 +353,8 @@ Conclusiones:
      `min_price` y `max_price`;
    - mejora en un tick la mejor oferta sin cruzar el spread;
    - 10 contratos por orden;
-   - opera mercados que cierran en las próximas 48 h, uno por evento.
+   - opera los partidos que terminan en las próximas 6 h, uno por partido, y para 15 min antes del
+     final previsto.
 
 ## 7. Riesgos y reglas
 

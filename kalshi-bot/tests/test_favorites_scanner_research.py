@@ -6,6 +6,7 @@ import pytest
 from kalshi_bot.discovery import MarketFilter, discover
 from kalshi_bot.models import ASK, BID, GTC
 from kalshi_bot.research import Research, band_note, bucket_index, run_research, run_sweep, verdict, wilson
+from kalshi_bot.risk import RiskLimits, RiskManager
 from kalshi_bot.scanner import ScanParams, event_arbitrage, run_scan, scan_markets
 from kalshi_bot.strategies.favorites import FavoritesStrategy
 
@@ -92,11 +93,32 @@ def test_discover_markets_closing_soon_one_per_event():
             closing_in("KXD-EV4-X", 5, "700", "KXD-EV4"),
         ]
     )
+    # Un partido: el cierre oficial es dentro de 70 h, pero termina (fin previsto) dentro de 3 h.
+    game = closing_in("KXGAME-EV5-X", 70, "600", "KXGAME-EV5")
+    game.expected_end = NOW + timedelta(hours=3)
+    fake.markets[game.ticker] = game
     flt = MarketFilter(closing_within_hours=48, max_markets=10, max_markets_per_event=1, exclude_series=["KXD"])
     found = discover(fake, flt, NOW)
-    assert [m.ticker for m in found] == ["KXA-EV1-X", "KXB-EV2-X"]
+    assert [m.ticker for m in found] == ["KXA-EV1-X", "KXGAME-EV5-X", "KXB-EV2-X"]  # por volumen; KXC (60 h) fuera
     query = fake.market_queries[-1]
-    assert query["status"] is None and query["max_close_ts"] == int((NOW + timedelta(hours=48)).timestamp())
+    # Se pide a la API un margen de 72 h para no perder partidos con cierre oficial tardío.
+    assert query["status"] is None and query["max_close_ts"] == int((NOW + timedelta(hours=48 + 72)).timestamp())
+
+
+def test_markets_end_at_the_expected_end_when_it_comes_first():
+    game = make_market(
+        "KXMLBGAME-26OCT07-CWS",
+        close_time=(NOW + timedelta(hours=75)).isoformat(),
+        expected_expiration_time=(NOW + timedelta(hours=6)).isoformat(),
+    )
+    assert game.expected_end == NOW + timedelta(hours=6) and game.ends_at == game.expected_end
+    assert round(game.hours_to_close(NOW), 2) == 6.0
+    plain = make_market("KXOTHER-1", close_time=(NOW + timedelta(hours=2)).isoformat())
+    assert plain.expected_end is None and plain.hours_to_close(NOW) == 2.0
+    # El riesgo deja de operar 15 min antes del final previsto, no del cierre oficial.
+    risk = RiskManager(RiskLimits())
+    assert risk.market_block_reason(game, NOW + timedelta(hours=5, minutes=50)) is not None
+    assert risk.market_block_reason(game, NOW + timedelta(hours=5)) is None
 
 
 # --- escáner -------------------------------------------------------------------------

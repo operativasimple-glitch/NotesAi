@@ -12,6 +12,10 @@ from .models import ZERO, Market
 
 log = logging.getLogger(__name__)
 
+# En deportes el cierre oficial llega hasta ~3 días después del partido: se pide
+# a la API un margen y se filtra después por el fin previsto (Market.ends_at).
+CLOSE_BUFFER_HOURS = 72
+
 
 @dataclass
 class MarketFilter:
@@ -39,6 +43,8 @@ def passes(market: Market, flt: MarketFilter, now: datetime) -> bool:
             return False
         if flt.max_hours_to_close and hours > flt.max_hours_to_close:
             return False
+        if flt.closing_within_hours > 0 and hours > flt.closing_within_hours:
+            return False
     return market.volume_24h >= flt.min_volume_24h
 
 
@@ -53,7 +59,7 @@ def discover(client, flt: MarketFilter, now: datetime, *, exclude: Iterable = ()
             found.setdefault(market.ticker, market)
     if flt.closing_within_hours > 0:
         start = int(now.timestamp() + flt.min_hours_to_close * 3600)
-        end = int(now.timestamp() + flt.closing_within_hours * 3600)
+        end = int(now.timestamp() + (flt.closing_within_hours + CLOSE_BUFFER_HOURS) * 3600)
         # Kalshi no admite status=open junto a los filtros de cierre: se filtra después.
         window = client.get_markets(
             status=None, min_close_ts=start, max_close_ts=end, mve_filter="exclude", limit=1000, max_pages=pages

@@ -4,7 +4,7 @@
 # Por qué estos valores: lee INVESTIGACION.md.
 
 [bot]
-poll_interval_seconds = 10       # segundos entre vueltas del bot
+poll_interval_seconds = 5        # segundos entre vueltas del bot (en partidos los precios se mueven rápido)
 cancel_on_exit = true            # al detener el bot, cancelar sus órdenes
 order_ttl_seconds = 600          # las órdenes en reposo caducan solas tras 10 min (por si el bot se cae); 0 = nunca
 taker_cooldown_seconds = 30      # tras una orden IOC en un mercado, esperar antes de repetir
@@ -15,17 +15,19 @@ order_prefix = "kb"              # el bot solo toca órdenes cuyo client_order_i
 log_dir = "logs"                 # aquí van bot.log y journal.jsonl
 
 [markets]
-# Busca en TODOS los mercados que cierran en las próximas N horas (0 = desactivado):
-closing_within_hours = 48
+# Por defecto, los partidos (quién gana): es donde la prueba con datos reales dio ventaja
+# (+3,9 % tras comisiones en 878 partidos; ver INVESTIGACION.md).
+series = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
+max_hours_to_close = 6           # solo partidos que terminan en las próximas 6 h (en juego o a punto de empezar)
+min_hours_to_close = 0           # el riesgo deja de operar 15 min antes del final previsto
 max_markets = 15                 # como mucho, los N de más volumen
-max_markets_per_event = 1        # uno por evento: evita apuestas correlacionadas
-min_volume_24h = 200             # volumen mínimo en las últimas 24 h (contratos)
-min_hours_to_close = 1           # ignorar los que cierran en menos de 1 h...
-max_hours_to_close = 0           # ...o en más de N horas (0 = sin límite)
-exclude_series = []              # series a evitar, p. ej. ["KXBTC15M"]
-# Además puedes fijar mercados concretos, series o eventos:
+max_markets_per_event = 1        # uno por evento: cada partido tiene dos mercados que son la misma apuesta
+min_volume_24h = 1000            # volumen mínimo en las últimas 24 h (contratos)
+exclude_series = []              # series a evitar
+# Otra forma: buscar en TODOS los mercados que se deciden en las próximas N horas (0 = desactivado):
+closing_within_hours = 0
+# Además puedes fijar mercados concretos o eventos:
 tickers = []
-series = []                      # p. ej. ["KXHIGHNY"]  (temperatura máxima en Nueva York)
 events = []
 refresh_minutes = 5              # cada cuánto se vuelve a buscar mercados
 
@@ -36,7 +38,7 @@ max_total_exposure_dollars = 50  # dinero máximo comprometido: posiciones de la
 max_session_loss_dollars = 20    # si pierdes esto desde que arrancó el bot: cancela todo y se detiene (0 = off)
 min_price = 0.03                 # no operar por debajo de 3¢...
 max_price = 0.97                 # ...ni por encima de 97¢
-min_minutes_to_close = 15        # no operar en los últimos 15 min antes del cierre
+min_minutes_to_close = 15        # no operar en los últimos 15 min antes del cierre (o del final previsto del partido)
 
 [http]
 reads_per_second = 8             # por debajo de los límites del nivel Basic de Kalshi

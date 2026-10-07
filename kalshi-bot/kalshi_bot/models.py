@@ -148,6 +148,7 @@ class Market:
     price_ranges: tuple = DEFAULT_PRICE_RANGES
     result: str = ""  # "yes" / "no" cuando el mercado se liquidó
     market_type: str = "binary"
+    expected_end: Optional[datetime] = None  # cuándo se espera que se decida (p. ej. el final del partido)
     raw: dict = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -171,6 +172,7 @@ class Market:
             price_ranges=_parse_ranges(d.get("price_ranges")) or DEFAULT_PRICE_RANGES,
             result=str(d.get("result") or ""),
             market_type=str(d.get("market_type") or "binary"),
+            expected_end=parse_time(d.get("expected_expiration_time")),
             raw=d,
         )
 
@@ -189,10 +191,21 @@ class Market:
             return None
         return self.yes_ask - self.yes_bid
 
+    @property
+    def ends_at(self) -> Optional[datetime]:
+        """Cuándo se decide el mercado: el cierre oficial o, si llega antes, el fin previsto.
+
+        En los partidos, Kalshi pone el cierre oficial dos o tres días después
+        y cierra el mercado en cuanto acaba el encuentro; lo que importa para
+        operar (y para dejar de hacerlo a tiempo) es el final previsto.
+        """
+        times = [t for t in (self.close_time, self.expected_end) if t is not None]
+        return min(times) if times else None
+
     def hours_to_close(self, now: datetime) -> Optional[float]:
-        if self.close_time is None:
-            return None
-        return (self.close_time - now).total_seconds() / 3600
+        """Horas hasta que se decide el mercado (ver `ends_at`)."""
+        end = self.ends_at
+        return None if end is None else (end - now).total_seconds() / 3600
 
 
 def _parse_ranges(raw: Any) -> tuple:
