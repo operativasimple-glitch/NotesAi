@@ -329,15 +329,23 @@ def cmd_research(settings: Settings, args) -> int:
         series=args.series,
         max_markets=args.markets,
         skip_last_minutes=args.skip_last_minutes,
+        trades_pages=args.pages,
+        by_time=args.by_time,
         progress=progress,
     )
     _save_json(report, args.json)
     print(f"\nSerie: {report['series']} | mercados: {report['markets']} | operaciones: {report['trades']}")
     if report["by_series"]:
-        print("\n" + BAND_HEADER)
+        print("\n" + band_header())
         for name, stats in report["by_series"].items():
             print(_band_line(name, stats))
         print(_band_line("TODAS JUNTAS", report["strategy"]))
+        print()
+    if report["by_time"]:
+        print("\n¿Cuándo gana? Según lo que faltaba para el cierre (en deportes, el final del partido):")
+        print(band_header("MOMENTO"))
+        for row in report["by_time"]:
+            print(_band_line(row["window"], row))
         print()
     print(f"{'TRAMO':<10} {'TAKER':>18} {'MAKER':>18} {'TODOS':>18}")
     print(f"{'':<10} {'rend. (tras com.)':>18} {'rend. (tras com.)':>18} {'acierto/precio':>18}")
@@ -406,7 +414,7 @@ def _print_sweep(client, args) -> int:
     _save_json(report, args.json)
     print(f"\nSeries analizadas: {report['series_analyzed']} | mercados: {report['markets']}")
     print(f"Estrategia del bot: comprar a 88–97¢ como maker (sin los últimos {report['skip_last_minutes']} min)\n")
-    print(BAND_HEADER)
+    print(band_header())
 
     for row in report["rows"]:
         print(_band_line(row["series"], row["strategy"]))
@@ -417,9 +425,8 @@ def _print_sweep(client, args) -> int:
     return 0
 
 
-BAND_HEADER = (
-    f"{'SERIE':<20} {'EVENTOS':>7} {'RENDIMIENTO':>12} {'MARGEN DE ERROR (95 %)':>24} {'FALLOS':>7}  VEREDICTO"
-)
+def band_header(first: str = "SERIE") -> str:
+    return f"{first:<20} {'EVENTOS':>7} {'RENDIMIENTO':>12} {'MARGEN DE ERROR (95 %)':>24} {'FALLOS':>7}  VEREDICTO"
 
 
 def _band_line(name: str, stats: dict) -> str:
@@ -564,6 +571,8 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--per-series", type=int, default=60, help="con --sweep: mercados liquidados por serie")
     p.add_argument("--json", metavar="ARCHIVO", help="guarda también el informe completo en JSON")
     p.add_argument("--category", help="analiza las series más negociadas de esta categoría (p. ej. Financials)")
+    p.add_argument("--pages", type=int, default=2, help="páginas de 1000 operaciones por mercado (más = más historia)")
+    p.add_argument("--by-time", action="store_true", help="separa el resultado según lo que faltaba para el cierre")
     p.add_argument("--top", type=int, default=8, help="con --category: cuántas series")
 
     p = sub.add_parser("web", help="abre el panel web para manejar el bot desde el móvil")

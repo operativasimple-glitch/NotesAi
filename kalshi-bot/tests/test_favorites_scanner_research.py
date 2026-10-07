@@ -220,6 +220,23 @@ def test_run_research_over_several_series():
     assert report["strategy"]["groups"] == 4 and report["strategy"]["losing_groups"] == 2
 
 
+def test_research_by_time_splits_trades_by_minutes_before_close():
+    fake = FakeKalshi()
+    for i in range(4):
+        m = make_market(f"KXGAME-{i}", status="finalized", result="no", event_ticker=f"KXGAME-E{i}")
+        fake.settled[m.ticker] = m
+        close = m.close_time
+        early = trade("0.0600", 10, "yes") | {"created_time": (close - timedelta(hours=5)).isoformat()}
+        late = trade("0.0400", 10, "yes") | {"created_time": (close - timedelta(minutes=20)).isoformat()}
+        fake.trades[m.ticker] = [early, late]
+    report = run_research(fake, series="KXGAME", skip_last_minutes=15, by_time=True)
+    windows = {row["window"]: row for row in report["by_time"]}
+    assert list(windows) == ["15 min–30 min antes", "30 min–1 h antes", "1 h–3 h antes", "más de 3 h antes"]
+    assert windows["más de 3 h antes"]["avg_price"] == D("0.94") and windows["más de 3 h antes"]["groups"] == 4
+    assert windows["15 min–30 min antes"]["avg_price"] == D("0.96")
+    assert windows["30 min–1 h antes"]["contracts"] == 0
+
+
 # --- barrido de series ------------------------------------------------------------
 
 

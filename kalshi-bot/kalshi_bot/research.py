@@ -21,7 +21,7 @@ from decimal import Decimal
 from typing import Callable, Optional
 
 from .fees import MAKER_FEE_RATE, TAKER_FEE_RATE
-from .models import ONE, ZERO, to_decimal
+from .models import ONE, ZERO, parse_time, to_decimal
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +43,30 @@ LONGSHOT_BUCKETS = [0, 1]  # 0–10¢
 FAVORITE_FLOOR = Decimal("0.90")
 STRATEGY_BAND = (Decimal("0.88"), Decimal("0.97"))  # lo que compra la estrategia favorites
 Z95 = Decimal("1.96")
+# Ventanas de tiempo antes del cierre, en minutos (en deportes, el cierre es el final del partido).
+TIME_WINDOWS = [(0, 15), (15, 30), (30, 60), (60, 180), (180, None)]
+
+
+def window_label(lo: int, hi: Optional[int]) -> str:
+    def text(minutes: int) -> str:
+        return f"{minutes // 60} h" if minutes >= 60 and minutes % 60 == 0 else f"{minutes} min"
+
+    return f"más de {text(lo)} antes" if hi is None else f"{text(lo)}–{text(hi)} antes"
+
+
+def split_by_window(trades: list, close_ts: float, windows: list) -> dict:
+    """Reparte las operaciones según cuánto faltaba para el cierre cuando se hicieron."""
+    out: dict = {}
+    for t in trades:
+        created = parse_time(t.get("created_time"))
+        if created is None:
+            continue
+        minutes = (close_ts - created.timestamp()) / 60
+        for lo, hi in windows:
+            if minutes >= lo and (hi is None or minutes < hi):
+                out.setdefault((lo, hi), []).append(t)
+                break
+    return out
 
 
 def wilson(successes: int, n: int, z: float = 1.96) -> tuple:
@@ -300,6 +324,7 @@ def run_research(
     max_markets: int = 150,
     skip_last_minutes: int = 0,
     trades_pages: int = 2,
+    by_time: bool = False,
     progress: Optional[Callable[[int, int], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> dict:
@@ -307,6 +332,8 @@ def run_research(
 
     `series` admite varias separadas por comas: entonces se analizan hasta
     `max_markets` de cada una y el informe suma todas (con el detalle por serie).
+    Con `by_time`, además separa el resultado de la estrategia según cuánto
+    faltaba para el cierre (para saber si la ventaja está solo al final).
     """
     names = [s.strip().upper() for s in (series or "").split(",") if s.strip()]
     plan: list = []
@@ -322,6 +349,8 @@ def run_research(
         plan += [(name, m) for m in found]
     research = Research()
     by_series = {name: Research() for name in names} if len(names) > 1 else {}
+    windows = [w for w in TIME_WINDOWS if w[0] >= skip_last_minutes] if by_time else []
+    by_window = {w: Research() for w in windows}
     for i, (name, market) in enumerate(plan, start=1):
         if should_stop and should_stop():
             break
@@ -336,6 +365,10 @@ def run_research(
         research.add_market(market.result, trades, group=market.event_ticker)
         if name in by_series:
             by_series[name].add_market(market.result, trades, group=market.event_ticker)
+        if windows and market.close_time is not None:
+            split = split_by_window(trades, market.close_time.timestamp(), windows)
+            for window, part in split.items():
+                by_window[window].add_market(market.result, part, group=market.event_ticker)
         if progress:
             progress(i, len(plan))
     report = research.report()
@@ -343,6 +376,7 @@ def run_research(
         {
             "series": ", ".join(names) or "(todas)",
             "by_series": {name: r.band_summary() for name, r in by_series.items()},
+            "by_time": [{"window": window_label(*w), **by_window[w].band_summary()} for w in windows],
             "generated_at": datetime.now(timezone.utc).isoformat(),
             "skip_last_minutes": skip_last_minutes,
         }
