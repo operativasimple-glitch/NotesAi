@@ -4,8 +4,17 @@ from decimal import Decimal as D
 import pytest
 
 from kalshi_bot.discovery import MarketFilter, discover
-from kalshi_bot.models import ASK, BID, GTC
-from kalshi_bot.research import Research, band_note, bucket_index, run_research, run_sweep, verdict, wilson
+from kalshi_bot.models import ASK, BID, GTC, parse_time
+from kalshi_bot.research import (
+    EXIT_RULES,
+    Research,
+    band_note,
+    bucket_index,
+    run_research,
+    run_sweep,
+    verdict,
+    wilson,
+)
 from kalshi_bot.risk import RiskLimits, RiskManager
 from kalshi_bot.scanner import ScanParams, event_arbitrage, run_scan, scan_markets
 from kalshi_bot.strategies.favorites import FavoritesStrategy
@@ -278,6 +287,68 @@ def test_research_by_time_splits_trades_by_minutes_before_close():
     assert windows["más de 3 h antes"]["avg_price"] == D("0.94") and windows["más de 3 h antes"]["groups"] == 4
     assert windows["15 min–30 min antes"]["avg_price"] == D("0.96")
     assert windows["30 min–1 h antes"]["contracts"] == 0
+
+
+def timed(price, count, taker, minute):
+    return trade(price, count, taker) | {"created_time": f"2026-10-01T18:{minute:02d}:00Z"}
+
+
+def test_exit_rules_compare_selling_early_with_holding():
+    r = Research(exit_rules=EXIT_RULES)
+    # Evento A: un maker compra YES a 92¢; el favorito se hunde (60¢, 45¢, 5¢) y pierde.
+    a = [timed("0.9200", 10, "no", 0), timed("0.6000", 5, "yes", 10), timed("0.4500", 5, "no", 20)]
+    a.append(timed("0.0500", 5, "no", 30))
+    r.add_market("no", list(reversed(a)), group="A")  # la API da primero las más recientes
+    # Evento B: un maker compra NO a 94¢ (el taker, YES a 6¢); el NO llega a 99¢ y gana.
+    r.add_market("no", [timed("0.0100", 5, "yes", 10), timed("0.0600", 10, "yes", 0)], group="B")
+    rows = {row["rule"]: row for row in r.exit_summary()}
+    assert list(rows) == [name for name, _, _ in EXIT_RULES]
+    cut = rows["vender si cae a 50¢"]
+    # Esperando: A pierde 9,21 $ y B gana 0,59 $ sobre 18,60 $ comprados.
+    assert cut["return_hold"] == D("-0.4636") and cut["groups"] == 2
+    # Vendiendo A a 44¢ (un tick por debajo de 45¢, con comisión de taker) se pierde mucho menos.
+    assert cut["return_rule"] == D("-0.2363") and cut["difference"] == D("0.2273")
+    assert (cut["sold_share"], cut["sold_would_lose_share"], cut["groups_with_exits"]) == (D("0.5"), D("1"), 1)
+    assert rows["vender si cae a 70¢"]["return_rule"] > cut["return_rule"] > rows["vender si cae a 30¢"]["return_rule"]
+    # Cobrar a 99¢ solo toca B, que habría ganado igual: se pierde el último centavo.
+    take = rows["cobrar a 99¢"]
+    assert take["difference"] == D("-0.0055") and take["sold_would_lose_share"] == 0
+    assert rows["cobrar a 98¢"]["difference"] < take["difference"] < 0
+    assert "diff_low" in take and take["diff_low"] <= take["difference"] <= take["diff_high"]
+
+
+def test_exit_rules_respect_the_entry_cutoff():
+    r = Research(exit_rules=EXIT_RULES)
+    # La compra a 93¢ llega después del corte: no cuenta como compra, pero su precio sí
+    # sirve para seguir la de 92¢.
+    trades = [timed("0.9200", 10, "no", 0), timed("0.9300", 10, "no", 50), timed("0.9900", 5, "yes", 55)]
+    cutoff = parse_time("2026-10-01T18:40:00Z").timestamp()
+    r.add_market("yes", trades, group="A", entry_cutoff=cutoff)
+    assert r.band_summary()["contracts"] == 10
+    rows = {row["rule"]: row for row in r.exit_summary()}
+    assert rows["cobrar a 99¢"]["sold_share"] == 1 and rows["vender si cae a 50¢"]["sold_share"] == 0
+    assert Research().exit_summary() == []
+
+
+def test_run_research_with_exits_downloads_the_last_minutes():
+    fake = FakeKalshi()
+    requests = []
+    get_trades = fake.get_trades
+    fake.get_trades = lambda ticker, **kw: requests.append(kw.get("max_ts")) or get_trades(ticker, **kw)
+    for i in range(3):
+        m = make_market(f"KXGAME-{i}", status="finalized", result="yes", event_ticker=f"KXGAME-E{i}")
+        fake.settled[m.ticker] = m
+        close = m.close_time
+        buy = trade("0.9200", 10, "no") | {"created_time": (close - timedelta(hours=2)).isoformat()}
+        crash = trade("0.4000", 10, "no") | {"created_time": (close - timedelta(minutes=5)).isoformat()}
+        fake.trades[m.ticker] = [crash, buy]
+    report = run_research(fake, series="KXGAME", skip_last_minutes=15, exits=True)
+    assert requests == [None, None, None]
+    rows = {row["rule"]: row for row in report["exits"]}
+    # El favorito cayó a 40¢ en los últimos 5 minutos y luego ganó: vender habría sido un error.
+    assert rows["vender si cae a 50¢"]["difference"] < 0 and rows["vender si cae a 30¢"]["difference"] == 0
+    assert report["strategy"]["contracts"] == 30  # la compra de los últimos minutos no cuenta
+    assert "exits" not in run_research(fake, series="KXGAME")
 
 
 # --- barrido de series ------------------------------------------------------------

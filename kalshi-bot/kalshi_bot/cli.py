@@ -332,6 +332,7 @@ def cmd_research(settings: Settings, args) -> int:
         trades_pages=args.pages,
         by_time=args.by_time,
         keep_groups=bool(args.dump_groups),
+        exits=args.exits,
         progress=progress,
     )
     if args.dump_groups:
@@ -343,6 +344,16 @@ def cmd_research(settings: Settings, args) -> int:
         for name, stats in report["by_series"].items():
             print(_band_line(name, stats))
         print(_band_line("TODAS JUNTAS", report["strategy"]))
+        print()
+    if report.get("exits"):
+        print("\n¿Cobrar antes de tiempo? Mismas compras, vendiendo antes en vez de esperar al final:")
+        print(exits_header())
+        for row in report["exits"]:
+            print(_exit_line(row["rule"], row))
+        for name, rows in report.get("exits_by_series", {}).items():
+            print(f"\n  {name}:")
+            for row in rows:
+                print(_exit_line(row["rule"], row))
         print()
     if report["by_time"]:
         print("\n¿Cuándo gana? Según lo que faltaba para el cierre (en deportes, el final del partido):")
@@ -441,6 +452,25 @@ def _band_line(name: str, stats: dict) -> str:
     return (
         f"{name:<20} {stats['groups']:>7} {pct(stats['return_after_fees']):>12} {margin:>24} {upsets:>7}  "
         f"{verdict(stats)}"
+    )
+
+
+def exits_header() -> str:
+    return (
+        f"{'REGLA':<22} {'EVENTOS':>7} {'ESPERANDO':>10} {'CON REGLA':>10} {'DIFERENCIA':>11} "
+        f"{'MARGEN DIF. (95 %)':>20} {'VENDIDO':>8} {'IBA A PERDER':>13}"
+    )
+
+
+def _exit_line(name: str, row: dict) -> str:
+    """Una fila de la tabla de salidas antes de tiempo."""
+    if "difference" not in row:
+        return f"{name:<22} {row.get('groups', 0):>7}  sin datos"
+    margin = f"{pct(row['diff_low'])} a {pct(row['diff_high'])}" if "diff_low" in row else "—"
+    return (
+        f"{name:<22} {row['groups']:>7} {pct(row['return_hold']):>10} {pct(row['return_rule']):>10} "
+        f"{pct(row['difference']):>11} {margin:>20} {row['sold_share'] * 100:>7.1f}% "
+        f"{row['sold_would_lose_share'] * 100:>12.1f}%"
     )
 
 
@@ -577,6 +607,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--pages", type=int, default=2, help="páginas de 1000 operaciones por mercado (más = más historia)")
     p.add_argument("--by-time", action="store_true", help="separa el resultado según lo que faltaba para el cierre")
     p.add_argument("--dump-groups", metavar="ARCHIVO", help="guarda los datos por evento (para combinar pruebas)")
+    p.add_argument("--exits", action="store_true", help="compara esperar al final con vender antes de tiempo")
     p.add_argument("--top", type=int, default=8, help="con --category: cuántas series")
 
     p = sub.add_parser("web", help="abre el panel web para manejar el bot desde el móvil")

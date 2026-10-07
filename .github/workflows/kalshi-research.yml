@@ -1,4 +1,5 @@
-# Mide con datos públicos de Kalshi si la estrategia del bot habría ganado dinero.
+# Mide con datos públicos de Kalshi si la estrategia del bot habría ganado dinero
+# y si le habría convenido vender antes de tiempo (--exits).
 # No usa ninguna clave ni envía órdenes: solo lee mercados ya liquidados.
 # En repositorios públicos, GitHub Actions es gratis. Cada análisis va en su
 # propia máquina, en paralelo (cada una tiene su propio límite de peticiones).
@@ -28,9 +29,9 @@ jobs:
       matrix:
         include:
           - name: Partidos (MLB, NFL, NHL, NBA, universitario)
-            args: --series KXMLBGAME,KXNFLGAME,KXNHLGAME,KXNBAGAME,KXNCAAFGAME --markets 800
+            args: --series KXMLBGAME,KXNFLGAME,KXNHLGAME,KXNBAGAME,KXNCAAFGAME --markets 800 --exits --pages 3
           - name: Clima (7 ciudades)
-            args: --series KXHIGHLAX,KXHIGHNY,KXHIGHCHI,KXHIGHMIA,KXHIGHAUS,KXHIGHDEN,KXHIGHPHIL --markets 500
+            args: --series KXHIGHLAX,KXHIGHNY,KXHIGHCHI,KXHIGHMIA,KXHIGHAUS,KXHIGHDEN,KXHIGHPHIL --markets 500 --exits --pages 3
           - name: Bolsa (S&P 500 y Nasdaq-100)
             args: --series KXINX,KXNASDAQ100,KXINXU,KXNASDAQ100U --markets 2000
     name: ${{ matrix.name }}
@@ -55,45 +56,3 @@ jobs:
         run: |
           { echo "## ${{ matrix.name }}"; echo '```'; cat out.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY" || true
 
-  timing:
-    name: Horarios de los mercados de clima
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    defaults:
-      run:
-        working-directory: kalshi-bot
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - run: pip install -r requirements.txt
-      - name: Cierre, fin previsto y operaciones
-        run: |
-          python - <<'PY'
-          from datetime import datetime, timezone
-          from kalshi_bot.config import load_settings
-          from kalshi_bot.models import parse_time
-          client = load_settings().client()
-          now = datetime.now(timezone.utc)
-          def hours(value):
-              t = parse_time(value)
-              return f"{(t - now).total_seconds() / 3600:7.1f} h" if t else "      —"
-          for series in ("KXHIGHNY", "KXHIGHMIA", "KXHIGHDEN", "KXHIGHAUS"):
-              markets = client.get_markets(status="open", series_ticker=series, max_pages=1)
-              print(f"{series}: {len(markets)} abiertos (ahora {now.isoformat(timespec='minutes')})")
-              for m in sorted(markets, key=lambda m: m.raw.get("close_time") or "")[:3]:
-                  raw = m.raw
-                  print(f"   {m.ticker:<34} abre {raw.get('open_time')} | cierre en {hours(raw.get('close_time'))}"
-                        f" | fin previsto en {hours(raw.get('expected_expiration_time'))} | {m.yes_bid}/{m.yes_ask}")
-              settled = client.get_markets(status="settled", series_ticker=series, limit=3, max_pages=1)
-              for m in settled[:1]:
-                  raw = m.raw
-                  trades = client.get_trades(m.ticker, max_pages=3)
-                  times = sorted(t.get("created_time") for t in trades if t.get("created_time"))
-                  print(f"   liquidado {m.ticker}: abre {raw.get('open_time')} | cierra {raw.get('close_time')}"
-                        f" | fin previsto {raw.get('expected_expiration_time')}")
-                  if times:
-                      print(f"      {len(trades)} operaciones entre {times[0]} y {times[-1]}")
-                  print("      reglas:", (raw.get("rules_primary") or "")[:300])
-          PY

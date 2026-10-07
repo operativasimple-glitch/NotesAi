@@ -48,6 +48,17 @@ Z95 = Decimal("1.96")
 MIN_OUTCOMES = 5
 # Ventanas de tiempo antes del cierre, en minutos (en deportes, el cierre es el final del partido).
 TIME_WINDOWS = [(0, 15), (15, 30), (30, 60), (60, 180), (180, None)]
+# Salidas antes de tiempo que se comparan con esperar a la liquidación:
+# (nombre, vender si el favorito cae a este precio, cobrar si sube a este precio).
+EXIT_RULES = (
+    ("vender si cae a 70¢", Decimal("0.70"), None),
+    ("vender si cae a 50¢", Decimal("0.50"), None),
+    ("vender si cae a 30¢", Decimal("0.30"), None),
+    ("cobrar a 98¢", None, Decimal("0.98")),
+    ("cobrar a 99¢", None, Decimal("0.99")),
+)
+# Al vender de golpe se cobra un tick menos que la operación que dispara la salida.
+EXIT_SLIPPAGE = Decimal("0.01")
 
 
 def window_label(lo: int, hi: Optional[int]) -> str:
@@ -116,6 +127,24 @@ def band_note(stats: dict, subject: str = "La estrategia del bot") -> str:
     )
 
 
+def _clean_trades(trades: list) -> list:
+    """Operaciones válidas como (instante Unix o None, precio YES, contratos, lado del taker)."""
+    rows = []
+    for t in trades:
+        if t.get("is_block_trade"):
+            continue
+        price = to_decimal(t.get("yes_price_dollars"))
+        count = to_decimal(t.get("count_fp"), to_decimal(t.get("count")))
+        taker_side = t.get("taker_outcome_side") or t.get("taker_side")
+        if price is None or count is None or count <= 0 or taker_side not in ("yes", "no"):
+            continue
+        if not (ZERO < price < ONE):
+            continue
+        created = parse_time(t.get("created_time"))
+        rows.append((created.timestamp() if created else None, price, count, taker_side))
+    return rows
+
+
 def bucket_index(price: Decimal) -> int:
     for i, (lo, hi) in enumerate(BUCKETS):
         if lo <= price < hi:
@@ -158,8 +187,12 @@ class Tally:
 class Research:
     """Acumula operaciones de mercados liquidados y resume por tramo de precio."""
 
-    def __init__(self, band: tuple = STRATEGY_BAND):
+    def __init__(self, band: tuple = STRATEGY_BAND, exit_rules: tuple = ()):
         self.tallies = {role: [Tally() for _ in BUCKETS] for role in ("taker", "maker")}
+        # Por regla de salida: {evento: [coste, neto esperando, neto con la regla,
+        # contratos vendidos antes, contratos vendidos que habrían perdido]}.
+        self.exit_rules = tuple(exit_rules)
+        self.exit_groups: dict = {name: {} for name, _, _ in self.exit_rules}
         # Compras de makers dentro de la banda de la estrategia, agrupadas por evento
         # (los mercados de un evento están ligados): {evento: [coste, neto, contratos, cobrado]}.
         self.band = band
@@ -171,25 +204,26 @@ class Research:
         self.favorite_markets = 0  # mercados donde un maker compró a 90–100¢
         self.favorite_upsets = 0  # ...y ese favorito perdió
 
-    def add_market(self, result: str, trades: list, group: Optional[str] = None) -> None:
-        """group: el evento del mercado, para medir el error por eventos y no por contratos."""
+    def add_market(
+        self, result: str, trades: list, group: Optional[str] = None, entry_cutoff: Optional[float] = None
+    ) -> None:
+        """group: el evento del mercado, para medir el error por eventos y no por contratos.
+
+        entry_cutoff: instante (Unix) a partir del cual ya no se compra; las operaciones
+        posteriores solo sirven para simular las salidas antes de tiempo.
+        """
         if result not in ("yes", "no"):
             return
         self.markets += 1
         key = group or f"mercado-{self.markets}"
         lo, hi = self.band
         yes_won = result == "yes"
+        rows = _clean_trades(trades)
+        entries = [r for r in rows if entry_cutoff is None or r[0] is None or r[0] < entry_cutoff]
+        if self.exit_rules:
+            self._simulate_exits(key, rows, yes_won, entry_cutoff)
         favorite_sides: set = set()  # lados ("yes"/"no") comprados a 90–100¢ por makers
-        for t in trades:
-            if t.get("is_block_trade"):
-                continue
-            price = to_decimal(t.get("yes_price_dollars"))
-            count = to_decimal(t.get("count_fp"), to_decimal(t.get("count")))
-            taker_side = t.get("taker_outcome_side") or t.get("taker_side")
-            if price is None or count is None or count <= 0 or taker_side not in ("yes", "no"):
-                continue
-            if not (ZERO < price < ONE):
-                continue
+        for _, price, count, taker_side in entries:
             self.trades += 1
             yes_role = "taker" if taker_side == "yes" else "maker"
             no_role = "maker" if yes_role == "taker" else "taker"
@@ -209,6 +243,95 @@ class Research:
             winner = "yes" if yes_won else "no"
             if winner not in favorite_sides:
                 self.favorite_upsets += 1
+
+    def _simulate_exits(self, key: str, rows: list, yes_won: bool, entry_cutoff: Optional[float]) -> None:
+        """Compara, para cada compra de la banda, esperar a la liquidación con cada regla de salida.
+
+        Se sigue el precio de las operaciones posteriores a la compra: si el favorito cae
+        hasta el precio de corte, se vende en ese momento (un tick por debajo y pagando
+        comisión de taker); si sube hasta el de cobro, se vende a ese precio como maker.
+        """
+        lo, hi = self.band
+        # La API da las operaciones de la más reciente a la más antigua.
+        timeline = sorted((r for r in reversed(rows) if r[0] is not None), key=lambda r: r[0])
+        yes = [r[1] for r in timeline]
+        cache: dict = {}
+
+        def first_after(below: bool, level: Decimal) -> list:
+            """Para cada operación, la primera posterior con precio YES <= level (o >= level)."""
+            if (below, level) not in cache:
+                out: list = [None] * len(yes)
+                upcoming = None
+                for i in range(len(yes) - 1, -1, -1):
+                    out[i] = upcoming
+                    if (yes[i] <= level) if below else (yes[i] >= level):
+                        upcoming = i
+                cache[(below, level)] = out
+            return cache[(below, level)]
+
+        for i, (ts, price, count, taker_side) in enumerate(timeline):
+            if entry_cutoff is not None and ts >= entry_cutoff:
+                continue
+            side = "no" if taker_side == "yes" else "yes"  # el maker compró el otro lado
+            paid = price if side == "yes" else ONE - price
+            if not (lo <= paid <= hi):
+                continue
+            won = yes_won if side == "yes" else not yes_won
+            entry_fee = MAKER_FEE_RATE * paid * (ONE - paid)
+            hold = (count if won else ZERO) - (paid + entry_fee) * count
+            for name, stop, take in self.exit_rules:
+                exits = []
+                if stop is not None:
+                    j = first_after(side == "yes", stop if side == "yes" else ONE - stop)[i]
+                    if j is not None:
+                        sold = max((yes[j] if side == "yes" else ONE - yes[j]) - EXIT_SLIPPAGE, ZERO)
+                        exits.append((j, sold, TAKER_FEE_RATE))
+                if take is not None:
+                    j = first_after(side != "yes", take if side == "yes" else ONE - take)[i]
+                    if j is not None:
+                        exits.append((j, take, MAKER_FEE_RATE))
+                group = self.exit_groups[name].setdefault(key, [ZERO] * 6)
+                group[0] += paid * count
+                group[1] += hold
+                group[5] += count
+                if not exits:
+                    group[2] += hold
+                    continue
+                _, sold, rate = min(exits, key=lambda e: e[0])
+                group[2] += (sold - rate * sold * (ONE - sold) - paid - entry_fee) * count
+                group[3] += count
+                if not won:
+                    group[4] += count
+
+    def exit_summary(self) -> list:
+        """Por regla de salida: rendimiento, diferencia con esperar al final y su margen de error.
+
+        Las dos opciones se miden sobre las mismas compras, así que el margen de la
+        diferencia sale de la diferencia en cada evento (método delta).
+        """
+        q = Decimal("0.0001")
+        out = []
+        for name, _, _ in self.exit_rules:
+            groups = [g for g in self.exit_groups[name].values() if g[0] > 0]
+            row: dict = {"rule": name, "groups": len(groups)}
+            if groups:
+                cost, hold, rule, sold, would_lose, contracts = (sum((g[k] for g in groups), ZERO) for k in range(6))
+                diff = (rule - hold) / cost
+                row.update(
+                    return_hold=(hold / cost).quantize(q),
+                    return_rule=(rule / cost).quantize(q),
+                    difference=diff.quantize(q),
+                    sold_share=(sold / contracts).quantize(q),
+                    sold_would_lose_share=(would_lose / sold).quantize(q) if sold else ZERO,
+                    groups_with_exits=sum(1 for g in groups if g[3] > 0),
+                )
+                n = len(groups)
+                if n >= 2:
+                    spread = sum((((g[2] - g[1]) - diff * g[0]) ** 2 for g in groups), ZERO) / (n * (n - 1))
+                    error = Z95 * spread.sqrt() / (cost / n)
+                    row["diff_low"], row["diff_high"] = (diff - error).quantize(q), (diff + error).quantize(q)
+            out.append(row)
+        return out
 
     def _band_add(self, key: str, price: Decimal, count: Decimal, won: bool) -> None:
         entry = self.band_groups.setdefault(key, [ZERO, ZERO, ZERO, ZERO])
@@ -344,6 +467,7 @@ def run_research(
     trades_pages: int = 2,
     by_time: bool = False,
     keep_groups: bool = False,
+    exits: bool = False,
     progress: Optional[Callable[[int, int], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
 ) -> dict:
@@ -353,6 +477,9 @@ def run_research(
     `max_markets` de cada una y el informe suma todas (con el detalle por serie).
     Con `by_time`, además separa el resultado de la estrategia según cuánto
     faltaba para el cierre (para saber si la ventaja está solo al final).
+    Con `exits`, compara esperar a la liquidación con vender antes de tiempo
+    (EXIT_RULES): se descargan también las operaciones de los últimos minutos,
+    pero las compras siguen parando `skip_last_minutes` antes del cierre.
     """
     names = [s.strip().upper() for s in (series or "").split(",") if s.strip()]
     plan: list = []
@@ -366,24 +493,26 @@ def run_research(
         )
         found = [m for m in found if m.result in ("yes", "no") and m.market_type == "binary"][:max_markets]
         plan += [(name, m) for m in found]
-    research = Research()
-    by_series = {name: Research() for name in names} if len(names) > 1 else {}
+    rules = EXIT_RULES if exits else ()
+    research = Research(exit_rules=rules)
+    by_series = {name: Research(exit_rules=rules) for name in names} if len(names) > 1 else {}
     windows = [w for w in TIME_WINDOWS if w[0] >= skip_last_minutes] if by_time else []
     by_window = {w: Research() for w in windows}
     for i, (name, market) in enumerate(plan, start=1):
         if should_stop and should_stop():
             break
-        max_ts = None
+        cutoff = None
         if skip_last_minutes and market.close_time is not None:
-            max_ts = int(market.close_time.timestamp()) - skip_last_minutes * 60
+            cutoff = int(market.close_time.timestamp()) - skip_last_minutes * 60
         try:
-            trades = client.get_trades(market.ticker, max_ts=max_ts, max_pages=trades_pages)
+            trades = client.get_trades(market.ticker, max_ts=None if exits else cutoff, max_pages=trades_pages)
         except Exception as exc:  # noqa: BLE001 - un mercado fallido no invalida el resto
             log.warning("No se pudieron leer las operaciones de %s: %s", market.ticker, exc)
             continue
-        research.add_market(market.result, trades, group=market.event_ticker)
+        entry_cutoff = cutoff if exits else None
+        research.add_market(market.result, trades, group=market.event_ticker, entry_cutoff=entry_cutoff)
         if name in by_series:
-            by_series[name].add_market(market.result, trades, group=market.event_ticker)
+            by_series[name].add_market(market.result, trades, group=market.event_ticker, entry_cutoff=entry_cutoff)
         if windows and market.close_time is not None:
             split = split_by_window(trades, market.close_time.timestamp(), windows)
             for window, part in split.items():
@@ -400,6 +529,9 @@ def run_research(
             "skip_last_minutes": skip_last_minutes,
         }
     )
+    if exits:
+        report["exits"] = research.exit_summary()
+        report["exits_by_series"] = {name: r.exit_summary() for name, r in by_series.items()}
     if keep_groups:
         report["groups_dump"] = research.band_groups_dump()
     return report
