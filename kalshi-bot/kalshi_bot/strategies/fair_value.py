@@ -71,6 +71,14 @@ def load_fair_values_csv(path: Path) -> dict:
 
 class FairValueStrategy(Strategy):
     name = "fair_value"
+    label = "Valor justo"
+    description = "Opera cuando el precio se aleja de TU probabilidad (lista de valores justos)."
+    PARAMS = [
+        {"key": "mode", "label": "Modo", "default": "taker", "type": "select", "options": ["taker", "maker"]},
+        {"key": "min_edge", "label": "Ventaja mínima tras comisiones", "default": "0.04", "type": "price"},
+        {"key": "order_size", "label": "Contratos por orden", "default": "2", "type": "number"},
+        {"key": "max_position", "label": "Contratos máximos por mercado", "default": "10", "type": "number"},
+    ]
 
     def __init__(self, params: Optional[dict] = None):
         super().__init__(params)

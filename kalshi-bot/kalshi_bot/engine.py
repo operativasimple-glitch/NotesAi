@@ -28,7 +28,8 @@ from pathlib import Path
 from typing import Callable, Optional
 
 from .client import KalshiAPIError, KalshiClient, new_client_order_id
-from .models import ZERO, Balance, Market, Order, OrderIntent, fmt_count, fmt_price, to_decimal
+from .discovery import MarketFilter, discover
+from .models import ZERO, Balance, Order, OrderIntent, fmt_count, fmt_price, to_decimal
 from .risk import RiskManager
 from .strategies.base import MarketContext, Strategy
 
@@ -53,7 +54,23 @@ class EngineConfig:
     min_hours_to_close: float = 0.0
     max_hours_to_close: float = 0.0  # 0 = sin límite
     min_volume_24h: Decimal = ZERO
+    closing_within_hours: float = 0.0  # >0: buscar en todos los mercados que cierran pronto
+    max_markets_per_event: int = 0  # 0 = sin límite
+    exclude_series: list = field(default_factory=list)
     refresh_markets_minutes: float = 5.0
+
+    def market_filter(self) -> MarketFilter:
+        return MarketFilter(
+            series=list(self.series),
+            events=list(self.events),
+            closing_within_hours=self.closing_within_hours,
+            min_hours_to_close=self.min_hours_to_close,
+            max_hours_to_close=self.max_hours_to_close,
+            min_volume_24h=self.min_volume_24h,
+            max_markets=self.max_markets,
+            max_markets_per_event=self.max_markets_per_event,
+            exclude_series=list(self.exclude_series),
+        )
 
 
 class Journal:
@@ -255,6 +272,13 @@ class Bot:
         self._trading_paused = False
         self._seen_fills: dict = {}  # fill_id -> None, en orden de llegada
         self._fills_since: Optional[int] = None
+        # Estado observable (lo lee el panel web desde otro hilo).
+        self.running = False
+        self.started_at: Optional[datetime] = None
+        self.last_tick_at: Optional[datetime] = None
+        self.ticks = 0
+        self.last_balance: Optional[Balance] = None
+        self.last_positions: dict = {}
 
     # --- ciclo de vida -------------------------------------------------------
 
@@ -263,7 +287,12 @@ class Bot:
 
     def run(self, max_ticks: Optional[int] = None) -> None:
         self._install_signal_handlers()
-        self.startup()
+        self.running = True
+        try:
+            self.startup()
+        except BaseException:
+            self.running = False
+            raise
         ticks = 0
         try:
             while not self._stop:
@@ -286,13 +315,17 @@ class Bot:
                     break
                 self._sleep_until(started + self.cfg.poll_interval)
         finally:
-            self.shutdown()
+            try:
+                self.shutdown()
+            finally:
+                self.running = False
 
     def startup(self) -> None:
         mode = "SIMULACIÓN (no se envía ninguna orden)" if self.executor.dry_run else "EN VIVO (envía órdenes)"
         log.info(
             "Arrancando bot | entorno=%s | modo=%s | estrategia=%s", self.env_name or "?", mode, self.strategy.name
         )
+        self.started_at = self._now()
         status = self.client.get_exchange_status()
         log.info(
             "Exchange: activo=%s, trading=%s",
@@ -303,6 +336,7 @@ class Bot:
             balance = self.client.get_balance()
             log.info("Saldo disponible $%.2f | valor del portafolio $%.2f", balance.cash, balance.portfolio_value)
             self.risk.start_session(balance.equity)
+            self.last_balance = balance
             self._fills_since = int(self._now().timestamp())
         else:
             log.warning(
@@ -359,6 +393,10 @@ class Bot:
         else:
             balance = Balance(self.cfg.paper_cash, ZERO)
             positions = {}
+        self.last_balance = balance
+        self.last_positions = positions
+        self.last_tick_at = now
+        self.ticks += 1
 
         reason = self.risk.check_loss(balance.equity)
         if reason:
@@ -496,27 +534,11 @@ class Bot:
         if missing:
             log.warning("Tickers no encontrados en Kalshi: %s", ", ".join(missing))
 
-        discovered: list = []
-        for series in self.cfg.series:
-            discovered += self.client.get_markets(status="open", series_ticker=series)
-        for event in self.cfg.events:
-            discovered += self.client.get_markets(status="open", event_ticker=event)
-        candidates = [m for m in discovered if m.ticker not in selected and self._passes_filters(m, now)]
-        candidates.sort(key=lambda m: m.volume_24h, reverse=True)
-        for market in candidates[: max(0, self.cfg.max_markets)]:
-            selected.setdefault(market.ticker, market)
+        flt = self.cfg.market_filter()
+        if flt.searches:
+            for market in discover(self.client, flt, now, exclude=selected):
+                selected.setdefault(market.ticker, market)
         return selected
-
-    def _passes_filters(self, market: Market, now: datetime) -> bool:
-        if not market.is_active:
-            return False
-        hours = market.hours_to_close(now)
-        if hours is not None:
-            if hours < self.cfg.min_hours_to_close:
-                return False
-            if self.cfg.max_hours_to_close and hours > self.cfg.max_hours_to_close:
-                return False
-        return market.volume_24h >= self.cfg.min_volume_24h
 
     # --- llenados ----------------------------------------------------------------
 

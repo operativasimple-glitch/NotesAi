@@ -89,6 +89,10 @@ class FakeKalshi:
         self.cancelled: list = []
         self.cancel_all_calls = 0
         self.failures: dict = {}  # nombre de método -> excepción a lanzar
+        self.settled: dict = {}  # mercados liquidados (para research)
+        self.trades: dict = {}  # ticker -> operaciones públicas
+        self.events = None  # eventos con mercados anidados (para el escáner)
+        self.market_queries: list = []
         self._next_id = 1
 
     def _maybe_fail(self, name):
@@ -100,8 +104,21 @@ class FakeKalshi:
         self._maybe_fail("get_exchange_status")
         return {"exchange_active": True, "trading_active": self.trading_active}
 
-    def get_markets(self, *, status="open", series_ticker=None, event_ticker=None, tickers=None, **_):
-        found = list(self.markets.values())
+    def get_markets(
+        self,
+        *,
+        status="open",
+        series_ticker=None,
+        event_ticker=None,
+        tickers=None,
+        min_close_ts=None,
+        max_close_ts=None,
+        **_,
+    ):
+        self.market_queries.append(
+            {"status": status, "series": series_ticker, "min_close_ts": min_close_ts, "max_close_ts": max_close_ts}
+        )
+        found = list(self.markets.values()) + (list(self.settled.values()) if status == "settled" else [])
         if tickers:
             found = [m for m in found if m.ticker in tickers]
         if event_ticker:
@@ -110,7 +127,16 @@ class FakeKalshi:
             found = [m for m in found if m.ticker.startswith(series_ticker)]
         if status == "open":
             found = [m for m in found if m.is_active]
+        if status == "settled":
+            found = [m for m in found if m.result in ("yes", "no")]
+        if min_close_ts is not None:
+            found = [m for m in found if m.close_time and m.close_time.timestamp() >= min_close_ts]
+        if max_close_ts is not None:
+            found = [m for m in found if m.close_time and m.close_time.timestamp() <= max_close_ts]
         return found
+
+    def get_trades(self, ticker, *, min_ts=None, max_ts=None, max_pages=3):
+        return list(self.trades.get(ticker, []))
 
     def get_orderbook(self, ticker, depth=0):
         return self.books[ticker]
@@ -119,6 +145,8 @@ class FakeKalshi:
         return self.markets[ticker]
 
     def get_events(self, **_):
+        if self.events is not None:
+            return list(self.events)
         return [{"event_ticker": "KXTEST-26OCT08", "series_ticker": "KXTEST", "title": "Evento de prueba"}]
 
     def get_account_limits(self):

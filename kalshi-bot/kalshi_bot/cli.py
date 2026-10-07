@@ -16,7 +16,9 @@ from .client import KalshiAPIError
 from .config import ConfigError, Settings, load_settings
 from .engine import Bot, DryRunExecutor, Journal, LiveExecutor
 from .models import Market
+from .research import run_research
 from .risk import RiskManager
+from .scanner import ScanParams, run_scan
 from .strategies import build_strategy
 
 log = logging.getLogger("kalshi_bot")
@@ -236,6 +238,84 @@ def cmd_run(settings: Settings, args) -> int:
     return 1 if bot.halted_reason else 0
 
 
+def cmd_scan(settings: Settings, args) -> int:
+    client = settings.client(settings.signer())
+    params = ScanParams(
+        closing_within_hours=args.hours,
+        series=args.series or [],
+        min_volume_24h=Decimal(str(args.min_volume)),
+        include_arbitrage=not args.no_arbitrage,
+    )
+    print("Escaneando mercados (solo lectura)...", file=sys.stderr)
+    result = run_scan(client, params, datetime.now(timezone.utc))
+    print(f"Mercados revisados: {result['markets_scanned']}\n")
+
+    print(f"FAVORITOS (lado que cotiza entre {cents(params.fav_min_price)} y {cents(params.fav_max_price)})")
+    if not result["favorites"]:
+        print("  (ninguno)")
+    for f in result["favorites"]:
+        side = "SÍ" if f["side"] == "yes" else "NO"
+        print(
+            f"  {f['ticker']:<34} {side:<2} bid {cents(f['bid']):>6} ask {cents(f['ask']):>6} "
+            f"cierra {f['hours_to_close'] if f['hours_to_close'] is not None else '?'}h  "
+            f"vol {contracts(f['volume_24h'])}"
+        )
+    print(f"\nSPREADS AMPLIOS (≥ {cents(params.wide_spread)})")
+    if not result["spreads"]:
+        print("  (ninguno)")
+    for s in result["spreads"]:
+        print(
+            f"  {s['ticker']:<34} bid {cents(s['bid']):>6} ask {cents(s['ask']):>6} "
+            f"spread {cents(s['spread']):>5}  vol {contracts(s['volume_24h'])}"
+        )
+    if params.include_arbitrage:
+        print("\nARBITRAJE EN EVENTOS (tras comisiones taker; confírmalo en el libro)")
+        if not result["arbitrage"]:
+            print("  (ninguno)")
+        for a in result["arbitrage"]:
+            print(
+                f"  {a['event_ticker']:<30} {a['description']}: {a['legs']} patas, "
+                f"beneficio {cents(a['profit'])} por juego de contratos"
+            )
+            if a["warning"]:
+                print(f"    ⚠ {a['warning']}")
+    return 0
+
+
+def cmd_research(settings: Settings, args) -> int:
+    client = settings.client(settings.signer())
+
+    def progress(done: int, total: int) -> None:
+        if done == total or done % 10 == 0:
+            print(f"  {done}/{total} mercados", file=sys.stderr)
+
+    print("Descargando mercados liquidados y sus operaciones...", file=sys.stderr)
+    report = run_research(
+        client,
+        series=args.series,
+        max_markets=args.markets,
+        skip_last_minutes=args.skip_last_minutes,
+        progress=progress,
+    )
+    print(f"\nSerie: {report['series']} | mercados: {report['markets']} | operaciones: {report['trades']}")
+    print(f"{'TRAMO':<10} {'TAKER':>18} {'MAKER':>18} {'TODOS':>18}")
+    print(f"{'':<10} {'rend. (tras com.)':>18} {'rend. (tras com.)':>18} {'acierto/precio':>18}")
+    for row in report["buckets"]:
+
+        def fmt(stats):
+            if not stats.get("contracts"):
+                return "—"
+            return f"{stats['return_after_fees'] * 100:+.1f}%"
+
+        both = row["all"]
+        ratio = f"{both['win_rate'] * 100:.1f}% / {both['avg_price'] * 100:.1f}¢" if both.get("contracts") else "—"
+        print(f"{row['range']:<10} {fmt(row['taker']):>18} {fmt(row['maker']):>18} {ratio:>18}")
+    print()
+    for note in report["conclusions"]:
+        print(f"• {note}")
+    return 0
+
+
 def _require_signer(settings: Settings):
     signer = settings.signer()
     if signer is None:
@@ -303,6 +383,8 @@ COMMANDS = {
     "orders": cmd_orders,
     "cancel-all": cmd_cancel_all,
     "run": cmd_run,
+    "scan": cmd_scan,
+    "research": cmd_research,
 }
 
 
@@ -332,6 +414,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     p = sub.add_parser("cancel-all", help="cancela las órdenes del bot")
     p.add_argument("--everything", action="store_true", help="cancela TODAS las órdenes de la cuenta")
+
+    p = sub.add_parser("scan", help="busca oportunidades ahora (favoritos, spreads, arbitraje)")
+    p.add_argument("--hours", type=float, default=48, help="mercados que cierran en las próximas N horas")
+    p.add_argument("--series", nargs="*", help="limitar a estas series")
+    p.add_argument("--min-volume", type=float, default=100, help="volumen mínimo en 24 h")
+    p.add_argument("--no-arbitrage", action="store_true", help="no revisar eventos de varios resultados")
+
+    p = sub.add_parser("research", help="mide con datos reales quién gana a cada precio")
+    p.add_argument("--series", help="serie a estudiar (por defecto, todas)")
+    p.add_argument("--markets", type=int, default=150, help="mercados liquidados a analizar")
+    p.add_argument("--skip-last-minutes", type=int, default=0, help="ignorar operaciones cerca del cierre")
 
     p = sub.add_parser("run", help="ejecuta el bot (simulación salvo que uses --live)")
     p.add_argument("--live", action="store_true", help="envía órdenes de verdad")

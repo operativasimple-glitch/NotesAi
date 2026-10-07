@@ -1,6 +1,7 @@
-# Copia este archivo como config.toml y ajústalo a tu gusto.
-# Los secretos (API key) van en .env, nunca aquí.
+# Copia este archivo como config.toml y ajústalo a tu gusto (o cámbialo desde el panel web).
+# Los secretos (API key) van en .env o en el panel, nunca aquí.
 # Los importes están en dólares y los precios entre 0 y 1 (0.45 = 45¢).
+# Por qué estos valores: lee INVESTIGACION.md.
 
 [bot]
 poll_interval_seconds = 10       # segundos entre vueltas del bot
@@ -14,19 +15,22 @@ order_prefix = "kb"              # el bot solo toca órdenes cuyo client_order_i
 log_dir = "logs"                 # aquí van bot.log y journal.jsonl
 
 [markets]
-# Mercados concretos a seguir (además de los que tengan valor justo en la estrategia):
+# Busca en TODOS los mercados que cierran en las próximas N horas (0 = desactivado):
+closing_within_hours = 48
+max_markets = 15                 # como mucho, los N de más volumen
+max_markets_per_event = 1        # uno por evento: evita apuestas correlacionadas
+min_volume_24h = 200             # volumen mínimo en las últimas 24 h (contratos)
+min_hours_to_close = 1           # ignorar los que cierran en menos de 1 h...
+max_hours_to_close = 0           # ...o en más de N horas (0 = sin límite)
+exclude_series = []              # series a evitar, p. ej. ["KXBTC15M"]
+# Además puedes fijar mercados concretos, series o eventos:
 tickers = []
-# O que el bot descubra mercados abiertos por serie o evento (elige los de más volumen):
 series = []                      # p. ej. ["KXHIGHNY"]  (temperatura máxima en Nueva York)
 events = []
-max_markets = 10
-min_hours_to_close = 0.5         # ignorar mercados que cierran en menos de 30 min...
-max_hours_to_close = 0           # ...o en más de N horas (0 = sin límite)
-min_volume_24h = 0               # volumen mínimo en las últimas 24 h (contratos)
 refresh_minutes = 5              # cada cuánto se vuelve a buscar mercados
 
 [risk]
-max_order_contracts = 5          # contratos por orden
+max_order_contracts = 10         # contratos por orden (con menos, el redondeo de la comisión pesa)
 max_position_per_market = 20     # contratos por mercado (YES o NO)
 max_total_exposure_dollars = 50  # dinero máximo comprometido: posiciones de la cuenta + órdenes del bot
 max_session_loss_dollars = 20    # si pierdes esto desde que arrancó el bot: cancela todo y se detiene (0 = off)
@@ -41,23 +45,34 @@ timeout_seconds = 10
 self_trade_prevention = "taker_at_cross"
 
 [strategy]
-# "fair_value" (tú das la probabilidad), "market_maker" (cotiza ambos lados)
+# "favorites"    compra el lado favorito (88–97¢) como maker  ← la que respalda la investigación
+# "fair_value"   opera contra TUS probabilidades (fair_values.csv)
+# "market_maker" cotiza a ambos lados (plantilla educativa)
 # o tu propia estrategia como "mi_modulo:MiClase".
-name = "fair_value"
+name = "favorites"
 
 [strategy.params]
-mode = "taker"                   # "taker": IOC cuando hay ventaja | "maker": deja órdenes en el libro
-min_edge = 0.04                  # ventaja mínima por contrato tras comisiones (0.04 = 4¢)
-order_size = 2                   # contratos por orden
-max_position = 10                # contratos máximos por mercado
-fair_values_file = "fair_values.csv"   # se recarga solo cuando lo editas
-
-[strategy.params.fair_values]
-# Tu probabilidad de que el mercado resuelva YES (0.35, "35%" o 35):
-# "KXHIGHNY-26OCT08-B67.5" = 0.30
+min_price = 0.88                 # precio mínimo del favorito
+max_price = 0.97                 # precio máximo a pagar
+order_size = 10                  # contratos por orden
+max_position = 20                # contratos máximos por mercado
+max_spread = 0.04                # ignorar mercados con más de 4¢ de spread
+improve = true                   # mejorar en un tick la mejor oferta (sin cruzar)
 
 # ---------------------------------------------------------------------------
-# Para usar el creador de mercado, sustituye las secciones [strategy] por:
+# Valor justo: sustituye [strategy] y [strategy.params] por
+#
+# [strategy]
+# name = "fair_value"
+#
+# [strategy.params]
+# mode = "taker"              # "taker" (IOC cuando hay ventaja) o "maker" (deja órdenes)
+# min_edge = 0.04             # ventaja mínima por contrato tras comisiones (4¢)
+# order_size = 2
+# max_position = 10
+# fair_values_file = "fair_values.csv"   # se recarga solo cuando lo editas
+#
+# Creador de mercado:
 #
 # [strategy]
 # name = "market_maker"
@@ -68,5 +83,3 @@ fair_values_file = "fair_values.csv"   # se recarga solo cuando lo editas
 # max_position = 10
 # skew_per_contract = 0.002   # desplaza las cotizaciones 0.2¢ por contrato de inventario
 # min_book_spread = 0.03      # solo cotiza si el spread del mercado es de 3¢ o más
-#
-# y elige mercados en [markets] (p. ej. series = ["KXHIGHNY"]).

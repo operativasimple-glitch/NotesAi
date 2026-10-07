@@ -41,11 +41,13 @@ def test_example_config_loads_with_defaults(clean_env):
     (clean_env / "config.toml").write_text(EXAMPLE_CONFIG.read_text(encoding="utf-8"), encoding="utf-8")
     s = load_settings()
     assert s.env == "demo" and s.base_url.startswith("https://external-api.demo.kalshi.co")
-    assert s.strategy_name == "fair_value"
-    assert s.strategy_params["fair_values_file"] == str(clean_env / "fair_values.csv")
+    assert s.strategy_name == "favorites" and s.strategy_params["min_price"] == 0.88
+    assert s.engine.closing_within_hours == 48 and s.engine.max_markets_per_event == 1
     assert s.risk.max_total_exposure == D("50") and s.risk.min_price == D("0.03")
     assert s.engine.order_ttl_seconds == 600 and s.log_dir == clean_env / "logs"
     assert s.signer() is None
+    fv = load_settings(overrides={"strategy": {"name": "fair_value"}})
+    assert fv.strategy_params == {"fair_values_file": str(clean_env / "fair_values.csv")}
 
 
 def test_env_file_credentials_and_relative_paths(clean_env, key_pem):
@@ -178,3 +180,77 @@ def test_real_money_detection_uses_the_api_host(clean_env):
     os.environ["KALSHI_ENV"] = "demo"
     os.environ["KALSHI_BASE_URL"] = "https://api.elections.kalshi.com/trade-api/v2"
     assert load_settings().is_production is True  # la URL manda sobre KALSHI_ENV
+
+
+# --- ajustes del panel y credenciales guardadas -------------------------------------
+
+
+def test_overrides_merge_and_strategy_switch(clean_env):
+    (clean_env / "config.toml").write_text(
+        '[risk]\nmax_order_contracts = 5\n\n[strategy]\nname = "fair_value"\n\n'
+        "[strategy.params]\nmin_edge = 0.05\norder_size = 3\n",
+        encoding="utf-8",
+    )
+    same = load_settings(overrides={"strategy": {"name": "fair_value", "params": {"order_size": 7}}})
+    assert same.strategy_params["min_edge"] == 0.05 and same.strategy_params["order_size"] == 7
+    switched = load_settings(
+        overrides={
+            "strategy": {"name": "favorites", "params": {"min_price": "0.9"}},
+            "risk": {"max_order_contracts": 9},
+        }
+    )
+    assert switched.strategy_name == "favorites"
+    assert switched.strategy_params == {"min_price": "0.9"}  # no arrastra parámetros de otra estrategia
+    assert switched.risk.max_order_contracts == D("9")
+    assert switched.sections()["risk"]["max_order_contracts"] == D("9")
+
+
+def test_overrides_file_roundtrip_and_comma_lists(clean_env):
+    from kalshi_bot.config import read_overrides, write_overrides
+
+    write_overrides(clean_env, {"markets": {"series": "KXA, KXB", "closing_within_hours": 24}})
+    s = load_settings(overrides=read_overrides(clean_env))
+    assert s.engine.series == ["KXA", "KXB"] and s.engine.closing_within_hours == 24.0
+    assert read_overrides(clean_env / "nada") == {}
+
+
+def test_panel_credentials_are_used_when_env_is_empty(clean_env, key_pem):
+    from kalshi_bot.config import delete_panel_credentials, save_panel_credentials, save_panel_env
+
+    os.environ["KALSHI_BOT_DATA_DIR"] = str(clean_env / "data")
+    save_panel_credentials(clean_env / "data", key_id="panel-id", private_key_pem=key_pem.decode(), env="demo")
+    key_file = clean_env / "data" / "kalshi-key.pem"
+    assert oct(key_file.stat().st_mode & 0o777) == "0o600"
+    s = load_settings(overrides={"strategy": {"name": "fair_value"}})
+    assert s.credentials_source == "panel" and s.signer().key_id == "panel-id" and s.env == "demo"
+    assert s.strategy_params["fair_values_file"] == str(clean_env / "data" / "fair_values.csv")
+    assert s.log_dir == clean_env / "data" / "logs"
+
+    save_panel_env(clean_env / "data", "prod")
+    assert load_settings().env == "prod" and load_settings().env_locked is False
+    os.environ["KALSHI_ENV"] = "demo"
+    assert load_settings().env == "demo" and load_settings().env_locked is True  # el entorno manda
+
+    os.environ["KALSHI_API_KEY_ID"] = "env-id"
+    os.environ["KALSHI_PRIVATE_KEY"] = key_pem.decode()
+    assert load_settings().credentials_source == "env" and load_settings().signer().key_id == "env-id"
+
+    delete_panel_credentials(clean_env / "data")
+    assert not key_file.exists()
+    with pytest.raises(ValueError):
+        save_panel_credentials(clean_env / "data", key_id="x", private_key_pem="basura", env="demo")
+
+
+def test_cli_scan_and_research(fake_cli, capsys):
+    fake_cli.markets[T] = make_market(T, yes_bid_dollars="0.9000", yes_ask_dollars="0.9200")
+    fake_cli.events = []
+    assert cli.main(["scan", "--hours", "48"]) == 0
+    out = capsys.readouterr().out
+    assert "FAVORITOS" in out and T in out
+
+    settled = make_market("KXOLD-1", status="finalized", result="no")
+    fake_cli.settled = {settled.ticker: settled}
+    fake_cli.trades = {"KXOLD-1": [{"yes_price_dollars": "0.0500", "count_fp": "10.00", "taker_outcome_side": "yes"}]}
+    assert cli.main(["research", "--series", "KXOLD"]) == 0
+    out = capsys.readouterr().out
+    assert "95–100¢" in out and "favoritos" in out

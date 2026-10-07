@@ -146,6 +146,8 @@ class Market:
     volume_24h: Decimal
     open_interest: Decimal
     price_ranges: tuple = DEFAULT_PRICE_RANGES
+    result: str = ""  # "yes" / "no" cuando el mercado se liquidó
+    market_type: str = "binary"
     raw: dict = field(default_factory=dict, repr=False)
 
     @classmethod
@@ -167,12 +169,25 @@ class Market:
             volume_24h=to_decimal(d.get("volume_24h_fp"), ZERO),
             open_interest=to_decimal(d.get("open_interest_fp"), ZERO),
             price_ranges=_parse_ranges(d.get("price_ranges")) or DEFAULT_PRICE_RANGES,
+            result=str(d.get("result") or ""),
+            market_type=str(d.get("market_type") or "binary"),
             raw=d,
         )
 
     @property
     def is_active(self) -> bool:
         return self.status in ("active", "open")
+
+    @property
+    def series(self) -> str:
+        """Serie a la que pertenece (por convención, el ticker hasta el primer guion)."""
+        return self.ticker.split("-", 1)[0]
+
+    @property
+    def spread(self) -> Optional[Decimal]:
+        if self.yes_bid is None or self.yes_ask is None:
+            return None
+        return self.yes_ask - self.yes_bid
 
     def hours_to_close(self, now: datetime) -> Optional[float]:
         if self.close_time is None:

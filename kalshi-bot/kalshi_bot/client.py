@@ -246,14 +246,21 @@ class KalshiClient:
         series_ticker: Optional[str] = None,
         event_ticker: Optional[str] = None,
         tickers: Optional[list] = None,
+        min_close_ts: Optional[int] = None,
+        max_close_ts: Optional[int] = None,
+        mve_filter: Optional[str] = None,
         limit: int = 200,
         max_pages: int = 5,
     ) -> list:
+        """Lista mercados. Ojo: Kalshi solo combina min/max_close_ts con status vacío o "closed"."""
         params: dict[str, Any] = {
             "status": status,
             "series_ticker": series_ticker,
             "event_ticker": event_ticker,
             "tickers": ",".join(tickers) if tickers else None,
+            "min_close_ts": min_close_ts,
+            "max_close_ts": max_close_ts,
+            "mve_filter": mve_filter,
             "limit": limit,
         }
         raw = self._paginate("/markets", "markets", params, auth=False, max_pages=max_pages)
@@ -273,11 +280,24 @@ class KalshiClient:
         *,
         status: Optional[str] = "open",
         series_ticker: Optional[str] = None,
+        with_nested_markets: bool = False,
         limit: int = 100,
         max_pages: int = 1,
     ) -> list:
-        params = {"status": status, "series_ticker": series_ticker, "limit": min(limit, 200)}
-        return self._paginate("/events", "events", params, auth=False, max_pages=max_pages)[:limit]
+        params = {
+            "status": status,
+            "series_ticker": series_ticker,
+            "with_nested_markets": "true" if with_nested_markets else None,
+            "limit": min(limit, 200),
+        }
+        return self._paginate("/events", "events", params, auth=False, max_pages=max_pages)[: limit * max_pages]
+
+    def get_trades(
+        self, ticker: str, *, min_ts: Optional[int] = None, max_ts: Optional[int] = None, max_pages: int = 3
+    ) -> list:
+        """Operaciones públicas de un mercado (las más recientes primero)."""
+        params = {"ticker": ticker, "min_ts": min_ts, "max_ts": max_ts, "limit": 1000}
+        return self._paginate("/markets/trades", "trades", params, auth=False, max_pages=max_pages)
 
     def get_event(self, event_ticker: str) -> dict:
         data = self.request(

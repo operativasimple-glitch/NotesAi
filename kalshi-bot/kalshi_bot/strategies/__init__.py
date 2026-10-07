@@ -1,7 +1,7 @@
 """Registro de estrategias.
 
 En config.toml, `[strategy] name` puede ser una estrategia incluida
-("fair_value", "market_maker") o una tuya con el formato "modulo:Clase",
+("favorites", "fair_value", "market_maker") o una tuya con el formato "modulo:Clase",
 p. ej. "mis_estrategias:MiEstrategia" (el módulo debe poder importarse
 desde la carpeta donde ejecutas el bot).
 """
@@ -15,9 +15,10 @@ from typing import Optional
 
 from .base import MarketContext, Strategy
 from .fair_value import FairValueStrategy
+from .favorites import FavoritesStrategy
 from .market_maker import MarketMakerStrategy
 
-BUILTIN = {cls.name: cls for cls in (FairValueStrategy, MarketMakerStrategy)}
+BUILTIN = {cls.name: cls for cls in (FavoritesStrategy, FairValueStrategy, MarketMakerStrategy)}
 
 __all__ = ["BUILTIN", "MarketContext", "Strategy", "build_strategy"]
 

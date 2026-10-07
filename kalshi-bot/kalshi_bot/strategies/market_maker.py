@@ -27,6 +27,15 @@ from .base import MarketContext, Strategy
 
 class MarketMakerStrategy(Strategy):
     name = "market_maker"
+    label = "Creador de mercado"
+    description = "Cotiza compra y venta alrededor del precio medio (plantilla educativa)."
+    PARAMS = [
+        {"key": "half_spread", "label": "Distancia al precio medio", "default": "0.02", "type": "price"},
+        {"key": "quote_size", "label": "Contratos por cotización", "default": "2", "type": "number"},
+        {"key": "max_position", "label": "Inventario máximo por mercado", "default": "10", "type": "number"},
+        {"key": "skew_per_contract", "label": "Ajuste por contrato de inventario", "default": "0.002", "type": "price"},
+        {"key": "min_book_spread", "label": "Spread mínimo para cotizar", "default": "0.03", "type": "price"},
+    ]
 
     def __init__(self, params: Optional[dict] = None):
         super().__init__(params)

@@ -100,6 +100,11 @@ class Strategy(ABC):
     """Clase base. Hereda de aquí para crear tu propia estrategia."""
 
     name = "base"
+    label = ""  # nombre para el panel web
+    description = ""
+    # Parámetros editables desde el panel: dicts con key, label, default y type
+    # ("number", "price", "bool", "text" o "select" con options).
+    PARAMS: list = []
 
     def __init__(self, params: Optional[dict] = None):
         self.params = dict(params or {})
