@@ -61,8 +61,9 @@ class RiskManager:
             (posiciones + órdenes en reposo de OTROS mercados).
 
         Devuelve (órdenes aprobadas, posiblemente recortadas; notas).
-        Las órdenes que reducen una posición existente siempre caben en el
-        presupuesto de exposición, para que el bot pueda salir de posiciones.
+        La parte de una orden que reduce una posición existente no gasta
+        presupuesto de exposición ni cuenta para el tamaño máximo por orden, y
+        puede tener cualquier precio válido: así el bot siempre puede salir.
         """
         lim = self.limits
         approved: list = []
@@ -74,19 +75,21 @@ class RiskManager:
         budget = lim.max_total_exposure - committed_exposure
 
         for intent in intents:
+            requested = whole_contracts(intent.count)
+            closable = closable_by_bid if intent.side == BID else closable_by_ask
+            room = bid_room if intent.side == BID else ask_room
+            closing = min(requested, closable)
+            opening = max(ZERO, min(requested - closing, room - closing, lim.max_order_contracts - closing))
             if not (lim.min_price <= intent.price <= lim.max_price):
-                notes.append(f"rechazada (precio fuera de [{lim.min_price}, {lim.max_price}]): {intent.describe()}")
-                continue
-
-            count = min(intent.count, lim.max_order_contracts, bid_room if intent.side == BID else ask_room)
-            count = whole_contracts(count)
+                if closing <= 0:
+                    notes.append(f"rechazada (precio fuera de [{lim.min_price}, {lim.max_price}]): {intent.describe()}")
+                    continue
+                opening = ZERO  # fuera de rango solo se permite cerrar
+            count = closing + opening
             if count <= 0:
                 notes.append(f"rechazada (límite de posición o tamaño): {intent.describe()}")
                 continue
 
-            closable = closable_by_bid if intent.side == BID else closable_by_ask
-            closing = min(count, closable)
-            opening = count - closing
             unit_cost = intent.cost_per_contract()
             if opening * unit_cost > budget:
                 affordable = whole_contracts(budget / unit_cost) if unit_cost > 0 and budget > 0 else ZERO

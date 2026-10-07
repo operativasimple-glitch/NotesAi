@@ -4,7 +4,7 @@ from decimal import Decimal as D
 import pytest
 
 from kalshi_bot.discovery import MarketFilter, discover
-from kalshi_bot.models import ASK, BID, GTC, parse_time
+from kalshi_bot.models import ASK, BID, GTC, IOC, parse_time
 from kalshi_bot.research import (
     EXIT_RULES,
     Research,
@@ -71,6 +71,52 @@ def test_respects_max_position_on_each_side():
     assert fav().on_market(ctx_for(yes_book, position=15))[0].count == D("5")
     no_book = make_book(T, bids=[("0.05", 5)], asks=[("0.08", 5)])
     assert fav().on_market(ctx_for(no_book, position=-20)) == []
+
+
+def held(book, position, exposure, exit_only=False):
+    ctx = ctx_for(book, position=position)
+    ctx.exposure, ctx.exit_only = D(exposure), exit_only
+    return ctx
+
+
+def test_exits_are_off_by_default():
+    collapsing = make_book(T, bids=[("0.40", 50)], asks=[("0.45", 50)])
+    assert not fav().wants_exits() and fav().on_market(held(collapsing, 5, "4.60")) == []
+
+
+def test_stop_loss_sells_a_collapsing_favorite():
+    s = fav(stop_loss="0.50")
+    collapsing = make_book(T, bids=[("0.45", 50)], asks=[("0.48", 50)])
+    # 5 SÍ comprados a 92¢: el SÍ cae a 45¢ y se vende ya, al mejor precio.
+    assert summary(s.on_market(held(collapsing, 5, "4.60"))) == [(ASK, D("0.45"), D("5"), IOC, False)]
+    assert "cortar pérdidas" in s.on_market(held(collapsing, 5, "4.60"))[0].reason
+    # Un SÍ comprado a 30¢ (a mano) no es un favorito del bot: no se toca.
+    assert s.on_market(held(collapsing, 5, "1.50")) == []
+    # Por encima del corte se espera (y a 60¢ tampoco compra más).
+    assert s.on_market(held(make_book(T, bids=[("0.60", 50)], asks=[("0.62", 50)]), 5, "4.60")) == []
+    # 5 NO comprados a 94¢: el SÍ sube a 58¢ (NO a 42¢) y se recompra SÍ para cerrar.
+    rising = make_book(T, bids=[("0.55", 50)], asks=[("0.58", 50)])
+    assert summary(s.on_market(held(rising, -5, "4.70"))) == [(BID, D("0.58"), D("5"), IOC, False)]
+
+
+def test_take_profit_cashes_out_a_nearly_won_favorite():
+    s = fav(take_profit="0.99")
+    assert summary(s.on_market(held(make_book(T, bids=[("0.99", 50)]), 5, "4.60"))) == [
+        (ASK, D("0.99"), D("5"), IOC, False)
+    ]
+    # Con NO: el SÍ se vende a 1¢, o sea el NO se cobra a 99¢.
+    assert summary(s.on_market(held(make_book(T, asks=[("0.01", 50)]), -5, "4.70"))) == [
+        (BID, D("0.01"), D("5"), IOC, False)
+    ]
+    # A 98¢ todavía se espera; y cuando solo se puede salir, no compra más.
+    book = make_book(T, bids=[("0.90", 50)], asks=[("0.92", 50)])
+    assert s.on_market(held(book, 5, "4.60", exit_only=True)) == []
+    assert s.on_market(held(book, 5, "4.60"))[0].side == BID  # en la lista, sigue comprando
+    with pytest.raises(ValueError):
+        fav(stop_loss="0.90")  # el corte va por debajo del precio mínimo del favorito
+    with pytest.raises(ValueError):
+        fav(take_profit="0.95")  # el cobro, por encima del precio máximo a pagar
+    assert fav(stop_loss="0.5", take_profit="0.99").wants_exits()
 
 
 def test_invalid_band():

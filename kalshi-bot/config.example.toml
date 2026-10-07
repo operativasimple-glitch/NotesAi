@@ -70,6 +70,10 @@ order_size = 10                  # contratos por orden
 max_position = 20                # contratos máximos por mercado
 max_spread = 0.04                # ignorar mercados con más de 4¢ de spread
 improve = true                   # mejorar en un tick la mejor oferta (sin cruzar)
+# Cobrar antes de tiempo (0 = esperar siempre a la liquidación, lo que mejor resultado dio con
+# datos reales; ver INVESTIGACION.md):
+stop_loss = 0                    # p. ej. 0.30: vender si el favorito cae a 30¢
+take_profit = 0                  # p. ej. 0.99: vender si ya se puede cobrar 99¢
 
 # ---------------------------------------------------------------------------
 # Valor justo: sustituye [strategy] y [strategy.params] por

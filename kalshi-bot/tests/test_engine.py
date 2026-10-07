@@ -9,6 +9,7 @@ from kalshi_bot.engine import Bot, DryRunExecutor, EngineConfig, Journal, LiveEx
 from kalshi_bot.models import ASK, BID, GTC, IOC, Balance, Order, OrderIntent
 from kalshi_bot.risk import RiskLimits, RiskManager
 from kalshi_bot.strategies.fair_value import FairValueStrategy
+from kalshi_bot.strategies.favorites import FavoritesStrategy
 from kalshi_bot.strategies.market_maker import MarketMakerStrategy
 
 from .fakes import NOW, FakeKalshi, make_book, make_market
@@ -303,3 +304,50 @@ def test_intent_helpers_round_to_ticks():
     intent = OrderIntent(T, BID, D("0.43"), D("2"), GTC, post_only=True)
     assert intent.describe() == f"COMPRA YES 2.00 @ 0.4300 [GTC post-only] {T}"
     assert OrderIntent(T, ASK, D("0.6"), D("1"), IOC).cost_per_contract() == D("0.4")
+
+
+def favorites_with_exits():
+    return FavoritesStrategy({"stop_loss": "0.50", "take_profit": "0.99"})
+
+
+def test_exits_still_work_in_the_last_minutes():
+    bot, fake, clock = setup(favorites_with_exits())
+    fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.92", 50)])
+    bot.tick()
+    assert [(c["intent"].side, c["intent"].price) for c in fake.created] == [(BID, D("0.91"))]
+    clock.sleep(6 * 3600 - 10 * 60)  # faltan 10 min: ya no compra, pero puede salir
+    fake.set_position(T, 5, exposure="4.55")
+    fake.books[T] = make_book(T, bids=[("0.40", 50)], asks=[("0.45", 50)])
+    bot.tick()
+    sell = fake.created[-1]["intent"]
+    assert (sell.side, sell.price, sell.count, sell.time_in_force) == (ASK, D("0.40"), D("5"), IOC)
+    assert fake.orders == {}  # la compra en reposo se canceló antes de vender
+
+    quiet, fake2, clock2 = setup()  # sin salidas (creador de mercado): solo cancela, como siempre
+    fake2.set_position(T, 5, exposure="4.55")
+    quiet.tick()
+    clock2.sleep(6 * 3600 - 10 * 60)
+    created = len(fake2.created)
+    quiet.tick()
+    assert len(fake2.created) == created and fake2.orders == {}
+
+
+def test_positions_outside_the_list_are_watched_only_to_exit():
+    bot, fake, clock = setup(favorites_with_exits(), series=["KXGAME"], max_hours_to_close=6)
+    far = make_market("KXGAME-26OCT09-LAD", close_time=(NOW + timedelta(hours=30)).isoformat())
+    fake.markets[far.ticker] = far
+    fake.books[far.ticker] = make_book(far.ticker, bids=[("0.90", 50)], asks=[("0.92", 50)])
+    fake.set_position(far.ticker, 5, exposure="4.60")
+    fake.set_position("KXOTRA-1", 5, exposure="4.60")  # serie que el bot no opera: no se vigila
+    bot.tick()
+    assert list(bot.exit_markets) == [far.ticker] and far.ticker not in bot.markets
+    assert all(c["intent"].ticker != far.ticker for c in fake.created)  # ahí no compra
+    fake.books[far.ticker] = make_book(far.ticker, bids=[("0.30", 50)], asks=[("0.35", 50)])
+    clock.sleep(1)
+    bot.tick()
+    sells = [c["intent"] for c in fake.created if c["intent"].ticker == far.ticker]
+    assert [(i.side, i.price, i.count, i.time_in_force) for i in sells] == [(ASK, D("0.30"), D("5"), IOC)]
+    fake.positions.pop(far.ticker)
+    clock.sleep(1)
+    bot.tick()
+    assert bot.exit_markets == {}

@@ -122,6 +122,37 @@ Por todo esto, el bot sigue por defecto **los partidos y la temperatura máxima 
 estado bloquea los deportes, quita las series de partidos en **Ajustes → Mercados** y el bot seguirá con
 el clima.
 
+### ¿Cobrar antes de tiempo?
+
+El bot puede vender una posición antes de que se decida el mercado: si el favorito se hunde hasta un
+precio (cortar pérdidas) o si ya se puede vender casi a 1 $ (cobrar antes). Para saber si conviene se
+siguió el precio después de cada compra de la prueba y se compararon las **mismas compras** vendiendo
+antes o esperando al final. Al vender de golpe se cobra un tick menos y se paga la comisión de taker.
+
+Diferencia de rendimiento frente a esperar a la liquidación (margen de error del 95 % entre paréntesis):
+
+| Regla | Partidos (834) | Clima (470 días) |
+| --- | --- | --- |
+| Vender si el favorito cae a 70¢ | −1,39 % (−1,95 a −0,84) | −2,84 % (−4,24 a −1,44) |
+| Vender si cae a 50¢ | −0,61 % (−1,08 a −0,14) | −0,80 % (−1,66 a +0,07) |
+| Vender si cae a 30¢ | −0,33 % (−0,74 a +0,08) | −0,15 % (−0,68 a +0,38) |
+| Cobrar a 98¢ | −2,16 % | −0,69 % (−1,55 a +0,17) |
+| Cobrar a 99¢ | −1,08 % | −0,16 % (−0,83 a +0,50) |
+
+- **Ninguna regla mejora el resultado; las de cortar pérdidas lo empeoran.** La mayoría de los favoritos
+  que caen se recuperan. De lo que se habría vendido al caer a 70¢, solo el 6,5 % en los partidos y el
+  20 % en el clima iba a perder de verdad.
+- **Cobrar a 99¢** cuesta un 1 % en los partidos, porque casi todos los ganadores pasan por 99¢ antes
+  de liquidarse y se renuncia al último centavo. En el clima apenas cambia nada.
+- Por eso el bot espera al final por defecto y las dos opciones vienen a 0 (desactivadas) en
+  **Ajustes → Estrategia**.
+
+En esta prueba se descargaron también las operaciones de los últimos minutos, para poder simular las
+ventas. Como de cada mercado se bajan como mucho 3.000 operaciones, la muestra de compras no es la misma
+que la de las tablas de arriba: esperar al final rindió +6,3 % en los partidos y +2,9 % en el clima, en
+vez de +3,9 % y +4,1 %. Para saber cuánto gana la estrategia, la referencia siguen siendo esas tablas.
+La comparación entre reglas no depende de eso, porque usa las mismas compras en los dos casos.
+
 ## ¿Dónde se gana dinero de verdad? (EE. UU., octubre 2026)
 
 En Kalshi el dinero pasa de los *takers* a los *makers*: entre julio de 2021 y mayo de 2026 los takers

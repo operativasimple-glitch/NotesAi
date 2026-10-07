@@ -8,6 +8,9 @@ En cada vuelta:
      órdenes quiere, las pasa por el gestor de riesgo y reconcilia con las
      órdenes que el bot ya tiene en reposo (cancela las que sobran y crea
      las que faltan).
+  4. Si la estrategia sale antes de tiempo (stop loss, cobrar antes), también
+     vigila las posiciones de sus series en mercados que ya no sigue o que
+     cierran en minutos, pero ahí solo deja órdenes que reducen la posición.
 
 El bot solo toca órdenes cuyo client_order_id empieza por su prefijo, así
 que no cancela órdenes que pongas a mano desde la web.
@@ -21,7 +24,7 @@ import signal
 import threading
 import time
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -29,7 +32,7 @@ from typing import Callable, Optional
 
 from .client import KalshiAPIError, KalshiClient, new_client_order_id
 from .discovery import MarketFilter, discover
-from .models import ZERO, Balance, Order, OrderIntent, fmt_count, fmt_price, to_decimal
+from .models import ASK, BID, ZERO, Balance, Order, OrderIntent, fmt_count, fmt_price, to_decimal
 from .risk import RiskManager
 from .strategies.base import MarketContext, Strategy
 
@@ -233,6 +236,20 @@ def reconcile(existing: list, desired: list, tolerance: Decimal = ZERO) -> tuple
     return keep, unmatched, to_place
 
 
+def only_reducing(intents: list, position: Decimal) -> list:
+    """Deja solo las órdenes que reducen la posición (y como mucho hasta cerrarla)."""
+    side = ASK if position > 0 else BID  # vender YES cierra YES; comprar YES cierra NO
+    left = abs(position)
+    kept = []
+    for intent in intents:
+        if intent.side != side or left <= 0:
+            continue
+        count = min(intent.count, left)
+        left -= count
+        kept.append(replace(intent, count=count))
+    return kept
+
+
 # --------------------------------------------------------------------------
 # Bot
 # --------------------------------------------------------------------------
@@ -265,6 +282,7 @@ class Bot:
         self._monotonic = monotonic
 
         self.markets: dict = {}
+        self.exit_markets: dict = {}  # con posición, fuera de la lista: solo para salir
         self.halted_reason: Optional[str] = None
         self._stop = False
         self._signals = 0
@@ -405,7 +423,8 @@ class Bot:
             self.halt(reason)
             return
 
-        self._refresh_markets_if_needed(now)
+        refreshed = self._refresh_markets_if_needed(now)
+        self._update_exit_markets(positions, refreshed)
         if self.client.authenticated and not self.executor.dry_run:
             self._log_new_fills()
 
@@ -414,7 +433,7 @@ class Bot:
         for order in resting:
             by_ticker.setdefault(order.ticker, []).append(order)
 
-        for ticker in [t for t in by_ticker if t not in self.markets]:
+        for ticker in [t for t in by_ticker if t not in self.markets and t not in self.exit_markets]:
             log.info("Cancelando órdenes del bot en %s (ya no está en la lista de mercados)", ticker)
             for order in by_ticker.pop(ticker):
                 self._safe_cancel(order)
@@ -422,20 +441,24 @@ class Bot:
         positions_exposure = sum((p.exposure for p in positions.values()), ZERO)
         resting_collateral = {t: sum((o.collateral() for o in os), ZERO) for t, os in by_ticker.items()}
 
-        for ticker, market in self.markets.items():
+        for ticker, market in list(self.markets.items()) + list(self.exit_markets.items()):
             if self._stop:
                 break
             own = by_ticker.get(ticker, [])
             position = positions[ticker].position if ticker in positions else ZERO
 
             block = self.risk.market_block_reason(market, now)
-            if block:
-                if own:
-                    log.info("[%s] %s: cancelando %d órdenes", ticker, block, len(own))
-                    for order in own:
-                        self._safe_cancel(order)
-                    resting_collateral[ticker] = ZERO
-                continue
+            exit_only = ticker not in self.markets
+            if block or exit_only:
+                # Aunque ya no se pueda comprar, se deja salir de una posición mientras el mercado opere.
+                if not (market.is_active and position != 0 and self.strategy.wants_exits()):
+                    if own:
+                        log.info("[%s] %s: cancelando %d órdenes", ticker, block or "solo salidas", len(own))
+                        for order in own:
+                            self._safe_cancel(order)
+                        resting_collateral[ticker] = ZERO
+                    continue
+                exit_only = True
 
             try:
                 book = self.client.get_orderbook(ticker)
@@ -451,6 +474,8 @@ class Bot:
                 own_orders=own,
                 now=now,
                 cash=balance.cash,
+                exposure=positions[ticker].exposure if ticker in positions else ZERO,
+                exit_only=exit_only,
             )
             try:
                 intents = [i for i in (self.strategy.on_market(ctx) or []) if i is not None]
@@ -461,6 +486,8 @@ class Bot:
             if foreign:
                 log.warning("[%s] se ignoran %d órdenes de la estrategia para otros mercados", ticker, len(foreign))
                 intents = [i for i in intents if i.ticker == ticker]
+            if exit_only:
+                intents = only_reducing(intents, position)
 
             intents = self._apply_cooldown(ticker, intents, now)
             committed = positions_exposure + sum((c for t, c in resting_collateral.items() if t != ticker), ZERO)
@@ -510,11 +537,11 @@ class Bot:
 
     # --- mercados ------------------------------------------------------------
 
-    def _refresh_markets_if_needed(self, now: datetime) -> None:
+    def _refresh_markets_if_needed(self, now: datetime) -> bool:
         current = self._monotonic()
         interval = self.cfg.refresh_markets_minutes * 60
         if self._markets_refreshed_at is not None and current - self._markets_refreshed_at < interval:
-            return
+            return False
         self.markets = self.load_markets(now)
         self._markets_refreshed_at = current
         if self.markets:
@@ -524,6 +551,40 @@ class Bot:
                 "No hay mercados que seguir: revisa [markets] en config.toml "
                 "(tickers, series o events) o los valores justos de la estrategia"
             )
+        return True
+
+    def follows(self, ticker: str) -> bool:
+        """True si el mercado es de las series, eventos o tickers que opera el bot."""
+        cfg = self.cfg
+        series = ticker.split("-", 1)[0].upper()
+        if series in {s.upper() for s in cfg.exclude_series}:
+            return False
+        if ticker in cfg.tickers or ticker in self.strategy.suggested_tickers():
+            return True
+        if series in {s.upper() for s in cfg.series}:
+            return True
+        if any(ticker.startswith(event + "-") for event in cfg.events):
+            return True
+        return cfg.closing_within_hours > 0  # busca en todos los mercados que cierran pronto
+
+    def _update_exit_markets(self, positions: dict, refreshed: bool) -> None:
+        """Mercados con posición que ya no están en la lista pero en los que hay que poder salir."""
+        if not self.strategy.wants_exits():
+            self.exit_markets = {}
+            return
+        wanted = [t for t in positions if t not in self.markets and self.follows(t)]
+        current = {} if refreshed else {t: m for t, m in self.exit_markets.items() if t in wanted}
+        missing = [t for t in wanted if t not in current]
+        try:
+            for start in range(0, len(missing), 50):
+                for market in self.client.get_markets(status=None, tickers=missing[start : start + 50]):
+                    current[market.ticker] = market
+        except KalshiAPIError as exc:
+            log.warning("No se pudieron leer los mercados con posición abierta: %s", exc)
+        added = [t for t in current if t not in self.exit_markets]
+        if added:
+            log.info("Vigilando para salir a tiempo: %s", ", ".join(added))
+        self.exit_markets = current
 
     def load_markets(self, now: datetime) -> dict:
         explicit = list(dict.fromkeys(list(self.cfg.tickers) + list(self.strategy.suggested_tickers())))

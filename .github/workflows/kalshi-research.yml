@@ -1,5 +1,5 @@
-# Mide con datos públicos de Kalshi si la estrategia del bot habría ganado dinero
-# y si le habría convenido vender antes de tiempo (--exits).
+# Mide con datos públicos de Kalshi si la estrategia del bot habría ganado dinero.
+# (Para comparar con vender antes de tiempo: research --exits --pages 3, ver INVESTIGACION.md.)
 # No usa ninguna clave ni envía órdenes: solo lee mercados ya liquidados.
 # En repositorios públicos, GitHub Actions es gratis. Cada análisis va en su
 # propia máquina, en paralelo (cada una tiene su propio límite de peticiones).
@@ -29,9 +29,9 @@ jobs:
       matrix:
         include:
           - name: Partidos (MLB, NFL, NHL, NBA, universitario)
-            args: --series KXMLBGAME,KXNFLGAME,KXNHLGAME,KXNBAGAME,KXNCAAFGAME --markets 800 --exits --pages 3
+            args: --series KXMLBGAME,KXNFLGAME,KXNHLGAME,KXNBAGAME,KXNCAAFGAME --markets 800
           - name: Clima (7 ciudades)
-            args: --series KXHIGHLAX,KXHIGHNY,KXHIGHCHI,KXHIGHMIA,KXHIGHAUS,KXHIGHDEN,KXHIGHPHIL --markets 500 --exits --pages 3
+            args: --series KXHIGHLAX,KXHIGHNY,KXHIGHCHI,KXHIGHMIA,KXHIGHAUS,KXHIGHDEN,KXHIGHPHIL --markets 500
           - name: Bolsa (S&P 500 y Nasdaq-100)
             args: --series KXINX,KXNASDAQ100,KXINXU,KXNASDAQ100U --markets 2000
     name: ${{ matrix.name }}

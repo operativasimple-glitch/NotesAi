@@ -83,3 +83,16 @@ def test_market_block_reasons():
     assert "no activo" in rm.market_block_reason(make_market(status="closed"), NOW)
     closing = make_market(close_time=(NOW + timedelta(minutes=10)).isoformat())
     assert "cierra en 10 min" in rm.market_block_reason(closing, NOW)
+
+
+def test_closing_orders_skip_price_and_size_caps():
+    rm = manager(max_order_contracts=D("5"), max_price=D("0.98"))
+    sell_all = intent(ASK, "0.99", "12", IOC)
+    ok, _ = rm.filter_intents([sell_all], position=D("12"), committed_exposure=D("0"))
+    assert [i.count for i in ok] == [D("12")]  # cerrar: a 99¢ y de una vez
+    ok, notes = rm.filter_intents([sell_all], position=D("0"), committed_exposure=D("0"))
+    assert ok == [] and "fuera de" in notes[0]  # abrir a 99¢ sigue prohibido
+    ok, _ = rm.filter_intents([sell_all], position=D("3"), committed_exposure=D("0"))
+    assert [i.count for i in ok] == [D("3")]  # solo la parte que cierra
+    ok, _ = rm.filter_intents([intent(ASK, "0.50", "12")], position=D("3"), committed_exposure=D("0"))
+    assert [i.count for i in ok] == [D("5")]  # dentro de rango: 3 que cierran + 2 nuevos (máx. 5)

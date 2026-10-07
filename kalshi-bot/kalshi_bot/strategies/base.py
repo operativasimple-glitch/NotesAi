@@ -25,6 +25,7 @@ from ..models import (
     EPSILON,
     GTC,
     ONE,
+    ZERO,
     Market,
     OrderBook,
     OrderIntent,
@@ -43,6 +44,10 @@ class MarketContext:
     own_orders: list  # tus órdenes en reposo en este mercado
     now: datetime
     cash: Decimal  # saldo disponible en dólares
+    exposure: Decimal = ZERO  # lo que costó la posición actual (dólares)
+    # True cuando solo se puede salir: el mercado está a punto de cerrar o ya no está en
+    # la lista; el motor descarta cualquier orden que no reduzca la posición.
+    exit_only: bool = False
 
     @property
     def ticker(self) -> str:
@@ -115,6 +120,14 @@ class Strategy(ABC):
         if value is None:
             raise ValueError(f"El parámetro '{key}' de la estrategia {self.name} no es un número válido")
         return value
+
+    def wants_exits(self) -> bool:
+        """True si la estrategia quiere vigilar sus posiciones hasta el cierre para salir antes.
+
+        Entonces el motor la llama también en los mercados que ya no sigue (o que cierran
+        en minutos) donde hay posición, con `exit_only`.
+        """
+        return False
 
     def suggested_tickers(self) -> list:
         """Mercados que la estrategia quiere operar además de los de la configuración."""

@@ -85,7 +85,7 @@ El repositorio trae un trabajo de GitHub Actions (`.github/workflows/kalshi-rese
 mercados ya liquidados de Kalshi y simula la estrategia del bot: comprar a 88–97¢ como maker, sin los
 últimos 15 minutos antes del cierre, con comisiones. Da el rendimiento por serie con su margen de error y
 solo dice "gana" si no puede ser casualidad. Mide los partidos (NFL, MLB, NBA, NHL y fútbol americano
-universitario) y las series de bolsa más negociadas (Nasdaq-100, S&P 500…). No usa tu clave ni envía
+universitario), la temperatura máxima de 7 ciudades y la bolsa (Nasdaq-100 y S&P 500). No usa tu clave ni envía
 órdenes, y en repositorios públicos es gratis. El resultado sale en el resumen de cada ejecución, en la
 pestaña **Actions**.
 
@@ -112,6 +112,12 @@ Abre `http://IP-DEL-ORDENADOR:8000` desde el móvil (en la misma wifi). Para ent
   - estado del bot y botones Simular, Operar y Detener;
   - **Freno de emergencia**: cancela primero y luego para;
   - saldo, resultado de la sesión, posiciones, órdenes (con cancelar) y actividad en directo.
+- **Resultados:**
+  - lo ganado o perdido en 7, 30 o 90 días, frente a lo esperado según la prueba con datos reales;
+  - hoy, ayer y el dinero que hay en juego;
+  - un gráfico por día (azul, ganado; rojo, perdido), con los mismos datos en una tabla;
+  - por tipo de mercado (partidos, clima…) y los últimos mercados cerrados;
+  - cuenta todo lo de tu cuenta de Kalshi, también lo que compres a mano. En simulación no hay resultados.
 - **Mercados:**
   - busca por serie o evento;
   - toca un mercado para ver su libro;
@@ -166,6 +172,23 @@ Resumen de [INVESTIGACION.md](INVESTIGACION.md):
 - **Antes de arriesgar dinero**, usa **Investigación** en el panel (o `python -m kalshi_bot research`)
   para comprobar que el sesgo sigue existiendo en los mercados que vas a operar.
 
+### Cobrar antes de tiempo
+
+En **Ajustes → Estrategia** hay dos opciones; a 0 están desactivadas:
+
+- **Vender si el favorito cae a**: si el partido o el día se tuercen y el favorito baja hasta ese
+  precio, el bot vende enseguida lo que tenga en ese mercado.
+- **Cobrar antes si ya se puede vender a** (98¢ o 99¢): vende un favorito casi ganado para tener el
+  dinero antes de la liquidación.
+
+Solo tocan posiciones compradas como favorito (a 83¢ o más) en las series que sigue el bot, no lo que
+compres tú a mano a otros precios. Con alguna activada, el bot vigila esas posiciones hasta que el
+mercado cierra, también en los últimos 15 minutos.
+
+Con datos reales, **ninguna mejora el resultado y cortar pérdidas lo empeora**: la mayoría de los
+favoritos que caen se recuperan. Por eso vienen desactivadas. Detalle en
+[INVESTIGACION.md](INVESTIGACION.md#cobrar-antes-de-tiempo).
+
 Las otras estrategias:
 
 - `fair_value`: tú escribes tu probabilidad para cada mercado (en el panel o en `fair_values.csv`) y el
@@ -180,8 +203,8 @@ Las otras estrategias:
 | `max_position_per_market` | 20 | Contratos máximos por mercado, SÍ o NO. |
 | `max_total_exposure_dollars` | 50 | Dinero máximo comprometido: posiciones de la cuenta más órdenes del bot. Cerrar posiciones siempre se permite. |
 | `max_session_loss_dollars` | 20 | Si tu patrimonio cae esto desde que arrancó el bot, cancela todo y se detiene. |
-| `min_price` / `max_price` | 0.03 / 0.97 | No opera a precios extremos. |
-| `min_minutes_to_close` | 15 | Cancela y no opera en los últimos minutos antes del cierre. |
+| `min_price` / `max_price` | 0.03 / 0.97 | No compra a precios extremos (vender para cerrar una posición sí se permite). |
+| `min_minutes_to_close` | 15 | Cancela y no compra en los últimos minutos antes del cierre (si activas las salidas, sigue vigilando para vender). |
 | `max_consecutive_errors` | 10 | Freno de emergencia si la API falla muchas vueltas seguidas. |
 | `order_ttl_seconds` | 600 | Las órdenes en reposo caducan solas si el bot se cae. |
 
@@ -212,6 +235,7 @@ python -m kalshi_bot cancel-all                    # cancela las órdenes del bo
 | `research [--series S,T] [--markets 150]` | Rendimiento por tramo de precio (taker frente a maker) y de la estrategia del bot, con margen de error, en mercados liquidados. |
 | `research --category Financials [--top 8]` | Lo mismo con las series más negociadas de una categoría (p. ej. bolsa). |
 | `research --sweep [--series-count 12]` | Compara las series activas: en cuáles ganan los favoritos y en cuáles no. |
+| `research --series S,T --exits --pages 3` | Compara esperar a la liquidación con vender antes (cortar pérdidas a 70/50/30¢, cobrar a 98/99¢), con las mismas compras. |
 | `positions` / `orders` | Tus posiciones y órdenes en reposo. |
 | `run [--live] [--once]` | Ejecuta el bot (simulación salvo `--live`). |
 | `cancel-all [--everything]` | Cancela las órdenes del bot (o todas). |
