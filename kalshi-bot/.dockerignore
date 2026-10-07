@@ -1,0 +1,14 @@
+.env
+*.pem
+*.key
+config.toml
+fair_values.csv
+logs/
+data/
+tests/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.ruff_cache/

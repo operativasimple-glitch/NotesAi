@@ -200,9 +200,14 @@ def _dec(value: Any, name: str) -> Decimal:
 
 def _num(value: Any, name: str, cast=float):
     try:
-        return cast(value)
+        number = float(value)
     except (TypeError, ValueError):
         raise ConfigError(f"'{name}' debe ser un número (valor: {value!r})") from None
+    if cast is int:
+        if number != int(number):
+            raise ConfigError(f"'{name}' debe ser un número entero (valor: {value!r})")
+        return int(number)
+    return number
 
 
 def _bool(value: Any, name: str) -> bool:
@@ -360,6 +365,8 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
     api_key_id = os.environ.get("KALSHI_API_KEY_ID") or None
     key_pem = os.environ.get("KALSHI_PRIVATE_KEY") or None
     key_path = resolve(os.environ.get("KALSHI_PRIVATE_KEY_PATH"))
+    if key_path is not None and not api_key_id and not key_path.is_file():
+        key_path = None  # el valor de ejemplo de .env.example sin rellenar
     source = "env" if (api_key_id or key_pem or key_path) else ""
     if not source and panel.get("key_id") and (data_dir / KEY_FILE).is_file():
         api_key_id, key_path, source = str(panel["key_id"]), data_dir / KEY_FILE, "panel"
@@ -380,12 +387,12 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
         tickers=_list(markets.get("tickers"), "tickers"),
         series=_list(markets.get("series"), "series"),
         events=_list(markets.get("events"), "events"),
-        max_markets=_num(markets.get("max_markets", 10), "max_markets", int),
-        min_hours_to_close=_num(markets.get("min_hours_to_close", 0), "min_hours_to_close"),
+        max_markets=_num(markets.get("max_markets", 15), "max_markets", int),
+        min_hours_to_close=_num(markets.get("min_hours_to_close", 1), "min_hours_to_close"),
         max_hours_to_close=_num(markets.get("max_hours_to_close", 0), "max_hours_to_close"),
-        min_volume_24h=_dec(markets.get("min_volume_24h", 0), "min_volume_24h"),
-        closing_within_hours=_num(markets.get("closing_within_hours", 0), "closing_within_hours"),
-        max_markets_per_event=_num(markets.get("max_markets_per_event", 0), "max_markets_per_event", int),
+        min_volume_24h=_dec(markets.get("min_volume_24h", 200), "min_volume_24h"),
+        closing_within_hours=_num(markets.get("closing_within_hours", 48), "closing_within_hours"),
+        max_markets_per_event=_num(markets.get("max_markets_per_event", 1), "max_markets_per_event", int),
         exclude_series=_list(markets.get("exclude_series"), "exclude_series"),
         refresh_markets_minutes=_num(markets.get("refresh_minutes", 5), "refresh_minutes"),
     )
@@ -395,12 +402,12 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
         raise ConfigError("order_ttl_seconds debe ser 0 (sin caducidad) o al menos 60")
 
     limits = RiskLimits(
-        max_order_contracts=_dec(risk.get("max_order_contracts", 5), "max_order_contracts"),
+        max_order_contracts=_dec(risk.get("max_order_contracts", 10), "max_order_contracts"),
         max_position_per_market=_dec(risk.get("max_position_per_market", 20), "max_position_per_market"),
         max_total_exposure=_dec(risk.get("max_total_exposure_dollars", 50), "max_total_exposure_dollars"),
         max_session_loss=_dec(risk.get("max_session_loss_dollars", 20), "max_session_loss_dollars"),
-        min_price=_dec(risk.get("min_price", "0.02"), "min_price"),
-        max_price=_dec(risk.get("max_price", "0.98"), "max_price"),
+        min_price=_dec(risk.get("min_price", "0.03"), "min_price"),
+        max_price=_dec(risk.get("max_price", "0.97"), "max_price"),
         min_minutes_to_close=_num(risk.get("min_minutes_to_close", 15), "min_minutes_to_close"),
     )
     if not (0 < limits.min_price < limits.max_price < 1):

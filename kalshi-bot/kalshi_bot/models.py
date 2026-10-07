@@ -412,7 +412,13 @@ class OrderIntent:
         return self.price if self.side == BID else ONE - self.price
 
     def describe(self) -> str:
-        verb = "COMPRA YES" if self.side == BID else "VENDE YES"
         tif = {GTC: "GTC", IOC: "IOC", FOK: "FOK"}.get(self.time_in_force, self.time_in_force)
         extra = " post-only" if self.post_only else ""
-        return f"{verb} {fmt_count(self.count)} @ {fmt_price(self.price)} [{tif}{extra}] {self.ticker}"
+        if self.side == BID:
+            what = f"COMPRA YES {fmt_count(self.count)} @ {fmt_price(self.price)}"
+        else:
+            what = (
+                f"VENDE YES {fmt_count(self.count)} @ {fmt_price(self.price)} "
+                f"(= COMPRA NO @ {fmt_price(ONE - self.price)})"
+            )
+        return f"{what} [{tif}{extra}] {self.ticker}"

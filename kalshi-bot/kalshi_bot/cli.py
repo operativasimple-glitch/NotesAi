@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 import logging
 import logging.handlers
+import os
+import signal
 import sys
 import time
 from datetime import datetime, timezone
@@ -316,6 +318,39 @@ def cmd_research(settings: Settings, args) -> int:
     return 0
 
 
+def cmd_web(settings: Settings, args) -> int:
+    from .controller import BotController
+    from .web.server import make_server
+
+    password = os.environ.get("DASHBOARD_PASSWORD", "")
+    if len(password) < 8:
+        raise ConfigError(
+            "Define DASHBOARD_PASSWORD (8 caracteres o más) en .env o en las variables del servidor: "
+            "es la contraseña para entrar al panel"
+        )
+    port = args.port or int(os.environ.get("PORT") or 8000)
+    controller = BotController(args.config)
+    logging.getLogger().addHandler(controller.logs)
+    _add_file_logging(settings.log_dir / "bot.log")
+    server = make_server(controller, password, args.host, port)
+    log.info("Panel web escuchando en http://%s:%d (entorno %s)", args.host, port, settings.env)
+    controller.resume_if_needed()
+
+    def on_term(signum, frame):  # noqa: ARG001
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, on_term)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        log.info("Apagando el panel: deteniendo el bot y cancelando sus órdenes...")
+        server.server_close()
+        controller.shutdown()
+    return 0
+
+
 def _require_signer(settings: Settings):
     signer = settings.signer()
     if signer is None:
@@ -385,6 +420,7 @@ COMMANDS = {
     "run": cmd_run,
     "scan": cmd_scan,
     "research": cmd_research,
+    "web": cmd_web,
 }
 
 
@@ -425,6 +461,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--series", help="serie a estudiar (por defecto, todas)")
     p.add_argument("--markets", type=int, default=150, help="mercados liquidados a analizar")
     p.add_argument("--skip-last-minutes", type=int, default=0, help="ignorar operaciones cerca del cierre")
+
+    p = sub.add_parser("web", help="abre el panel web para manejar el bot desde el móvil")
+    p.add_argument("--host", default="0.0.0.0", help="interfaz de red (por defecto todas)")
+    p.add_argument("--port", type=int, help="puerto (por defecto $PORT o 8000)")
 
     p = sub.add_parser("run", help="ejecuta el bot (simulación salvo que uses --live)")
     p.add_argument("--live", action="store_true", help="envía órdenes de verdad")

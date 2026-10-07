@@ -254,3 +254,9 @@ def test_cli_scan_and_research(fake_cli, capsys):
     assert cli.main(["research", "--series", "KXOLD"]) == 0
     out = capsys.readouterr().out
     assert "95–100¢" in out and "favoritos" in out
+
+
+def test_placeholder_key_path_without_id_is_ignored(clean_env):
+    os.environ["KALSHI_PRIVATE_KEY_PATH"] = "./kalshi-key.pem"  # tal cual viene en .env.example
+    s = load_settings()
+    assert s.credentials_source == "" and s.signer() is None

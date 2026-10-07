@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#f2f3f7" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0d14" media="(prefers-color-scheme: dark)">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Kalshi Bot">
+  <meta name="description" content="Panel para controlar tu bot de Kalshi desde el móvil">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="icon" href="/icon-192.png">
+  <link rel="stylesheet" href="/app.css">
+  <title>Kalshi Bot</title>
+</head>
+<body>
+  <div id="login" class="login" hidden>
+    <form id="login-form" class="login-card" autocomplete="on">
+      <img src="/icon-192.png" alt="" class="login-logo" width="72" height="72">
+      <h1>Kalshi Bot</h1>
+      <p class="muted">Introduce la contraseña del panel</p>
+      <input type="password" id="login-password" name="password" autocomplete="current-password" placeholder="Contraseña" required>
+      <button class="btn primary full" type="submit">Entrar</button>
+      <p id="login-error" class="error-text" role="alert"></p>
+    </form>
+  </div>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <h1 id="view-title">Inicio</h1>
+      <span id="env-badge" class="badge">—</span>
+    </header>
+
+    <main>
+      <!-- INICIO -->
+      <section id="view-home" class="view" data-title="Inicio">
+        <div class="card hero">
+          <div class="hero-top">
+            <span id="state-dot" class="dot"></span>
+            <div class="hero-text">
+              <div id="state-label" class="hero-title">Cargando…</div>
+              <div id="state-sub" class="muted small"></div>
+            </div>
+          </div>
+          <div id="state-banner" class="banner" hidden></div>
+          <div id="start-buttons" class="btn-row">
+            <button id="btn-sim" class="btn">Simular</button>
+            <button id="btn-live" class="btn primary">Operar en vivo</button>
+          </div>
+          <button id="btn-stop" class="btn full" hidden>Detener el bot</button>
+          <button id="btn-kill" class="btn danger-outline full">Freno de emergencia</button>
+        </div>
+
+        <div class="stats">
+          <div class="stat"><div class="stat-label">Saldo</div><div id="stat-cash" class="stat-value">—</div></div>
+          <div class="stat"><div class="stat-label">Posiciones</div><div id="stat-portfolio" class="stat-value">—</div></div>
+          <div class="stat"><div class="stat-label">Sesión</div><div id="stat-pnl" class="stat-value">—</div></div>
+        </div>
+        <p id="balance-note" class="muted small center" hidden></p>
+
+        <div class="card">
+          <div class="card-head"><h2>Posiciones</h2><button class="link" id="btn-refresh-portfolio">Actualizar</button></div>
+          <div id="positions" class="list"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Órdenes abiertas</h2></div>
+          <div id="orders" class="list"></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><h2>Actividad</h2><span class="muted small">en directo</span></div>
+          <div id="logs" class="logs"></div>
+        </div>
+      </section>
+
+      <!-- MERCADOS -->
+      <section id="view-markets" class="view" data-title="Mercados" hidden>
+        <form id="market-search" class="search">
+          <input id="market-query" placeholder="Serie o evento, p. ej. KXHIGHNY" autocapitalize="characters" autocomplete="off" spellcheck="false">
+          <button class="btn primary" type="submit">Buscar</button>
+        </form>
+        <p class="muted small">La serie aparece en la dirección de kalshi.com: /markets/<b>kxhighny</b>/… Si buscas un evento concreto, pega su ticker (lleva guiones).</p>
+        <div class="card" id="market-card" hidden><div id="market-list" class="list"></div></div>
+        <div class="card" id="event-card" hidden><div id="event-list" class="list"></div></div>
+      </section>
+
+      <!-- OPORTUNIDADES -->
+      <section id="view-opps" class="view" data-title="Oportunidades" hidden>
+        <div class="card">
+          <h2>Escáner</h2>
+          <p class="muted small">Busca ahora mismo favoritos (88–97¢), mercados con spread amplio y arbitrajes en eventos de varios resultados. Solo lee: no envía órdenes.</p>
+          <div class="grid2">
+            <label class="field">Cierran en (horas)<input id="scan-hours" type="number" inputmode="decimal" value="48" min="1"></label>
+            <label class="field">Volumen mínimo 24 h<input id="scan-volume" type="number" inputmode="numeric" value="100" min="0"></label>
+          </div>
+          <button id="btn-scan" class="btn primary full">Escanear</button>
+          <p id="scan-status" class="muted small"></p>
+        </div>
+        <div id="scan-results"></div>
+
+        <div class="card">
+          <h2>Investigación</h2>
+          <p class="muted small">Descarga mercados ya liquidados y mide cuánto ganó o perdió quien compró a cada precio, como <b>taker</b> (cruza el spread) y como <b>maker</b> (espera en el libro). Así compruebas el "truco" con datos actuales antes de arriesgar dinero.</p>
+          <div class="grid2">
+            <label class="field">Serie (opcional)<input id="research-series" placeholder="todas" autocapitalize="characters" autocomplete="off"></label>
+            <label class="field">Mercados<input id="research-markets" type="number" inputmode="numeric" value="150" min="10" max="1000"></label>
+          </div>
+          <button id="btn-research" class="btn full">Investigar</button>
+          <div id="research-progress" class="progress" hidden><div class="progress-bar"></div></div>
+          <p id="research-status" class="muted small"></p>
+          <div id="research-results"></div>
+        </div>
+      </section>
+
+      <!-- AJUSTES -->
+      <section id="view-settings" class="view" data-title="Ajustes" hidden>
+        <div class="card">
+          <h2>Cuenta de Kalshi</h2>
+          <p id="cred-status" class="muted small"></p>
+          <div class="segmented" id="env-seg">
+            <button type="button" data-env="demo">Demo (ficticio)</button>
+            <button type="button" data-env="prod">Real</button>
+          </div>
+          <details id="cred-details">
+            <summary>Configurar API key</summary>
+            <p class="muted small">En Kalshi: tu cuenta → API Keys → crear. Copia el Key ID y el contenido de la clave privada. Las keys de demo solo funcionan en Demo y las reales solo en Real.</p>
+            <label class="field">Key ID<input id="cred-key-id" autocomplete="off" spellcheck="false"></label>
+            <label class="field">Clave privada (texto del .pem)<textarea id="cred-pem" rows="5" spellcheck="false" autocomplete="off" placeholder="-----BEGIN PRIVATE KEY-----"></textarea></label>
+            <button id="btn-save-cred" class="btn primary full" type="button">Guardar credenciales</button>
+            <button id="btn-del-cred" class="btn danger-outline full" type="button">Borrar credenciales</button>
+          </details>
+        </div>
+
+        <div class="card">
+          <h2>Estrategia</h2>
+          <div class="segmented wrap" id="strategy-seg"></div>
+          <p id="strategy-desc" class="muted small"></p>
+          <div id="strategy-params" class="form"></div>
+        </div>
+
+        <div class="card" id="fv-card" hidden>
+          <div class="card-head"><h2>Valores justos</h2><button class="link" id="btn-fv-add" type="button">Añadir</button></div>
+          <p class="muted small">Tu probabilidad de que cada mercado resuelva SÍ. El bot compra cuando el precio está por debajo y vende cuando está por encima (con margen).</p>
+          <div id="fv-rows" class="form"></div>
+          <button id="btn-fv-save" class="btn full" type="button">Guardar lista</button>
+        </div>
+
+        <div class="card">
+          <h2>Mercados</h2>
+          <div id="markets-fields" class="form"></div>
+        </div>
+
+        <div class="card">
+          <h2>Riesgo</h2>
+          <div id="risk-fields" class="form"></div>
+        </div>
+
+        <div class="save-bar">
+          <button id="btn-save-settings" class="btn primary full" type="button">Guardar ajustes</button>
+        </div>
+        <button id="btn-logout" class="btn full" type="button">Cerrar sesión</button>
+        <p class="muted small center">Por qué estos valores: INVESTIGACION.md en el repositorio.</p>
+      </section>
+    </main>
+
+    <nav class="tabbar" aria-label="Secciones">
+      <button class="tab active" data-view="home" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>
+        <span>Inicio</span>
+      </button>
+      <button class="tab" data-view="markets" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16V9m6 7V5m6 11v-6" fill="none" stroke-width="2.2" stroke-linecap="round"/></svg>
+        <span>Mercados</span>
+      </button>
+      <button class="tab" data-view="opps" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke-width="2.2"/><path d="m16 16 4.5 4.5" fill="none" stroke-width="2.2" stroke-linecap="round"/></svg>
+        <span>Oportunidades</span>
+      </button>
+      <button class="tab" data-view="settings" type="button">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.4 4.6-1.6.9a7 7 0 0 1-.6 1.5l.5 1.8-1.7 1.7-1.8-.5a7 7 0 0 1-1.5.6l-.9 1.6h-2.4l-.9-1.6a7 7 0 0 1-1.5-.6l-1.8.5-1.7-1.7.5-1.8a7 7 0 0 1-.6-1.5l-1.6-.9v-2.4l1.6-.9a7 7 0 0 1 .6-1.5l-.5-1.8 1.7-1.7 1.8.5a7 7 0 0 1 1.5-.6l.9-1.6h2.4l.9 1.6a7 7 0 0 1 1.5.6l1.8-.5 1.7 1.7-.5 1.8a7 7 0 0 1 .6 1.5l1.6.9z"/></svg>
+        <span>Ajustes</span>
+      </button>
+    </nav>
+  </div>
+
+  <div id="sheet-backdrop" class="sheet-backdrop" hidden></div>
+  <div id="sheet" class="sheet" role="dialog" aria-modal="true" hidden>
+    <div class="sheet-handle"></div>
+    <button id="sheet-close" class="sheet-close" type="button" aria-label="Cerrar">×</button>
+    <div id="sheet-body"></div>
+  </div>
+  <div id="toast" class="toast" role="status" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>
