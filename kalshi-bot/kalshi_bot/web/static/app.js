@@ -946,7 +946,7 @@ function renderSweep(r) {
         { class: "item-main" },
         el("div", { class: "item-title", text: `${row.series}${row.title ? " · " + row.title : ""}` }),
         el("div", { class: "item-sub", text: sub }),
-        el("div", { class: "item-sub", text: bandText(band) }),
+        el("div", { class: "item-sub wrap", text: bandText(band) }),
       ),
       el(
         "div",

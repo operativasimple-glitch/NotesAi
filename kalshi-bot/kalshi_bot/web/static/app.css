@@ -401,3 +401,4 @@ td.neg { background: var(--red-soft); }
   font-size: 13px; font-weight: 700; color: #fff; background: var(--green);
 }
 .diag-list li.fail .diag-icon { background: var(--red); }
+.item-sub.wrap { white-space: normal; overflow: visible; text-overflow: clip; }
