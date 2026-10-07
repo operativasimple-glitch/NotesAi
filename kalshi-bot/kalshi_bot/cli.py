@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import logging.handlers
 import os
@@ -18,7 +19,7 @@ from .client import KalshiAPIError
 from .config import ConfigError, Settings, load_settings
 from .engine import Bot, DryRunExecutor, Journal, LiveExecutor
 from .models import Market
-from .research import run_research, run_sweep
+from .research import pct, run_research, run_sweep, verdict
 from .risk import RiskManager
 from .scanner import ScanParams, run_scan
 from .strategies import build_strategy
@@ -301,6 +302,7 @@ def cmd_research(settings: Settings, args) -> int:
         skip_last_minutes=args.skip_last_minutes,
         progress=progress,
     )
+    _save_json(report, args.json)
     print(f"\nSerie: {report['series']} | mercados: {report['markets']} | operaciones: {report['trades']}")
     print(f"{'TRAMO':<10} {'TAKER':>18} {'MAKER':>18} {'TODOS':>18}")
     print(f"{'':<10} {'rend. (tras com.)':>18} {'rend. (tras com.)':>18} {'acierto/precio':>18}")
@@ -359,23 +361,40 @@ def _print_sweep(client, args) -> int:
             print(f"  {done}/{total} mercados", file=sys.stderr)
 
     print("Comparando series: mercados liquidados y sus operaciones (puede tardar unos minutos)...", file=sys.stderr)
-    report = run_sweep(client, series_count=args.series_count, per_series=args.per_series, progress=progress)
-    print(f"\nSeries analizadas: {report['series_analyzed']} | mercados: {report['markets']}\n")
-    print(f"{'SERIE':<18} {'MERCADOS':>8} {'FAVORITOS (maker 90-100¢)':>27} {'LONGSHOTS (taker <10¢)':>24}  FIAB.")
-    for row in report["rows"]:
-        fav = row["favorites_maker"]
-        longshot = row["longshots_taker"]
-        fav_text = (
-            f"{fav['return_after_fees'] * 100:+.2f}% ({row['favorite_upsets']}/{row['favorite_markets']} fallos)"
-            if fav.get("contracts")
-            else "—"
+    report = run_sweep(
+        client,
+        series_count=args.series_count,
+        per_series=args.per_series,
+        skip_last_minutes=args.skip_last_minutes,
+        progress=progress,
+    )
+    _save_json(report, args.json)
+    print(f"\nSeries analizadas: {report['series_analyzed']} | mercados: {report['markets']}")
+    print(f"Estrategia del bot: comprar a 88–97¢ como maker (sin los últimos {report['skip_last_minutes']} min)\n")
+    print(f"{'SERIE':<20} {'EVENTOS':>7} {'RENDIMIENTO':>12} {'MARGEN DE ERROR (95 %)':>24} {'FALLOS':>7}  VEREDICTO")
+
+    def line(name: str, stats: dict) -> str:
+        if not stats.get("contracts"):
+            return f"{name:<20} {stats.get('groups', 0):>7} {'—':>12} {'—':>24} {'—':>7}  sin datos"
+        margin = f"{pct(stats['ci_low'])} a {pct(stats['ci_high'])}" if "ci_low" in stats else "—"
+        upsets = f"{stats['losing_groups']}/{stats['groups']}"
+        return (
+            f"{name:<20} {stats['groups']:>7} {pct(stats['return_after_fees']):>12} {margin:>24} {upsets:>7}  "
+            f"{verdict(stats)}"
         )
-        long_text = f"{longshot['return_after_fees'] * 100:+.1f}%" if longshot.get("contracts") else "—"
-        print(f"{row['series']:<18} {row['markets']:>8} {fav_text:>27} {long_text:>24}  {row['confidence']}")
+
+    for row in report["rows"]:
+        print(line(row["series"], row["strategy"]))
+    print(line("TODAS JUNTAS", report["overall"]))
     print()
     for note in report["conclusions"]:
         print(f"• {note}")
     return 0
+
+
+def _save_json(report: dict, path: Optional[str]) -> None:
+    if path:
+        Path(path).write_text(json.dumps(report, indent=2, ensure_ascii=False, default=str), encoding="utf-8")
 
 
 def _require_signer(settings: Settings):
@@ -487,10 +506,16 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("research", help="mide con datos reales quién gana a cada precio")
     p.add_argument("--series", help="serie a estudiar (por defecto, todas)")
     p.add_argument("--markets", type=int, default=150, help="mercados liquidados a analizar")
-    p.add_argument("--skip-last-minutes", type=int, default=0, help="ignorar operaciones cerca del cierre")
+    p.add_argument(
+        "--skip-last-minutes",
+        type=int,
+        default=15,
+        help="ignora las operaciones de los últimos minutos antes del cierre (el bot no opera ahí)",
+    )
     p.add_argument("--sweep", action="store_true", help="compara las series activas: ¿dónde ganan los favoritos?")
     p.add_argument("--series-count", type=int, default=12, help="con --sweep: cuántas series comparar")
     p.add_argument("--per-series", type=int, default=60, help="con --sweep: mercados liquidados por serie")
+    p.add_argument("--json", metavar="ARCHIVO", help="guarda también el informe completo en JSON")
 
     p = sub.add_parser("web", help="abre el panel web para manejar el bot desde el móvil")
     p.add_argument("--host", default="0.0.0.0", help="interfaz de red (por defecto todas)")

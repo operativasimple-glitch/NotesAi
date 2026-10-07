@@ -5,7 +5,7 @@ import pytest
 
 from kalshi_bot.discovery import MarketFilter, discover
 from kalshi_bot.models import ASK, BID, GTC
-from kalshi_bot.research import Research, bucket_index, run_research, run_sweep
+from kalshi_bot.research import Research, band_note, bucket_index, run_research, run_sweep, verdict, wilson
 from kalshi_bot.scanner import ScanParams, event_arbitrage, run_scan, scan_markets
 from kalshi_bot.strategies.favorites import FavoritesStrategy
 
@@ -226,8 +226,8 @@ def sweep_fixture():
         ]
     )
     for i in range(12):
-        good = make_market(f"KXGOOD-{i}", status="finalized", result="no")
-        bad = make_market(f"KXBAD-{i}", status="finalized", result="yes" if i % 2 else "no")
+        good = make_market(f"KXGOOD-{i}", status="finalized", result="no", event_ticker=f"KXGOOD-E{i}")
+        bad = make_market(f"KXBAD-{i}", status="finalized", result="yes" if i % 2 else "no", event_ticker=f"KXBAD-E{i}")
         fake.settled[good.ticker] = good
         fake.settled[bad.ticker] = bad
         # En ambas series un taker compra el longshot SÍ a 6¢ y un maker queda con NO a 94¢.
@@ -240,7 +240,14 @@ def sweep_fixture():
 
 def test_sweep_ranks_series_by_favorite_returns():
     fake = sweep_fixture()
-    calls = []
+    calls, trade_requests = [], []
+    get_trades = fake.get_trades
+
+    def recording_get_trades(ticker, **kwargs):
+        trade_requests.append((ticker, kwargs.get("max_ts")))
+        return get_trades(ticker, **kwargs)
+
+    fake.get_trades = recording_get_trades
     report = run_sweep(fake, now=NOW, progress=lambda d, t: calls.append((d, t)), min_markets=10)
     assert [row["series"] for row in report["rows"]] == ["KXGOOD", "KXBAD"]  # KXTINY no llega al mínimo
     good, bad = report["rows"]
@@ -249,5 +256,52 @@ def test_sweep_ranks_series_by_favorite_returns():
     assert good["favorites_maker"]["return_after_fees"] > 0 > bad["favorites_maker"]["return_after_fees"]
     assert bad["favorite_upsets"] == 6
     assert good["confidence"] == "baja"
-    assert "KXGOOD" in report["conclusions"][0]
+    # La banda del bot (88–97¢): KXBAD pierde con claridad; KXGOOD no tuvo fallos, pero
+    # 12 eventos son pocos para asegurar que gana.
+    assert (good["verdict"], bad["verdict"]) == ("dudoso", "pierde")
+    assert good["strategy"]["groups"] == 12 and bad["strategy"]["losing_groups"] == 6
+    assert report["overall"]["groups"] == 24 and report["overall"]["return_after_fees"] < 0
+    assert "series juntas" in report["conclusions"][0] and any("KXGOOD" in n for n in report["conclusions"])
+    # Sin los últimos 15 minutos antes del cierre, como el bot.
+    market = fake.settled["KXGOOD-0"]
+    assert (market.ticker, int(market.close_time.timestamp()) - 900) in trade_requests
     assert calls[-1] == (24, 24)
+
+
+def test_band_margin_of_error_counts_events_not_contracts():
+    r = Research()
+    # 30 eventos: un maker compra NO a 94¢; el favorito gana en 29 y pierde en 1.
+    for i in range(30):
+        r.add_market("yes" if i == 0 else "no", [trade("0.0600", 10, "yes")], group=f"E{i}")
+    s = r.band_summary()
+    assert (s["groups"], s["losing_groups"], s["avg_price"], s["win_rate"]) == (30, 1, D("0.94"), D("0.9667"))
+    assert s["ci_low"] < 0 < s["return_after_fees"] < s["ci_high"]
+    assert verdict(s) == "dudoso"  # un batacazo en 30 eventos no permite asegurar nada
+    assert "no se puede asegurar" in band_note(s)
+
+    same_event = Research()
+    for _ in range(5):
+        same_event.add_market("no", [trade("0.0600", 10, "yes")], group="MISMO")
+    assert same_event.band_summary()["groups"] == 1 and verdict(same_event.band_summary()) == "sin datos"
+
+    outside = Research()
+    outside.add_market("no", [trade("0.0200", 10, "yes")])  # NO a 98¢: fuera de la banda del bot
+    assert outside.band_summary()["contracts"] == 0
+
+    # Sin ningún fallo el margen no se reduce a cero; con muchos eventos, sí se puede asegurar.
+    few = Research()
+    for i in range(20):
+        few.add_market("no", [trade("0.0600", 10, "yes")], group=f"E{i}")
+    assert few.band_summary()["ci_low"] < 0 and verdict(few.band_summary()) == "dudoso"
+    many = Research()
+    for i in range(400):
+        many.add_market("yes" if i < 2 else "no", [trade("0.0600", 10, "yes")], group=f"E{i}")
+    assert verdict(many.band_summary()) == "gana"
+
+
+def test_wilson_interval():
+    low, high = wilson(12, 12)
+    assert 0.75 < low < 0.76 and high == 1.0
+    low, high = wilson(0, 10)
+    assert low == 0.0 and 0.27 < high < 0.28
+    assert wilson(0, 0) == (0.0, 1.0)

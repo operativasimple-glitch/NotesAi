@@ -77,6 +77,14 @@ chequeo de salud (`/healthz`) y reinicie el bot si se cae.
 6. Cuando estés convencido, **Operar**. Empieza con los límites por defecto: 50 $ comprometidos como
    máximo y freno si pierdes 20 $.
 
+### Antes de pagar nada: ¿gana la estrategia?
+
+El repositorio trae un trabajo de GitHub Actions (`.github/workflows/kalshi-research.yml`) que descarga
+mercados ya liquidados de Kalshi y simula la estrategia del bot: comprar a 88–97¢ como maker, sin los
+últimos 15 minutos antes del cierre, con comisiones. Da el rendimiento por serie con su margen de error y
+solo dice "gana" si no puede ser casualidad. No usa tu clave ni envía órdenes, y en repositorios públicos
+es gratis. El resultado sale en el resumen de cada ejecución, en la pestaña **Actions**.
+
 Si prefieres no guardar la clave en el panel, ponla como variables del servidor (`KALSHI_API_KEY_ID`,
 `KALSHI_PRIVATE_KEY` con el PEM y `KALSHI_ENV`). Las variables tienen prioridad sobre el panel.
 

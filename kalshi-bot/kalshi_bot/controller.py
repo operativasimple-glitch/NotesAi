@@ -830,7 +830,7 @@ class BotController:
     def start_sweep(self, params: dict) -> dict:
         client = self.client()
         series_count = max(3, min(int(params.get("series_count") or 12), 40))
-        per_series = max(10, min(int(params.get("per_series") or 60), 200))
+        per_series = max(10, min(int(params.get("per_series") or 60), 1000))
         job = self.jobs["sweep"]
         job.start(
             lambda j: run_sweep(

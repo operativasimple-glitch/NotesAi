@@ -1,3 +1,4 @@
+import json
 import logging
 import os
 from decimal import Decimal as D
@@ -262,12 +263,18 @@ def test_placeholder_key_path_without_id_is_ignored(clean_env):
     assert s.credentials_source == "" and s.signer() is None
 
 
-def test_cli_research_sweep(fake_cli, capsys):
+def test_cli_research_sweep(fake_cli, capsys, tmp_path):
     from .test_favorites_scanner_research import sweep_fixture
 
     data = sweep_fixture()
     fake_cli.markets, fake_cli.settled = data.markets, data.settled
     fake_cli.trades, fake_cli.series_info = data.trades, data.series_info
-    assert cli.main(["research", "--sweep", "--series-count", "5", "--per-series", "20"]) == 0
+    out_file = tmp_path / "sweep.json"
+    args = ["research", "--sweep", "--series-count", "5", "--per-series", "20", "--json", str(out_file)]
+    assert cli.main(args) == 0
+    saved = json.loads(out_file.read_text())
+    assert saved["rows"][0]["series"] == "KXGOOD" and saved["overall_verdict"] == "pierde"
     out = capsys.readouterr().out
-    assert "KXGOOD" in out and "Mejor serie para favoritos" in out
+    assert "KXGOOD" in out and "Mejor serie: KXGOOD" in out and "TODAS JUNTAS" in out
+    good_line = next(line for line in out.splitlines() if line.startswith("KXGOOD"))
+    assert good_line.endswith("dudoso") and "0/12" in good_line

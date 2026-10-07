@@ -14,6 +14,7 @@ Si en los tramos altos (90-100¢) los makers ganan dinero, la estrategia
 from __future__ import annotations
 
 import logging
+import math
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -40,6 +41,52 @@ FEE_RATES = {"taker": TAKER_FEE_RATE, "maker": MAKER_FEE_RATE}
 FAVORITE_BUCKETS = [8, 9]  # 90–100¢
 LONGSHOT_BUCKETS = [0, 1]  # 0–10¢
 FAVORITE_FLOOR = Decimal("0.90")
+STRATEGY_BAND = (Decimal("0.88"), Decimal("0.97"))  # lo que compra la estrategia favorites
+Z95 = Decimal("1.96")
+
+
+def wilson(successes: int, n: int, z: float = 1.96) -> tuple:
+    """Intervalo de Wilson para una proporción: sigue siendo razonable aunque no haya ningún fallo."""
+    if n <= 0:
+        return 0.0, 1.0
+    p = successes / n
+    denom = 1 + z * z / n
+    center = (p + z * z / (2 * n)) / denom
+    half = z * math.sqrt(p * (1 - p) / n + z * z / (4 * n * n)) / denom
+    return max(0.0, center - half), min(1.0, center + half)
+
+
+def pct(value: Decimal, decimals: int = 2) -> str:
+    return f"{value * 100:+.{decimals}f}%"
+
+
+def verdict(stats: dict) -> str:
+    """ "gana", "pierde", "dudoso" o "sin datos", según el intervalo de confianza del 95 %."""
+    if not stats.get("contracts") or "ci_low" not in stats:
+        return "sin datos"
+    if stats["ci_low"] > 0:
+        return "gana"
+    if stats["ci_high"] < 0:
+        return "pierde"
+    return "dudoso"
+
+
+def band_note(stats: dict, subject: str = "La estrategia del bot") -> str:
+    """Una frase con el rendimiento de la banda, su margen de error y el veredicto."""
+    if not stats.get("contracts"):
+        return f"{subject}: no hubo compras de makers entre {stats.get('band', '88–97¢')} en la muestra."
+    text = f"{subject} (comprar a {stats['band']} como maker) rindió {pct(stats['return_after_fees'])} tras comisiones"
+    if "ci_low" in stats:
+        text += f" en {stats['groups']} eventos (margen de error: {pct(stats['ci_low'])} a {pct(stats['ci_high'])})"
+    return (
+        text
+        + {
+            "gana": ": gana, y no es casualidad.",
+            "pierde": ": pierde dinero.",
+            "dudoso": ": con estos datos no se puede asegurar que gane.",
+            "sin datos": ".",
+        }[verdict(stats)]
+    )
 
 
 def bucket_index(price: Decimal) -> int:
@@ -84,8 +131,12 @@ class Tally:
 class Research:
     """Acumula operaciones de mercados liquidados y resume por tramo de precio."""
 
-    def __init__(self):
+    def __init__(self, band: tuple = STRATEGY_BAND):
         self.tallies = {role: [Tally() for _ in BUCKETS] for role in ("taker", "maker")}
+        # Compras de makers dentro de la banda de la estrategia, agrupadas por evento
+        # (los mercados de un evento están ligados): {evento: [coste, neto, contratos, cobrado]}.
+        self.band = band
+        self.band_groups: dict = {}
         self.markets = 0
         self.trades = 0
         # A nivel de mercado (todas las operaciones de un mercado comparten resultado,
@@ -93,10 +144,13 @@ class Research:
         self.favorite_markets = 0  # mercados donde un maker compró a 90–100¢
         self.favorite_upsets = 0  # ...y ese favorito perdió
 
-    def add_market(self, result: str, trades: list) -> None:
+    def add_market(self, result: str, trades: list, group: Optional[str] = None) -> None:
+        """group: el evento del mercado, para medir el error por eventos y no por contratos."""
         if result not in ("yes", "no"):
             return
         self.markets += 1
+        key = group or f"mercado-{self.markets}"
+        lo, hi = self.band
         yes_won = result == "yes"
         favorite_sides: set = set()  # lados ("yes"/"no") comprados a 90–100¢ por makers
         for t in trades:
@@ -115,6 +169,10 @@ class Research:
             self.tallies[yes_role][bucket_index(price)].add(price, count, yes_won, FEE_RATES[yes_role])
             no_price = ONE - price
             self.tallies[no_role][bucket_index(no_price)].add(no_price, count, not yes_won, FEE_RATES[no_role])
+            if yes_role == "maker" and lo <= price <= hi:
+                self._band_add(key, price, count, yes_won)
+            if no_role == "maker" and lo <= no_price <= hi:
+                self._band_add(key, no_price, count, not yes_won)
             if yes_role == "maker" and price >= FAVORITE_FLOOR:
                 favorite_sides.add("yes")
             if no_role == "maker" and no_price >= FAVORITE_FLOOR:
@@ -124,6 +182,54 @@ class Research:
             winner = "yes" if yes_won else "no"
             if winner not in favorite_sides:
                 self.favorite_upsets += 1
+
+    def _band_add(self, key: str, price: Decimal, count: Decimal, won: bool) -> None:
+        entry = self.band_groups.setdefault(key, [ZERO, ZERO, ZERO, ZERO])
+        payout = count if won else ZERO
+        cost = price * count
+        entry[0] += cost
+        entry[1] += payout - cost - MAKER_FEE_RATE * count * price * (ONE - price)
+        entry[2] += count
+        entry[3] += payout
+
+    def band_summary(self) -> dict:
+        """Rendimiento de comprar dentro de la banda como maker, con su intervalo de confianza del 95 %.
+
+        Todas las operaciones de un evento dependen del mismo resultado, así que el
+        error se calcula por eventos, no por contratos. Se toma el más amplio de dos
+        intervalos: el del cociente ganancia/coste (método delta) y el que sale de la
+        proporción de eventos ganados (Wilson). El segundo evita dar por segura una
+        serie solo porque en la muestra no hubo ningún batacazo.
+        """
+        lo, hi = self.band
+        groups = [g for g in self.band_groups.values() if g[0] > 0]
+        out: dict = {"band": f"{int(lo * 100)}–{int(hi * 100)}¢", "groups": len(groups), "contracts": ZERO}
+        if not groups:
+            return out
+        q = Decimal("0.0001")
+        cost = sum((g[0] for g in groups), ZERO)
+        net = sum((g[1] for g in groups), ZERO)
+        contracts = sum((g[2] for g in groups), ZERO)
+        payout = sum((g[3] for g in groups), ZERO)
+        ratio = net / cost
+        out.update(
+            contracts=contracts.quantize(Decimal("0.01")),
+            avg_price=(cost / contracts).quantize(q),
+            win_rate=(payout / contracts).quantize(q),
+            return_after_fees=ratio.quantize(q),
+            net_per_contract=(net / contracts).quantize(q),
+            losing_groups=sum(1 for g in groups if g[1] < 0),
+        )
+        n = len(groups)
+        if n >= 2:
+            spread = sum(((g[1] - ratio * g[0]) ** 2 for g in groups), ZERO) / (n * (n - 1))
+            error = Z95 * spread.sqrt() / (cost / n)
+            fee_share = (payout - cost - net) / cost
+            low_rate, high_rate = (Decimal(str(r)) for r in wilson(n - out["losing_groups"], n))
+            price = cost / contracts
+            out["ci_low"] = min(ratio - error, low_rate / price - ONE - fee_share).quantize(q)
+            out["ci_high"] = max(ratio + error, high_rate / price - ONE - fee_share).quantize(q)
+        return out
 
     def report(self) -> dict:
         rows = []
@@ -141,7 +247,13 @@ class Research:
                     "all": both.summary(),
                 }
             )
-        return {"markets": self.markets, "trades": self.trades, "buckets": rows, "conclusions": self.conclusions()}
+        return {
+            "markets": self.markets,
+            "trades": self.trades,
+            "buckets": rows,
+            "strategy": self.band_summary(),
+            "conclusions": self.conclusions(),
+        }
 
     def _combined(self, role: Optional[str], indexes: list) -> Tally:
         tally = Tally()
@@ -151,7 +263,7 @@ class Research:
         return tally
 
     def conclusions(self) -> list:
-        notes = []
+        notes = [band_note(self.band_summary())]
         cheap = self._combined(None, [0, 1]).summary()
         if cheap.get("contracts"):
             notes.append(
@@ -212,7 +324,7 @@ def run_research(
         except Exception as exc:  # noqa: BLE001 - un mercado fallido no invalida el resto
             log.warning("No se pudieron leer las operaciones de %s: %s", market.ticker, exc)
             continue
-        research.add_market(market.result, trades)
+        research.add_market(market.result, trades, group=market.event_ticker)
         if progress:
             progress(i, len(markets))
     report = research.report()
@@ -243,6 +355,7 @@ def confidence(markets: int) -> str:
 def series_summary(series: str, research: Research, info: Optional[dict] = None) -> dict:
     every = list(range(len(BUCKETS)))
     info = info or {}
+    strategy = research.band_summary()
     return {
         "series": series,
         "title": info.get("title") or "",
@@ -256,12 +369,14 @@ def series_summary(series: str, research: Research, info: Optional[dict] = None)
         "makers": research._combined("maker", every).summary(),
         "favorite_markets": research.favorite_markets,
         "favorite_upsets": research.favorite_upsets,
+        "strategy": strategy,
+        "verdict": verdict(strategy),
         "confidence": confidence(research.markets),
     }
 
 
-def _favorite_return(row: dict) -> Decimal:
-    stats = row["favorites_maker"]
+def _strategy_return(row: dict) -> Decimal:
+    stats = row["strategy"]
     return stats["return_after_fees"] if stats.get("contracts") else Decimal("-9")
 
 
@@ -272,17 +387,20 @@ def run_sweep(
     per_series: int = 60,
     min_markets: int = 10,
     closing_within_hours: float = 168,
-    trades_pages: int = 1,
+    trades_pages: int = 2,
+    skip_last_minutes: int = 15,
     progress: Optional[Callable[[int, int], None]] = None,
     should_stop: Optional[Callable[[], bool]] = None,
     now: Optional[datetime] = None,
 ) -> dict:
-    """Compara las series que están activas ahora según cómo les fue a los favoritos.
+    """Compara las series que están activas ahora según cómo le habría ido al bot.
 
     1. Busca las series con más volumen entre los mercados que cierran pronto
        (lo que el bot operaría).
-    2. Para cada serie descarga sus últimos mercados liquidados y sus operaciones.
-    3. Ordena las series por el rendimiento de comprar a 90–100¢ como maker.
+    2. Para cada serie descarga sus últimos mercados liquidados y sus operaciones,
+       sin los últimos minutos antes del cierre (el bot no opera ahí).
+    3. Ordena las series por el rendimiento de comprar como maker en la banda de
+       la estrategia (88–97¢), con su margen de error.
     """
     now = now or datetime.now(timezone.utc)
     start, end = int(now.timestamp()), int(now.timestamp() + closing_within_hours * 3600)
@@ -297,25 +415,32 @@ def run_sweep(
 
     plan: dict = {}
     for series in candidates:
-        settled = client.get_markets(status="settled", series_ticker=series, limit=min(per_series, 200), max_pages=1)
+        settled = client.get_markets(
+            status="settled", series_ticker=series, limit=min(per_series, 200), max_pages=-(-per_series // 200)
+        )
         settled = [m for m in settled if m.result in ("yes", "no") and m.market_type == "binary"][:per_series]
         if len(settled) >= min_markets:
             plan[series] = settled
     total = sum(len(v) for v in plan.values())
 
     rows, done = [], 0
+    overall = Research()
     for series, markets in plan.items():
         research = Research()
         for market in markets:
             if should_stop and should_stop():
                 break
+            max_ts = None
+            if skip_last_minutes and market.close_time is not None:
+                max_ts = int(market.close_time.timestamp()) - skip_last_minutes * 60
             try:
-                trades = client.get_trades(market.ticker, max_pages=trades_pages)
+                trades = client.get_trades(market.ticker, max_ts=max_ts, max_pages=trades_pages)
             except Exception as exc:  # noqa: BLE001
                 log.warning("No se pudieron leer las operaciones de %s: %s", market.ticker, exc)
                 trades = None
             if trades is not None:
-                research.add_market(market.result, trades)
+                research.add_market(market.result, trades, group=market.event_ticker)
+                overall.add_market(market.result, trades, group=market.event_ticker)
             done += 1
             if progress:
                 progress(done, total)
@@ -325,29 +450,36 @@ def run_sweep(
             info = {}
         rows.append(series_summary(series, research, info))
 
-    rows.sort(key=_favorite_return, reverse=True)
-    good = [r for r in rows if r["favorites_maker"].get("contracts") and _favorite_return(r) > 0]
+    rows.sort(key=_strategy_return, reverse=True)
+    summary = overall.band_summary()
     notes = []
-    if good:
-        best = good[0]
+    if rows:
+        notes.append(band_note(summary, f"En las {len(rows)} series juntas, la estrategia del bot"))
+        good = [r for r in rows if r["strategy"].get("contracts") and _strategy_return(r) > 0]
+        sure = [r for r in good if r["verdict"] == "gana"]
+        if good:
+            best = good[0]
+            notes.append(
+                f"Mejor serie: {best['series']} ({best['title'] or 'sin título'}): "
+                f"{pct(_strategy_return(best))} tras comisiones en {best['strategy']['groups']} eventos."
+            )
         notes.append(
-            f"Mejor serie para favoritos: {best['series']} ({best['title'] or 'sin título'}): "
-            f"{_favorite_return(best) * 100:+.2f}% tras comisiones en {best['markets']} mercados "
-            f"(fiabilidad {best['confidence']})."
+            f"{len(good)} de {len(rows)} series dan rendimiento positivo; en {len(sure)} el margen de error "
+            "permite decir que ganan de verdad."
         )
-        notes.append(f"{len(good)} de {len(rows)} series dan rendimiento positivo comprando favoritos como maker.")
-    elif rows:
-        notes.append("Ninguna serie analizada da rendimiento positivo comprando favoritos: mejor no activarla ahora.")
     else:
         notes.append("No hubo suficientes mercados liquidados para comparar series.")
     notes.append(
-        "Las operaciones de un mismo mercado comparten resultado: la muestra real es el número de mercados. "
-        "Con menos de 50, un solo batacazo cambia mucho el resultado."
+        "Los mercados de un mismo evento comparten resultado: la muestra real es el número de eventos. "
+        "Con pocos, un solo batacazo cambia mucho el resultado."
     )
     return {
         "generated_at": now.isoformat(),
         "series_analyzed": len(rows),
         "markets": total,
+        "skip_last_minutes": skip_last_minutes,
+        "overall": summary,
+        "overall_verdict": verdict(summary),
         "rows": rows,
         "conclusions": notes,
     }

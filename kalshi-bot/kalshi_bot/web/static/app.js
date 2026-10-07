@@ -897,15 +897,32 @@ async function runSweep() {
   });
 }
 
-async function useSeries(series) {
+const VERDICTS = {
+  gana: "gana",
+  pierde: "pierde",
+  dudoso: "sin confirmar",
+  "sin datos": "sin datos",
+};
+
+function bandText(stats) {
+  if (!stats || !stats.contracts || Number(stats.contracts) === 0) return "sin compras en la banda del bot";
+  const parts = [`${stats.losing_groups} de ${stats.groups} eventos con pérdida`];
+  if (stats.ci_low != null) parts.push(`margen ${fmt.pct(stats.ci_low)} a ${fmt.pct(stats.ci_high)}`);
+  return parts.join(" · ");
+}
+
+async function useSeries(row) {
+  const sure = row.verdict === "gana";
   const ok = await confirmDialog({
-    title: `Centrar el bot en ${series}`,
-    message: "El bot dejará de buscar en todos los mercados y operará solo esta serie. Puedes cambiarlo en Ajustes → Mercados.",
+    title: `Centrar el bot en ${row.series}`,
+    message:
+      "El bot dejará de buscar en todos los mercados y operará solo esta serie. Puedes cambiarlo en Ajustes → Mercados." +
+      (sure ? "" : " Ojo: con los datos que hay no se puede asegurar que gane; simula antes de operar."),
     confirmLabel: "Usar esta serie",
   });
   if (!ok.ok) return;
   try {
-    await api("/api/markets/use-series", { method: "POST", body: { series: [series] } });
+    await api("/api/markets/use-series", { method: "POST", body: { series: [row.series] } });
     toast(state.status && state.status.bot.state === "running" ? "Guardado. Reinicia el bot para aplicarlo." : "Serie guardada", "success");
   } catch (err) {
     toast(err.message, "error");
@@ -915,14 +932,11 @@ async function useSeries(series) {
 function renderSweep(r) {
   $("#sweep-status").textContent = `${r.series_analyzed} series · ${r.markets} mercados liquidados · ${fmt.time(r.generated_at)}`;
   const items = r.rows.map((row) => {
-    const fav = row.favorites_maker;
-    const has = fav && fav.contracts && Number(fav.contracts) > 0;
-    const longshot = row.longshots_taker;
-    const sub = [row.category, `${row.markets} mercados`, `fiabilidad ${row.confidence}`].filter(Boolean).join(" · ");
-    const detail = has ? `${row.favorite_upsets} de ${row.favorite_markets} favoritos fallaron` : "sin compras de favoritos";
-    const longText = longshot && longshot.contracts && Number(longshot.contracts) ? ` · longshots ${fmt.pct(longshot.return_after_fees)}` : "";
-    const use = has && Number(fav.return_after_fees) > 0
-      ? el("button", { class: "btn small", type: "button", text: "Usar", onclick: () => useSeries(row.series) })
+    const band = row.strategy;
+    const has = band && band.contracts && Number(band.contracts) > 0;
+    const sub = [row.category, `${row.markets} mercados`].filter(Boolean).join(" · ");
+    const use = has && Number(band.return_after_fees) > 0
+      ? el("button", { class: "btn small", type: "button", text: "Usar", onclick: () => useSeries(row) })
       : null;
     return el(
       "div",
@@ -932,18 +946,28 @@ function renderSweep(r) {
         { class: "item-main" },
         el("div", { class: "item-title", text: `${row.series}${row.title ? " · " + row.title : ""}` }),
         el("div", { class: "item-sub", text: sub }),
-        el("div", { class: "item-sub", text: detail + longText }),
+        el("div", { class: "item-sub", text: bandText(band) }),
       ),
       el(
         "div",
         { class: "item-side" },
-        el("div", { class: "big " + (has ? signClass(fav.return_after_fees) : ""), text: has ? fmt.pct(fav.return_after_fees, 2) : "—" }),
-        el("div", { class: "small muted", text: "favoritos" }),
+        el("div", { class: "big " + (has ? signClass(band.return_after_fees) : ""), text: has ? fmt.pct(band.return_after_fees, 2) : "—" }),
+        el("div", { class: "small muted", text: VERDICTS[row.verdict] || "" }),
       ),
       use,
     );
   });
+  const overall = r.overall;
+  const head = overall && overall.contracts && Number(overall.contracts) > 0
+    ? el(
+        "p",
+        { class: "small" },
+        el("b", { text: `Todas juntas: ${fmt.pct(overall.return_after_fees, 2)} (${VERDICTS[r.overall_verdict] || "sin datos"})` }),
+        ` · ${bandText(overall)}`,
+      )
+    : null;
   $("#sweep-results").replaceChildren(
+    head,
     el("div", { class: "list" }, ...(items.length ? items : [empty("No hubo suficientes datos para comparar.")])),
     el("ul", { class: "conclusions" }, ...r.conclusions.map((c) => el("li", { text: c }))),
   );

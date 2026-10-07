@@ -1,0 +1,77 @@
+# Mide con datos públicos de Kalshi si la estrategia del bot habría ganado dinero.
+# No usa ninguna clave ni envía órdenes: solo lee mercados ya liquidados.
+# En repositorios públicos, GitHub Actions es gratis.
+name: "Kalshi: ¿gana el bot?"
+
+on:
+  workflow_dispatch:
+    inputs:
+      series_count:
+        description: Series a comparar
+        default: "15"
+      per_series:
+        description: Mercados liquidados por serie
+        default: "400"
+      markets:
+        description: Mercados recientes para la investigación general
+        default: "1000"
+  push:
+    branches: [claude/kalshi-bot-kjmcj6]
+    paths:
+      - .github/workflows/kalshi-research.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kalshi-research
+  cancel-in-progress: true
+
+jobs:
+  research:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: kalshi-bot
+    env:
+      KALSHI_ENV: prod
+      SERIES_COUNT: ${{ inputs.series_count || '15' }}
+      PER_SERIES: ${{ inputs.per_series || '400' }}
+      MARKETS: ${{ inputs.markets || '1000' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Instalar
+        run: |
+          pip install -r requirements.txt
+          printf '[http]\nreads_per_second = 12\n' > config.toml
+      - name: Conexión con Kalshi
+        run: python -m kalshi_bot check
+      - name: Barrido por series (la estrategia del bot)
+        run: |
+          python -m kalshi_bot research --sweep --series-count "$SERIES_COUNT" --per-series "$PER_SERIES" \
+            --json sweep.json | tee sweep.txt
+      - name: Investigación general (todas las series)
+        run: python -m kalshi_bot research --markets "$MARKETS" --json research.json | tee research.txt
+      - name: Resumen
+        if: always()
+        run: |
+          {
+            echo '## ¿Gana el bot?'
+            echo '```'
+            cat sweep.txt research.txt 2>/dev/null
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "=== JSON barrido ==="; cat sweep.json 2>/dev/null || true
+          echo "=== JSON investigación ==="; cat research.json 2>/dev/null || true
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kalshi-research
+          path: |
+            kalshi-bot/sweep.*
+            kalshi-bot/research.*
+          if-no-files-found: ignore
