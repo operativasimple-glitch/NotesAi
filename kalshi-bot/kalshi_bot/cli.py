@@ -1,0 +1,360 @@
+"""Línea de comandos: python -m kalshi_bot <comando>."""
+
+from __future__ import annotations
+
+import argparse
+import logging
+import logging.handlers
+import sys
+import time
+from datetime import datetime, timezone
+from decimal import Decimal
+from pathlib import Path
+from typing import Optional
+
+from .client import KalshiAPIError
+from .config import ConfigError, Settings, load_settings
+from .engine import Bot, DryRunExecutor, Journal, LiveExecutor
+from .models import Market
+from .risk import RiskManager
+from .strategies import build_strategy
+
+log = logging.getLogger("kalshi_bot")
+
+
+# --------------------------------------------------------------------------
+# Formato
+# --------------------------------------------------------------------------
+
+
+def cents(price: Optional[Decimal]) -> str:
+    """0.455 -> '45.5¢'."""
+    if price is None:
+        return "—"
+    text = f"{price * 100:.2f}".rstrip("0").rstrip(".")
+    return f"{text}¢"
+
+
+def money(value: Decimal) -> str:
+    return f"${value:,.2f}"
+
+
+def contracts(value: Decimal) -> str:
+    return f"{value:,.2f}".rstrip("0").rstrip(".")
+
+
+def time_left(market: Market, now: datetime) -> str:
+    hours = market.hours_to_close(now)
+    if hours is None:
+        return "—"
+    if hours < 0:
+        return "cerrado"
+    if hours < 1:
+        return f"{hours * 60:.0f}m"
+    if hours < 48:
+        return f"{int(hours)}h{int((hours % 1) * 60):02d}m"
+    return f"{hours / 24:.0f}d"
+
+
+def short(text: str, width: int) -> str:
+    return text if len(text) <= width else text[: width - 1] + "…"
+
+
+# --------------------------------------------------------------------------
+# Comandos
+# --------------------------------------------------------------------------
+
+
+def cmd_check(settings: Settings, args) -> int:
+    print(f"Entorno: {settings.env}  ({settings.base_url})")
+    signer = settings.signer()
+    client = settings.client(signer)
+    status = client.get_exchange_status()
+    print(
+        f"Exchange: activo={'sí' if status.get('exchange_active') else 'no'}, "
+        f"trading={'sí' if status.get('trading_active') else 'no'}"
+    )
+    if signer is None:
+        print("Credenciales: no configuradas. Puedes ver mercados y simular, pero no operar.")
+        print("Crea una API key en Kalshi y rellena .env (ver README).")
+        return 0
+    balance = client.get_balance()
+    print(f"Credenciales: OK (key {settings.api_key_id[:8]}…)")
+    print(f"Saldo disponible: {money(balance.cash)} | Valor del portafolio: {money(balance.portfolio_value)}")
+    try:
+        limits = client.get_account_limits()
+        read, write = limits.get("read") or {}, limits.get("write") or {}
+        print(
+            f"Nivel de API: {limits.get('usage_tier', '?')} "
+            f"(lectura {read.get('refill_rate', '?')} tokens/s, escritura {write.get('refill_rate', '?')} tokens/s)"
+        )
+    except KalshiAPIError as exc:
+        log.debug("No se pudieron leer los límites de la API: %s", exc)
+    positions = client.get_positions()
+    orders = client.get_orders(status="resting")
+    prefix = settings.engine.order_prefix + "-"
+    own = sum(1 for o in orders if o.client_order_id.startswith(prefix))
+    print(f"Posiciones abiertas: {len(positions)} | Órdenes en reposo: {len(orders)} (del bot: {own})")
+    print("Todo listo.")
+    return 0
+
+
+def cmd_events(settings: Settings, args) -> int:
+    client = settings.client(settings.signer())
+    events = client.get_events(series_ticker=args.series, limit=args.limit)
+    if not events:
+        print("No hay eventos abiertos con ese filtro.")
+        return 0
+    print(f"{'EVENTO':<34} {'SERIE':<16} TÍTULO")
+    for ev in events:
+        ticker, series, title = ev.get("event_ticker") or "", ev.get("series_ticker") or "", ev.get("title") or ""
+        print(f"{ticker:<34} {series:<16} {short(title, 70)}")
+    print("\nVer sus mercados: python -m kalshi_bot markets --event <EVENTO>")
+    return 0
+
+
+def cmd_markets(settings: Settings, args) -> int:
+    if not (args.series or args.event):
+        print("Indica --series o --event (usa 'events' para descubrirlos).", file=sys.stderr)
+        return 2
+    client = settings.client(settings.signer())
+    markets = client.get_markets(series_ticker=args.series, event_ticker=args.event, max_pages=3)
+    if not markets:
+        print("No hay mercados abiertos con ese filtro.")
+        return 0
+    now = datetime.now(timezone.utc)
+    markets.sort(key=lambda m: m.volume_24h, reverse=True)
+    print(f"{'TICKER':<36} {'BID':>7} {'ASK':>7} {'ÚLTIMO':>7} {'VOL 24H':>9} {'CIERRA':>8}  DESCRIPCIÓN")
+    for m in markets[: args.limit]:
+        desc = m.subtitle or m.title
+        print(
+            f"{m.ticker:<36} {cents(m.yes_bid):>7} {cents(m.yes_ask):>7} {cents(m.last_price):>7} "
+            f"{contracts(m.volume_24h):>9} {time_left(m, now):>8}  {short(desc, 50)}"
+        )
+    if len(markets) > args.limit:
+        print(f"… y {len(markets) - args.limit} más (usa --limit)")
+    print("\nPrecios del lado YES. Comprar NO a X¢ equivale a vender YES a (100 - X)¢.")
+    return 0
+
+
+def cmd_book(settings: Settings, args) -> int:
+    client = settings.client(settings.signer())
+    market = client.get_market(args.ticker)
+    book = client.get_orderbook(args.ticker)
+    print(f"{market.ticker} — {market.title} {('· ' + market.subtitle) if market.subtitle else ''}")
+    print(f"Estado: {market.status} | Cierra: {market.close_time.isoformat() if market.close_time else '—'}")
+    print(f"Mejor bid {cents(book.best_bid)} | mejor ask {cents(book.best_ask)} | spread {cents(book.spread)}")
+    print(f"\n{'VENTAS YES (ask)':>28}")
+    for level in reversed(book.asks[: args.depth]):
+        print(f"{cents(level.price):>14} {contracts(level.size):>12}")
+    print(f"{'-' * 28}")
+    for level in book.bids[: args.depth]:
+        print(f"{cents(level.price):>14} {contracts(level.size):>12}")
+    print(f"{'COMPRAS YES (bid)':>28}")
+    return 0
+
+
+def cmd_positions(settings: Settings, args) -> int:
+    client = settings.client(_require_signer(settings))
+    positions = client.get_positions()
+    if not positions:
+        print("No tienes posiciones abiertas.")
+        return 0
+    print(f"{'TICKER':<36} {'POSICIÓN':>12} {'EXPOSICIÓN':>11} {'PNL REAL.':>10} {'COMISIONES':>10}")
+    for p in sorted(positions.values(), key=lambda x: x.ticker):
+        side = "YES" if p.position > 0 else "NO"
+        print(
+            f"{p.ticker:<36} {contracts(abs(p.position)) + ' ' + side:>12} {money(p.exposure):>11} "
+            f"{money(p.realized_pnl):>10} {money(p.fees_paid):>10}"
+        )
+    return 0
+
+
+def cmd_orders(settings: Settings, args) -> int:
+    client = settings.client(_require_signer(settings))
+    orders = client.get_orders(status="resting")
+    if not orders:
+        print("No tienes órdenes en reposo.")
+        return 0
+    prefix = settings.engine.order_prefix + "-"
+    print(f"{'TICKER':<36} {'LADO':<10} {'PRECIO':>7} {'PENDIENTE':>10}  BOT  ORDER_ID")
+    for o in sorted(orders, key=lambda x: (x.ticker, x.side, x.price)):
+        side = "compra YES" if o.side == "bid" else "vende YES"
+        mine = "sí " if o.client_order_id.startswith(prefix) else "no "
+        print(f"{o.ticker:<36} {side:<10} {cents(o.price):>7} {contracts(o.remaining):>10}  {mine}  {o.order_id}")
+    return 0
+
+
+def cmd_cancel_all(settings: Settings, args) -> int:
+    client = settings.client(_require_signer(settings))
+    if args.everything:
+        client.cancel_all_orders()
+        print("Enviada la cancelación de TODAS las órdenes en reposo de la cuenta.")
+        return 0
+    executor = LiveExecutor(client, settings.engine.order_prefix, Journal(settings.log_dir / "journal.jsonl"))
+    orders = executor.resting_orders()
+    for order in orders:
+        try:
+            executor.cancel(order)
+        except KalshiAPIError as exc:
+            print(f"No se pudo cancelar {order.order_id}: {exc}", file=sys.stderr)
+    print(f"Órdenes del bot canceladas: {len(orders)}")
+    return 0
+
+
+def cmd_run(settings: Settings, args) -> int:
+    if settings.config_path is None:
+        print("Aviso: no hay config.toml; copia config.example.toml a config.toml y edítalo.", file=sys.stderr)
+    _add_file_logging(settings.log_dir / "bot.log")
+    signer = settings.signer()
+    client = settings.client(signer)
+    strategy = build_strategy(settings.strategy_name, settings.strategy_params)
+    journal = Journal(settings.log_dir / "journal.jsonl")
+
+    if args.live:
+        if signer is None:
+            raise ConfigError("--live necesita credenciales (KALSHI_API_KEY_ID y la clave privada en .env)")
+        if settings.is_production and not args.yes:
+            _countdown_real_money(settings)
+        executor = LiveExecutor(
+            client, settings.engine.order_prefix, journal, ttl_seconds=settings.engine.order_ttl_seconds
+        )
+    else:
+        log.info("Modo simulación: no se enviará ninguna orden. Usa --live para operar.")
+        executor = DryRunExecutor(settings.engine.order_prefix, journal)
+
+    bot = Bot(
+        client,
+        strategy,
+        RiskManager(settings.risk),
+        executor,
+        settings.engine,
+        env_name=settings.env,
+        journal=journal,
+    )
+    bot.run(max_ticks=1 if args.once else None)
+    return 1 if bot.halted_reason else 0
+
+
+def _require_signer(settings: Settings):
+    signer = settings.signer()
+    if signer is None:
+        raise ConfigError("Este comando necesita credenciales: rellena KALSHI_API_KEY_ID y la clave en .env")
+    return signer
+
+
+def _countdown_real_money(settings: Settings, seconds: int = 10) -> None:
+    risk = settings.risk
+    print("=" * 70, file=sys.stderr)
+    print(f" ATENCIÓN: vas a operar con DINERO REAL en Kalshi ({settings.base_url}).", file=sys.stderr)
+    print(
+        f" Límites: {contracts(risk.max_order_contracts)} contratos/orden, "
+        f"{contracts(risk.max_position_per_market)} por mercado, "
+        f"exposición máx. {money(risk.max_total_exposure)}, pérdida máx. {money(risk.max_session_loss)}",
+        file=sys.stderr,
+    )
+    print(f" Pulsa Ctrl+C en los próximos {seconds} segundos para abortar.", file=sys.stderr)
+    print("=" * 70, file=sys.stderr)
+    time.sleep(seconds)
+
+
+# --------------------------------------------------------------------------
+# Logging y entrada
+# --------------------------------------------------------------------------
+
+
+def _setup_logging(verbose: bool) -> None:
+    root = logging.getLogger()
+    root.setLevel(logging.DEBUG if verbose else logging.INFO)
+    handler = logging.StreamHandler()
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(message)s", "%H:%M:%S"))
+    root.addHandler(handler)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
+
+
+def _add_file_logging(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handler = logging.handlers.RotatingFileHandler(path, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
+    handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)-7s %(name)s: %(message)s"))
+    logging.getLogger().addHandler(handler)
+
+
+def _explain_api_error(exc: KalshiAPIError) -> str:
+    hint = ""
+    if exc.is_auth_error:
+        hint = (
+            "\nPista: Kalshi rechazó las credenciales. Comprueba KALSHI_API_KEY_ID, que el .pem sea el de esa "
+            "key y que KALSHI_ENV coincida con donde la creaste (las keys de demo solo sirven en demo). "
+            "Revisa también que el reloj del sistema esté en hora."
+        )
+    elif exc.code == "network_error":
+        hint = "\nPista: no se pudo conectar con Kalshi. Revisa tu conexión a internet."
+    elif exc.status == 404:
+        hint = "\nPista: no existe ese recurso. ¿Está bien escrito el ticker?"
+    return f"Error de la API: {exc}{hint}"
+
+
+COMMANDS = {
+    "check": cmd_check,
+    "events": cmd_events,
+    "markets": cmd_markets,
+    "book": cmd_book,
+    "positions": cmd_positions,
+    "orders": cmd_orders,
+    "cancel-all": cmd_cancel_all,
+    "run": cmd_run,
+}
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="python -m kalshi_bot", description="Bot de trading para Kalshi")
+    parser.add_argument("-c", "--config", help="ruta a config.toml (por defecto ./config.toml)")
+    parser.add_argument("-v", "--verbose", action="store_true", help="más detalle en el log")
+    sub = parser.add_subparsers(dest="command", required=True, metavar="comando")
+
+    sub.add_parser("check", help="verifica conexión, credenciales y saldo")
+
+    p = sub.add_parser("events", help="lista eventos abiertos")
+    p.add_argument("--series", help="filtra por serie, p. ej. KXHIGHNY")
+    p.add_argument("--limit", type=int, default=25)
+
+    p = sub.add_parser("markets", help="lista mercados abiertos de una serie o evento")
+    p.add_argument("--series", help="ticker de la serie, p. ej. KXHIGHNY")
+    p.add_argument("--event", help="ticker del evento")
+    p.add_argument("--limit", type=int, default=30)
+
+    p = sub.add_parser("book", help="muestra el libro de órdenes de un mercado")
+    p.add_argument("ticker")
+    p.add_argument("--depth", type=int, default=10)
+
+    sub.add_parser("positions", help="muestra tus posiciones abiertas")
+    sub.add_parser("orders", help="muestra tus órdenes en reposo")
+
+    p = sub.add_parser("cancel-all", help="cancela las órdenes del bot")
+    p.add_argument("--everything", action="store_true", help="cancela TODAS las órdenes de la cuenta")
+
+    p = sub.add_parser("run", help="ejecuta el bot (simulación salvo que uses --live)")
+    p.add_argument("--live", action="store_true", help="envía órdenes de verdad")
+    p.add_argument("--once", action="store_true", help="hace una sola vuelta y termina")
+    p.add_argument("--yes", action="store_true", help="omite la cuenta atrás de seguridad en prod")
+    return parser
+
+
+def main(argv: Optional[list] = None) -> int:
+    args = build_parser().parse_args(argv)
+    _setup_logging(args.verbose)
+    try:
+        settings = load_settings(args.config)
+        return COMMANDS[args.command](settings, args) or 0
+    except ConfigError as exc:
+        print(f"Error de configuración: {exc}", file=sys.stderr)
+        return 2
+    except ValueError as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        return 2
+    except KalshiAPIError as exc:
+        print(_explain_api_error(exc), file=sys.stderr)
+        return 1
+    except KeyboardInterrupt:
+        print("\nInterrumpido.", file=sys.stderr)
+        return 130

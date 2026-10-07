@@ -1,0 +1,72 @@
+# Copia este archivo como config.toml y ajústalo a tu gusto.
+# Los secretos (API key) van en .env, nunca aquí.
+# Los importes están en dólares y los precios entre 0 y 1 (0.45 = 45¢).
+
+[bot]
+poll_interval_seconds = 10       # segundos entre vueltas del bot
+cancel_on_exit = true            # al detener el bot, cancelar sus órdenes
+order_ttl_seconds = 600          # las órdenes en reposo caducan solas tras 10 min (por si el bot se cae); 0 = nunca
+taker_cooldown_seconds = 30      # tras una orden IOC en un mercado, esperar antes de repetir
+requote_tolerance = 0.0          # no mover una orden si el precio deseado cambió menos que esto
+max_consecutive_errors = 10      # freno de emergencia tras N vueltas seguidas con errores
+paper_cash = 1000                # saldo virtual para simular sin API key
+order_prefix = "kb"              # el bot solo toca órdenes cuyo client_order_id empieza así (usa otro si corres varios bots)
+log_dir = "logs"                 # aquí van bot.log y journal.jsonl
+
+[markets]
+# Mercados concretos a seguir (además de los que tengan valor justo en la estrategia):
+tickers = []
+# O que el bot descubra mercados abiertos por serie o evento (elige los de más volumen):
+series = []                      # p. ej. ["KXHIGHNY"]  (temperatura máxima en Nueva York)
+events = []
+max_markets = 10
+min_hours_to_close = 0.5         # ignorar mercados que cierran en menos de 30 min...
+max_hours_to_close = 0           # ...o en más de N horas (0 = sin límite)
+min_volume_24h = 0               # volumen mínimo en las últimas 24 h (contratos)
+refresh_minutes = 5              # cada cuánto se vuelve a buscar mercados
+
+[risk]
+max_order_contracts = 5          # contratos por orden
+max_position_per_market = 20     # contratos por mercado (YES o NO)
+max_total_exposure_dollars = 50  # dinero máximo comprometido: posiciones de la cuenta + órdenes del bot
+max_session_loss_dollars = 20    # si pierdes esto desde que arrancó el bot: cancela todo y se detiene (0 = off)
+min_price = 0.03                 # no operar por debajo de 3¢...
+max_price = 0.97                 # ...ni por encima de 97¢
+min_minutes_to_close = 15        # no operar en los últimos 15 min antes del cierre
+
+[http]
+reads_per_second = 8             # por debajo de los límites del nivel Basic de Kalshi
+writes_per_second = 4
+timeout_seconds = 10
+self_trade_prevention = "taker_at_cross"
+
+[strategy]
+# "fair_value" (tú das la probabilidad), "market_maker" (cotiza ambos lados)
+# o tu propia estrategia como "mi_modulo:MiClase".
+name = "fair_value"
+
+[strategy.params]
+mode = "taker"                   # "taker": IOC cuando hay ventaja | "maker": deja órdenes en el libro
+min_edge = 0.04                  # ventaja mínima por contrato tras comisiones (0.04 = 4¢)
+order_size = 2                   # contratos por orden
+max_position = 10                # contratos máximos por mercado
+fair_values_file = "fair_values.csv"   # se recarga solo cuando lo editas
+
+[strategy.params.fair_values]
+# Tu probabilidad de que el mercado resuelva YES (0.35, "35%" o 35):
+# "KXHIGHNY-26OCT08-B67.5" = 0.30
+
+# ---------------------------------------------------------------------------
+# Para usar el creador de mercado, sustituye las secciones [strategy] por:
+#
+# [strategy]
+# name = "market_maker"
+#
+# [strategy.params]
+# half_spread = 0.02          # cotiza a 2¢ del precio medio por cada lado
+# quote_size = 2
+# max_position = 10
+# skew_per_contract = 0.002   # desplaza las cotizaciones 0.2¢ por contrato de inventario
+# min_book_spread = 0.03      # solo cotiza si el spread del mercado es de 3¢ o más
+#
+# y elige mercados en [markets] (p. ej. series = ["KXHIGHNY"]).

@@ -1,0 +1,16 @@
+# Secretos: NUNCA al repositorio
+.env
+*.pem
+*.key
+
+# Tu configuración y tus probabilidades (tu "ventaja") se quedan en tu máquina
+config.toml
+fair_values.csv
+
+logs/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/

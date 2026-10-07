@@ -1,0 +1,10 @@
+# Copia este archivo como fair_values.csv. Una línea por mercado: ticker,probabilidad
+# La probabilidad es TU estimación de que el mercado resuelva YES: 0.35, 35% o 35.
+# El bot recarga el archivo automáticamente cada vez que lo guardas,
+# así que puedes actualizarlo a mano o desde otro script (tu "modelo").
+#
+# Busca tickers reales con:  python -m kalshi_bot markets --series KXHIGHNY
+#
+# ticker,probabilidad
+# KXHIGHNY-26OCT08-B67.5,0.30
+# KXHIGHNY-26OCT08-B69.5,45%
