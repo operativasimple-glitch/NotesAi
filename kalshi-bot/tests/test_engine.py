@@ -221,6 +221,8 @@ def test_taker_cooldown():
 def test_fills_are_logged_once_and_attributed_to_the_bot(tmp_path):
     journal = Journal(tmp_path / "journal.jsonl")
     bot, fake, clock = setup(journal=journal)
+    told = []  # el panel recibe solo los llenados del bot (para avisar al móvil)
+    bot.on_fill = lambda fill: told.append(fill["fill_id"]) or 1 / 0  # aunque el aviso falle, el bot sigue
     bot.tick()
     bot_order_id = next(iter(fake.orders))
     fill = {
@@ -243,6 +245,7 @@ def test_fills_are_logged_once_and_attributed_to_the_bot(tmp_path):
     fills = [(r["fill"]["fill_id"], r["from_bot"]) for r in records if r["event"] == "fill"]
     assert sorted(fills) == [("f1", True), ("f2", False)]
     assert bot._fills_since == 1_800_000_000 - 1
+    assert told == ["f1"]
 
 
 def test_intents_for_other_markets_are_ignored():

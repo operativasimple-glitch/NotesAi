@@ -299,6 +299,7 @@ class Bot:
         self._trading_paused = False
         self._seen_fills: dict = {}  # fill_id -> None, en orden de llegada
         self._risk_notes: dict = {}  # ticker -> avisos del riesgo de la última vuelta
+        self.on_fill: Optional[Callable[[dict], None]] = None  # el panel avisa al móvil
         self._fills_since: Optional[int] = None
         # Estado observable (lo lee el panel web desde otro hilo).
         self.running = False
@@ -684,6 +685,11 @@ class Bot:
                 fill.get("fee_cost", "?"),
             )
             self.journal.record("fill", from_bot=from_bot, fill=fill)
+            if from_bot and self.on_fill is not None:
+                try:
+                    self.on_fill(fill)
+                except Exception:  # noqa: BLE001 - un aviso nunca para al bot
+                    log.debug("Falló el aviso del llenado", exc_info=True)
             ts = fill.get("ts")
             # Pedimos desde un segundo antes: los repetidos se descartan por fill_id.
             if isinstance(ts, int) and (self._fills_since is None or ts - 1 > self._fills_since):

@@ -27,8 +27,13 @@ const STRATEGY_NAMES = { favorites: "Favoritos", fair_value: "Valor justo", mark
 const fmt = {
   cents(v) {
     if (v == null || v === "") return "—";
-    const c = Math.round(Number(v) * 10000) / 100;
-    return (Number.isInteger(c) ? String(c) : c.toFixed(1)) + "¢";
+    const c = Math.round(Number(v) * 1000) / 10;
+    return (Number.isInteger(c) ? String(c) : c.toFixed(1).replace(".", ",")) + "¢";
+  },
+  // 0.932 → "93%" (sin signo, para umbrales y probabilidades).
+  share(v) {
+    if (v == null || v === "") return "—";
+    return Math.round(Number(v) * 100).toLocaleString("es-ES") + "%";
   },
   money(v, sign = false) {
     if (v == null || v === "") return "—";
@@ -99,11 +104,6 @@ const CITIES = {
   PHIL: "Filadelfia",
 };
 const MONTHS = { JAN: "ene", FEB: "feb", MAR: "mar", APR: "abr", MAY: "may", JUN: "jun", JUL: "jul", AUG: "ago", SEP: "sept", OCT: "oct", NOV: "nov", DEC: "dic" };
-const ICONS = {
-  weather: ["M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"],
-  sports: ["M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z", "M5.6 5.6C7.8 7.5 9 9.6 9 12s-1.2 4.5-3.4 6.4", "M18.4 5.6C16.2 7.5 15 9.6 15 12s1.2 4.5 3.4 6.4"],
-  other: ["m3 17 6-6 4 4 8-8", "M15 7h6v6"],
-};
 
 // "KXHIGHNY-26OCT08-B66.5" → "8 oct": la fecha del evento va en el ticker.
 function tickerDate(ticker) {
@@ -114,12 +114,16 @@ function tickerDate(ticker) {
 // Los tramos llegan en inglés: "66° to 67°", "82° or below", "91° or above".
 function bracketText(text) {
   return text
-    .replace(/(-?\d+(?:\.\d+)?)°?\s+to\s+(-?\d+(?:\.\d+)?)°/i, "$1–$2°")
+    .replace(/(-?\d+(?:\.\d+)?)°?\s+to\s+(-?\d+(?:\.\d+)?)°/i, "$1° a $2°")
     .replace(/\s+or (below|less|lower)\b/i, " o menos")
     .replace(/\s+or (above|more|higher)\b/i, " o más");
 }
 
-// Nombre legible de un mercado: { kind, title (el evento), outcome (a qué se apuesta), date }.
+// Nombre legible de un mercado:
+//   title: el evento ("Máxima en Chicago", "Los Angeles D vs San Diego");
+//   outcome: a qué se apuesta ("78° a 79°", "gana Los Angeles D");
+//   short: para las filas ("Chicago · 78° a 79°", "Los Angeles D gana");
+//   long: para el detalle; group: el tipo ("Temp. máxima", "MLB"); date: "8 oct".
 function marketLabel(ticker, title, subtitle) {
   const t = String(ticker || "");
   const parts = t.split("-");
@@ -127,19 +131,32 @@ function marketLabel(ticker, title, subtitle) {
   const weather = /^KX(HIGH|LOW)([A-Z]+)$/.exec(parts[0]);
   if (weather) {
     const city = CITIES[weather[2]] || weather[2];
+    const high = weather[1] === "HIGH";
     let outcome = subtitle ? bracketText(subtitle) : "";
-    const tail = /^B(-?\d+)\.5$/.exec(parts[2] || ""); // sin nombre: "B66.5" es el tramo 66–67°
-    if (!outcome && tail) outcome = `${tail[1]}–${Number(tail[1]) + 1}°`;
+    const tail = /^B(-?\d+)\.5$/.exec(parts[2] || ""); // sin nombre: "B66.5" es el tramo 66° a 67°
+    if (!outcome && tail) outcome = `${tail[1]}° a ${Number(tail[1]) + 1}°`;
     if (!outcome && parts[2]) outcome = `tramo ${parts[2]}`;
-    return { kind: "weather", title: `${weather[1] === "HIGH" ? "Máxima" : "Mínima"} en ${city}`, outcome, date };
+    const event = `${high ? "Máxima" : "Mínima"} en ${city}`;
+    return {
+      kind: "weather",
+      title: event,
+      outcome,
+      date,
+      short: outcome ? `${city} · ${outcome}` : event,
+      long: outcome ? `${event}, ${outcome}` : event,
+      group: high ? "Temp. máxima" : "Temp. mínima",
+    };
   }
   const game = /^KX([A-Z0-9]+)GAME$/.exec(parts[0]);
   if (game) {
     const match = title ? title.replace(/\s*winner\??$/i, "").replace(/\?$/, "") : game[1];
     const team = subtitle || parts[2] || "";
-    return { kind: "sports", title: match, outcome: team ? `gana ${team}` : "", date, league: game[1] };
+    const short = team ? `${team} gana` : match;
+    return { kind: "sports", title: match, outcome: team ? `gana ${team}` : "", date, short, long: short, group: game[1] };
   }
-  return { kind: "other", title: title || t, outcome: subtitle || "", date };
+  const name = title || t;
+  const short = subtitle ? `${name} · ${subtitle}` : name;
+  return { kind: "other", title: name, outcome: subtitle || "", date, short, long: short, group: "" };
 }
 
 // Nombres que ya se conocen (de posiciones, órdenes o /api/labels); null = no tiene.
@@ -188,11 +205,12 @@ function renameTickers() {
   for (const node of $$(".tk[data-ticker]")) node.textContent = labelText(labelFor(node.dataset.ticker));
 }
 
-function avatar(kind) {
-  const icon = svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" });
-  for (const d of ICONS[kind] || ICONS.other) icon.append(svg("path", { d }));
-  return el("div", { class: `avatar ${kind}` }, icon);
+function chip(side) {
+  const kind = side === "yes" ? "yes" : side === "no" ? "no" : "both";
+  return el("span", { class: `chip ${kind}`, text: kind === "yes" ? "SÍ" : kind === "no" ? "NO" : "SÍ+NO" });
 }
+
+const valueClass = (v) => (Number(v) > 0 ? "pos" : Number(v) < 0 ? "neg" : "zero");
 
 function feeEstimate(rate, count, price) {
   const raw = rate * count * price * (1 - price);
@@ -305,6 +323,8 @@ const state = {
   fairValues: [],
   resultsDays: 30,
   resultsScope: "bot",
+  detailFrom: "results",
+  curve: null,
 };
 
 function showLogin() {
@@ -320,8 +340,10 @@ function showApp() {
 
 function switchView(name) {
   state.view = name;
+  document.body.dataset.view = name;
   for (const view of $$(".view")) view.hidden = view.id !== `view-${name}`;
-  for (const tab of $$(".tab")) tab.classList.toggle("active", tab.dataset.view === name);
+  const tabName = name === "detail" ? state.detailFrom : name;
+  for (const tab of $$(".tab")) tab.classList.toggle("active", tab.dataset.view === tabName);
   $("#view-title").textContent = $(`#view-${name}`).dataset.title;
   window.scrollTo(0, 0);
   if (name === "home") loadHome();
@@ -335,10 +357,16 @@ async function init() {
   $("#login-form").addEventListener("submit", onLogin);
   $("#sheet-backdrop").addEventListener("click", closeSheet);
   $("#sheet-close").addEventListener("click", closeSheet);
-  $("#btn-sim").addEventListener("click", () => startBot("sim"));
-  $("#btn-live").addEventListener("click", () => startBot("live"));
-  $("#btn-stop").addEventListener("click", stopBot);
+  $("#bot-toggle").addEventListener("click", toggleBot);
+  for (const button of $$("#mode-seg button")) button.addEventListener("click", () => setMode(button.dataset.mode));
+  $("#size-less").addEventListener("click", () => changeSize(-1));
+  $("#size-more").addEventListener("click", () => changeSize(1));
+  $("#row-max-price").addEventListener("click", editMaxPrice);
+  $("#row-max-loss").addEventListener("click", editMaxLoss);
+  for (const toggle of $$("#push-fills, #push-settlements")) toggle.addEventListener("click", () => togglePush(toggle.dataset.kind));
+  $("#push-test").addEventListener("click", testPush);
   $("#btn-kill").addEventListener("click", killBot);
+  if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
   $("#btn-refresh-portfolio").addEventListener("click", refreshPortfolio);
   for (const button of $$("#results-period button")) {
     button.addEventListener("click", () => loadResults(Number(button.dataset.days)));
@@ -410,15 +438,23 @@ function poll() {
     refreshStatus().catch(() => {});
     refreshLogs();
     if (state.pollCount % 4 === 0) refreshPortfolio();
+    if (state.pollCount % 12 === 0) loadHomeResults();
+  } else if (state.view === "settings") {
+    refreshStatus().catch(() => {});
   }
 }
 
 /* ===================== inicio ===================== */
 
 function loadHome() {
-  refreshStatus().catch(() => {});
   refreshLogs();
-  refreshPortfolio();
+  // Las apuestas y los resultados necesitan saber antes si hay API key.
+  refreshStatus()
+    .catch(() => {})
+    .then(() => {
+      refreshPortfolio();
+      loadHomeResults();
+    });
 }
 
 async function refreshStatus() {
@@ -434,67 +470,150 @@ function strategyLabel(name) {
 }
 
 function renderStatus(s) {
-  const badge = $("#env-badge");
-  badge.textContent = s.is_production ? "REAL" : "DEMO";
-  badge.className = "badge " + (s.is_production ? "prod" : "demo");
+  for (const pill of $$("#env-badge, #env-badge-home")) {
+    pill.textContent = s.is_production ? "REAL" : "DEMO";
+    pill.className = "env-pill" + (s.is_production ? "" : " demo");
+  }
+  $("#home-date").textContent = new Date()
+    .toLocaleDateString("es-ES", { weekday: "short", day: "numeric", month: "short" })
+    .replace(/[.,]/g, "")
+    .toUpperCase();
 
   const bot = s.bot;
+  const running = bot.state === "running";
+  const live = running && bot.mode === "live";
   const dot = $("#state-dot");
-  dot.className = "dot";
-  let label = "Detenido";
-  let sub = `Estrategia: ${strategyLabel(bot.strategy)}`;
-  let mood = "stopped";
-  if (bot.state === "running") {
-    const live = bot.mode === "live";
-    dot.classList.add(live ? "running" : "sim");
-    mood = live ? "live" : "sim";
-    label = live ? (s.is_production ? "Operando con dinero real" : "Operando en demo") : "Simulando";
+  dot.className = "dot" + (running ? (live ? " running" : " sim") : bot.state === "halted" ? " halted" : "");
+  let label = "Bot en pausa";
+  let sub = `Estrategia ${strategyLabel(bot.strategy)} · actívalo en Ajustes`;
+  if (running) {
+    label = live ? (s.is_production ? "Bot activo" : "Bot activo (demo)") : "Simulando";
     const parts = [strategyLabel(bot.strategy), `${bot.markets.length} mercados`];
     if (bot.last_tick_at) parts.push(`última vuelta ${fmt.ago(bot.last_tick_at)}`);
     sub = parts.join(" · ");
   } else if (bot.state === "halted") {
-    dot.classList.add("halted");
-    mood = "halted";
-    label = "Frenado";
+    label = "Bot frenado";
+    sub = "Revisa el aviso y vuelve a activarlo en Ajustes";
   }
-  $("#hero").dataset.state = mood;
   $("#state-label").textContent = label;
   $("#state-sub").textContent = sub;
 
   const banner = $("#state-banner");
   banner.hidden = false;
-  if (bot.halted_reason && bot.state !== "running") {
+  if (bot.halted_reason && !running) {
     banner.className = "banner danger";
     banner.textContent = "Freno de emergencia: " + bot.halted_reason;
   } else if (!s.credentials.configured) {
     banner.className = "banner info";
-    banner.textContent = "Sin API key: puedes simular con datos reales, pero para operar configúrala en Ajustes.";
-  } else if (bot.state === "running" && bot.consecutive_errors > 0) {
+    banner.textContent = "Sin API key: puedes simular con datos reales, pero para operar configúrala en Ajustes → Avanzado.";
+  } else if (running && bot.consecutive_errors > 0) {
     banner.className = "banner warn";
     banner.textContent = `La API está fallando (${bot.consecutive_errors} vueltas seguidas). Mira la actividad.`;
   } else {
     banner.hidden = true;
   }
 
-  const running = bot.state === "running";
-  $("#start-buttons").hidden = running;
-  $("#btn-stop").hidden = !running;
-  const live = $("#btn-live");
-  live.disabled = !s.credentials.configured;
-  live.textContent = s.is_production ? "Operar con dinero real" : "Operar en demo";
-
   const balance = s.balance;
-  $("#hero-equity").textContent = balance ? fmt.money(balance.equity) : "—";
+  $("#stat-equity").textContent = balance ? fmt.money(balance.equity) : "—";
   $("#stat-cash").textContent = balance ? fmt.money(balance.cash) : "—";
   $("#stat-portfolio").textContent = balance ? fmt.money(balance.portfolio_value) : "—";
-  const pnl = $("#stat-pnl");
-  pnl.textContent = s.session_pnl == null ? "—" : fmt.money(s.session_pnl, true);
-  pnl.className = signClass(s.session_pnl);
+  // Lo que lleva la sesión, junto al freno que la vigila.
+  const session = $("#session-line");
+  session.hidden = s.session_pnl == null;
+  if (s.session_pnl != null) {
+    const limit = Number(s.risk.max_session_loss_dollars);
+    session.replaceChildren(
+      "Desde que arrancó el bot: ",
+      el("b", { class: signClass(s.session_pnl), text: fmt.money(s.session_pnl, true) }),
+      limit > 0 ? ` · se frena si se pierden ${fmt.money(limit)}` : "",
+    );
+  }
   const note = $("#balance-note");
   note.hidden = !(s.balance_error || (!s.credentials.configured && running));
   note.textContent = s.balance_error
     ? "No se pudo leer el saldo: " + s.balance_error
     : "Saldo virtual de simulación (sin API key).";
+
+  renderBotCard(s);
+}
+
+// Ajustes: el interruptor del bot y el modo (Real / Simulación).
+function renderBotCard(s) {
+  const bot = s.bot;
+  const running = bot.state === "running";
+  const mode = selectedMode();
+  const toggle = $("#bot-toggle");
+  toggle.setAttribute("aria-checked", String(running));
+  toggle.disabled = state.botBusy === true;
+  let title = "Bot en pausa";
+  let sub = "No abrirá operaciones nuevas";
+  if (running) {
+    title = bot.mode === "live" ? "Bot activo" : "Bot simulando";
+    sub = bot.mode === "live" ? "Opera solo según tus límites" : "Mira el mercado sin enviar órdenes";
+  } else if (bot.state === "halted") {
+    title = "Bot frenado";
+    sub = bot.halted_reason || "Se paró por seguridad";
+  }
+  $("#bot-title").textContent = title;
+  $("#bot-sub").textContent = sub;
+  $("#mode-live").textContent = s.is_production ? "Real" : "Demo";
+  for (const button of $$("#mode-seg button")) {
+    button.classList.toggle("active", button.dataset.mode === mode);
+    button.setAttribute("aria-pressed", String(button.dataset.mode === mode));
+  }
+  $("#mode-help").textContent =
+    mode === "live"
+      ? s.is_production
+        ? "Envía órdenes con tu dinero de Kalshi."
+        : "Envía órdenes en el entorno demo de Kalshi (dinero ficticio)."
+      : "Hace lo mismo pero sin enviar órdenes: verás en Actividad lo que habría comprado.";
+}
+
+function selectedMode() {
+  const s = state.status;
+  if (s && s.bot.state === "running") return s.bot.mode;
+  let saved = null;
+  try {
+    saved = localStorage.getItem("kb-mode");
+  } catch {
+    saved = null;
+  }
+  if (saved === "live" || saved === "sim") return saved;
+  return s && s.credentials.configured ? "live" : "sim";
+}
+
+async function setMode(mode) {
+  const s = state.status;
+  if (!s || state.botBusy) return;
+  if (mode === "live" && !s.credentials.configured) {
+    toast("Para operar configura tu API key en Ajustes → Avanzado", "error");
+    return;
+  }
+  const running = s.bot.state === "running";
+  if (running && s.bot.mode !== mode) {
+    const ok = await confirmDialog({
+      title: mode === "live" ? "Pasar a operar" : "Pasar a simulación",
+      message: "El bot se detiene y vuelve a arrancar en el modo nuevo.",
+      confirmLabel: "Cambiar",
+    });
+    if (!ok.ok) return;
+  }
+  try {
+    localStorage.setItem("kb-mode", mode);
+  } catch {
+    /* el modo elegido no se recuerda en este navegador */
+  }
+  if (running && s.bot.mode !== mode) {
+    if (await stopBot(true)) await startBot(mode);
+  }
+  renderBotCard(state.status);
+}
+
+async function toggleBot() {
+  const s = state.status;
+  if (!s || state.botBusy) return;
+  if (s.bot.state === "running") await stopBot();
+  else await startBot(selectedMode());
 }
 
 async function startBot(mode) {
@@ -518,31 +637,40 @@ async function startBot(mode) {
           message: `El bot enviará órdenes en el entorno demo (dinero ficticio). ${limits}`,
           confirmLabel: "Empezar",
         });
-    if (!result.ok) return;
+    if (!result.ok) return false;
     if (s.is_production) body.confirm = "REAL";
   }
+  state.botBusy = true;
+  renderBotCard(s);
   try {
     await api("/api/bot/start", { method: "POST", body });
     toast(mode === "live" ? "Bot en marcha" : "Simulación en marcha", "success");
-    await refreshStatus();
-    setTimeout(refreshLogs, 800);
+    return true;
   } catch (err) {
     toast(err.message, "error");
+    return false;
+  } finally {
+    state.botBusy = false;
+    await refreshStatus().catch(() => {});
+    setTimeout(refreshLogs, 800);
   }
 }
 
-async function stopBot() {
-  $("#btn-stop").disabled = true;
+async function stopBot(quiet = false) {
+  state.botBusy = true;
+  renderBotCard(state.status);
   try {
     await api("/api/bot/stop", { method: "POST" });
-    toast("Bot detenido");
-    await refreshStatus();
-    refreshLogs();
-    refreshPortfolio();
+    if (!quiet) toast("Bot en pausa");
+    return true;
   } catch (err) {
     toast(err.message, "error");
+    return false;
   } finally {
-    $("#btn-stop").disabled = false;
+    state.botBusy = false;
+    await refreshStatus().catch(() => {});
+    refreshLogs();
+    refreshPortfolio();
   }
 }
 
@@ -660,6 +788,12 @@ function describeLog(message) {
     const how = m[2].startsWith("EN VIVO") ? (m[1] === "prod" ? "con dinero real" : "en demo") : "en simulación";
     return { kind: "start", main: [el("b", { text: "Bot en marcha" }), ` · ${how}`], extra: [`Estrategia ${strategyLabel(m[3])}`] };
   }
+  m = /^Bot arrancado desde el panel en modo (.+)$/.exec(message);
+  if (m) return { kind: "start", main: [el("b", { text: "Activado desde el panel" })], extra: [m[1] === "EN VIVO" ? "operando" : "en simulación"] };
+  m = /^Bot detenido(?:: (.*))?$/.exec(message);
+  if (m) return { kind: "info", main: [el("b", { text: "Bot en pausa" })], extra: m[1] ? [m[1]] : [] };
+  m = /^Exchange: activo=(\S+), trading=(\S+)/.exec(message);
+  if (m) return { kind: "info", main: [m[2] === "sí" ? "Kalshi está abierto" : "Kalshi no está operando ahora: el bot espera"], extra: [] };
   m = /^Saldo disponible \$([\d.]+) \| valor del portafolio \$([\d.]+)/.exec(message);
   if (m) return { kind: "info", main: [`Saldo ${fmt.money(m[1])}`], extra: [`en posiciones ${fmt.money(m[2])}`] };
   m = /^Mercados seguidos \((\d+)\): (.*)$/.exec(message);
@@ -688,14 +822,14 @@ async function refreshPortfolio() {
   const orders = $("#orders");
   const s = state.status;
   if (!s || !s.credentials.configured) {
-    positions.replaceChildren(empty("Configura tu API key en Ajustes para ver tus posiciones."));
+    positions.replaceChildren(empty("Configura tu API key en Ajustes → Avanzado para ver tus apuestas."));
     orders.replaceChildren(empty("—"));
     return;
   }
   try {
     const [pos, ord] = await Promise.all([api("/api/positions"), api("/api/orders")]);
-    positions.replaceChildren(...(pos.length ? pos.map(positionItem) : [empty("No tienes posiciones abiertas.")]));
-    orders.replaceChildren(...(ord.length ? ord.map(orderItem) : [empty("No hay órdenes abiertas.")]));
+    positions.replaceChildren(...(pos.length ? pos.map(positionItem) : [empty("No hay apuestas abiertas ahora mismo.")]));
+    orders.replaceChildren(...(ord.length ? ord.map(orderItem) : [empty("Ninguna orden esperando en el libro.")]));
     renameTickers();
   } catch (err) {
     positions.replaceChildren(empty(err.message));
@@ -706,41 +840,35 @@ function sideBadge(outcome, text) {
   return el("span", { class: `badge ${outcome}`, text: text || (outcome === "yes" ? "SÍ" : "NO") });
 }
 
-// Primera línea bajo el título: [SÍ/NO] tramo o equipo · fecha.
-function betLine(label, side, extra) {
-  const text = [label.outcome, label.date, extra].filter(Boolean).join(" · ");
-  return el("div", { class: "item-sub" }, side ? sideBadge(side) : null, side && text ? " " : null, text);
+// "5 contratos · 93¢": cuántos y a qué precio medio.
+function sizeText(contracts, cost) {
+  const n = Number(contracts);
+  const parts = [`${fmt.qty(contracts)} ${n === 1 ? "contrato" : "contratos"}`];
+  if (n > 0 && cost != null) parts.push(fmt.cents(Number(cost) / n));
+  return parts.join(" · ");
 }
 
 function positionItem(p) {
   const label = labelFor(p.ticker, p.title, p.subtitle);
   const chance = p.chance == null ? null : Number(p.chance);
-  const meter = el("div", { class: "meter", "aria-hidden": "true" }, el("i"));
-  if (chance != null) meter.firstChild.style.width = `${Math.round(chance * 100)}%`;
   let when = "";
-  if (p.hours_to_close != null) when = p.hours_to_close <= 0 ? "esperando el resultado" : `se decide en ${fmt.hours(p.hours_to_close)}`;
-  const facts = [
-    `${fmt.qty(p.contracts)} ${Number(p.contracts) === 1 ? "contrato" : "contratos"}`,
-    `pagaste ${fmt.money(p.exposure)}`,
-    `cobras ${fmt.money(p.payout ?? p.contracts)} si aciertas`,
-    when,
-  ];
+  if (p.hours_to_close != null) when = p.hours_to_close <= 0 ? "esperando" : `en ${fmt.hours(p.hours_to_close)}`;
+  const sub = [sizeText(p.contracts, p.exposure), `cobra ${fmt.money(p.payout ?? p.contracts)}`];
   return el(
-    "div",
-    { class: "item tappable position", onclick: () => openMarket(p.ticker) },
-    avatar(label.kind),
+    "button",
+    { class: "trade", type: "button", onclick: () => openMarket(p.ticker) },
+    chip(p.side),
     el(
-      "div",
-      { class: "item-main" },
-      el(
-        "div",
-        { class: "pos-row" },
-        el("div", { class: "item-title", text: label.title }),
-        el("div", { class: "big", text: chance == null ? "—" : `${Math.round(chance * 100)}%` }),
-      ),
-      el("div", { class: "pos-row" }, betLine(label, p.side), el("div", { class: "tag", text: "probabilidad" })),
-      chance == null ? null : meter,
-      el("div", { class: "item-sub wrap small", text: facts.filter(Boolean).join(" · ") }),
+      "span",
+      { class: "trade-main" },
+      el("span", { class: "trade-title", text: label.short }),
+      el("span", { class: "trade-sub", text: sub.filter(Boolean).join(" · ") }),
+    ),
+    el(
+      "span",
+      { class: "trade-side" },
+      el("span", { class: "trade-value", text: chance == null ? "—" : fmt.share(chance) }),
+      el("span", { class: "trade-tag", text: when }),
     ),
   );
 }
@@ -763,21 +891,16 @@ function orderItem(o) {
     },
   });
   const label = labelFor(o.ticker, o.title, o.subtitle);
+  const sub = [`Compra ${fmt.qty(o.remaining)} a ${fmt.cents(o.price)}`, o.source === "bot" ? "bot" : "a mano"];
   return el(
     "div",
-    { class: "item order" },
-    avatar(label.kind),
+    { class: "trade" },
+    chip(o.outcome),
     el(
-      "div",
-      { class: "item-main" },
-      el("div", { class: "item-title", text: label.title }),
-      betLine(label, o.outcome),
-      el(
-        "div",
-        { class: "item-sub" },
-        `Compra ${fmt.qty(o.remaining)} a ${fmt.cents(o.price)} `,
-        el("span", { class: `badge ${o.source === "bot" ? "bot" : ""}`, text: o.source === "bot" ? "bot" : "a mano" }),
-      ),
+      "span",
+      { class: "trade-main" },
+      el("span", { class: "trade-title", text: label.short }),
+      el("span", { class: "trade-sub", text: sub.filter(Boolean).join(" · ") }),
     ),
     cancel,
   );
@@ -848,7 +971,6 @@ function marketItem(m) {
   return el(
     "div",
     { class: "item tappable", onclick: () => openMarket(m.ticker) },
-    avatar(label.kind),
     el(
       "div",
       { class: "item-main" },
@@ -977,7 +1099,7 @@ async function openMarket(ticker) {
 
   const label = labelFor(m.ticker, m.title, m.subtitle);
   openSheet(
-    el("div", { class: "sheet-title" }, avatar(label.kind), el("h2", { text: labelText(label) })),
+    el("h2", { text: labelText(label) }),
     el("p", { class: "muted small", text: [label.date, `cierra en ${fmt.hours(m.hours_to_close)}`, m.ticker].filter(Boolean).join(" · ") }),
     el(
       "div",
@@ -1055,7 +1177,6 @@ function renderScan(r) {
     return el(
       "div",
       { class: "item tappable", onclick: () => openMarket(f.ticker) },
-      avatar(label.kind),
       el(
         "div",
         { class: "item-main" },
@@ -1367,6 +1488,9 @@ async function loadSettings() {
   renderStrategy();
   renderFields("#markets-fields", MARKET_FIELDS, p.values.markets, "markets");
   renderFields("#risk-fields", RISK_FIELDS, p.values.risk, "risk");
+  renderQuickSettings();
+  if (state.status) renderBotCard(state.status);
+  setupPush();
 }
 
 function renderStrategy() {
@@ -1403,12 +1527,259 @@ async function saveSettings() {
   button.disabled = true;
   try {
     state.settings = await api("/api/settings", { method: "PUT", body: { values } });
-    toast(state.settings.needs_restart ? "Guardado. Detén y arranca el bot para aplicarlo." : "Ajustes guardados", "success");
+    renderQuickSettings();
+    afterSave();
   } catch (err) {
     toast(err.message, "error");
   } finally {
     button.disabled = false;
   }
+}
+
+/* ===================== ajustes rápidos (arriba del todo) ===================== */
+
+function strategyDef() {
+  const p = state.settings;
+  return p && p.strategies.find((x) => x.name === p.values.strategy.name);
+}
+
+// Valor de un parámetro de la estrategia guardada o, si no se ha tocado, el de por defecto.
+function paramValue(key) {
+  const saved = state.settings.values.strategy.params || {};
+  if (saved[key] != null && saved[key] !== "") return saved[key];
+  const def = strategyDef();
+  const param = def && def.params.find((x) => x.key === key);
+  return param ? param.default : null;
+}
+
+const sizeKey = () => (state.settings.values.strategy.name === "market_maker" ? "quote_size" : "order_size");
+
+function renderQuickSettings() {
+  const p = state.settings;
+  if (!p) return;
+  const size = Math.round(Number(state.pendingSize ?? paramValue(sizeKey())) || 0);
+  const maxOrder = Number(p.values.risk.max_order_contracts) || 0;
+  $("#size-value").textContent = size ? String(size) : "—";
+  $("#size-less").disabled = size <= 1;
+  $("#size-more").disabled = maxOrder > 0 && size >= maxOrder;
+  const def = strategyDef();
+  const hasMaxPrice = Boolean(def && def.params.some((x) => x.key === "max_price"));
+  $("#row-max-price").hidden = !hasMaxPrice;
+  if (hasMaxPrice) $("#max-price-value").textContent = fmt.cents(paramValue("max_price"));
+  const loss = Number(p.values.risk.max_session_loss_dollars);
+  $("#max-loss-value").textContent = loss > 0 ? fmt.money(loss) : "sin límite";
+  $("#limits-help").textContent =
+    `Hasta ${maxOrder || "—"} contratos por operación (el tope está en Avanzado → Riesgo). ` +
+    "La pérdida máxima cuenta desde que arranca el bot e incluye lo que compres a mano: al llegar, cancela sus órdenes y se para.";
+}
+
+let sizeTimer = null;
+function changeSize(delta) {
+  if (!state.settings) return;
+  const current = Math.round(Number(state.pendingSize ?? paramValue(sizeKey())) || 0);
+  const maxOrder = Number(state.settings.values.risk.max_order_contracts) || Infinity;
+  const next = Math.min(maxOrder, Math.max(1, current + delta));
+  if (next === current) return;
+  state.pendingSize = next;
+  renderQuickSettings();
+  // Se guarda al dejar de tocar, no en cada pulsación.
+  clearTimeout(sizeTimer);
+  sizeTimer = setTimeout(async () => {
+    await saveStrategyParam(sizeKey(), String(state.pendingSize));
+    state.pendingSize = null;
+    renderQuickSettings();
+  }, 700);
+}
+
+function saveStrategyParam(key, value) {
+  const strategy = state.settings.values.strategy;
+  return saveQuick({ strategy: { name: strategy.name, params: { ...(strategy.params || {}), [key]: value } } });
+}
+
+async function saveQuick(values) {
+  try {
+    state.settings = await api("/api/settings", { method: "PUT", body: { values } });
+  } catch (err) {
+    toast(err.message, "error");
+    return false;
+  }
+  // Avanzado enseña lo guardado (un cambio a medias allí se descarta).
+  state.strategy = state.settings.values.strategy.name;
+  renderStrategy();
+  renderFields("#risk-fields", RISK_FIELDS, state.settings.values.risk, "risk");
+  renderQuickSettings();
+  afterSave();
+  return true;
+}
+
+// Con el bot en marcha los ajustes se aplican al reiniciarlo: se ofrece hacerlo ya.
+function afterSave() {
+  const banner = $("#settings-banner");
+  if (!state.settings.needs_restart) {
+    banner.hidden = true;
+    toast("Guardado", "success");
+    return;
+  }
+  banner.className = "banner info";
+  banner.hidden = false;
+  banner.replaceChildren(
+    el("div", { text: "Guardado. El bot lo aplicará cuando se reinicie." }),
+    el("button", { class: "btn small", type: "button", text: "Reiniciar ahora", onclick: restartBot }),
+  );
+}
+
+async function restartBot(event) {
+  const button = event && event.currentTarget;
+  if (button) button.disabled = true;
+  try {
+    await api("/api/bot/restart", { method: "POST" });
+    $("#settings-banner").hidden = true;
+    toast("Bot reiniciado con los ajustes nuevos", "success");
+  } catch (err) {
+    toast(err.message, "error");
+    if (button) button.disabled = false;
+  }
+  refreshStatus().catch(() => {});
+}
+
+function editValue({ title, help, unit, value, onSave }) {
+  const input = el("input", { type: "number", inputmode: "decimal", step: "any", value: value ?? "" });
+  const save = el("button", { class: "btn primary full", type: "button", text: "Guardar" });
+  save.addEventListener("click", async () => {
+    save.disabled = true;
+    if (await onSave(String(input.value).replace(",", "."))) closeSheet();
+    else save.disabled = false;
+  });
+  openSheet(el("h2", { text: title }), el("p", { class: "card-note", text: help }), el("div", { class: "input-unit" }, input, el("span", { text: unit })), save);
+  setTimeout(() => input.focus(), 60);
+}
+
+function editMaxPrice() {
+  const current = Number(paramValue("max_price"));
+  editValue({
+    title: "Precio máximo de entrada",
+    help: "El bot no compra un favorito por encima de este precio: cerca de 100¢ la ganancia es mínima y una pérdida borra muchos aciertos.",
+    unit: "¢",
+    value: Number.isFinite(current) ? String(Math.round(current * 1000) / 10) : "",
+    onSave: async (raw) => {
+      const cents = Number(raw);
+      if (!(cents > 50 && cents < 100)) {
+        toast("Pon un precio entre 51 y 99¢", "error");
+        return false;
+      }
+      return saveStrategyParam("max_price", (cents / 100).toFixed(4));
+    },
+  });
+}
+
+function editMaxLoss() {
+  const current = Number(state.settings.values.risk.max_session_loss_dollars);
+  editValue({
+    title: "Pérdida máxima",
+    help: "Si desde que arranca el bot se pierde esta cantidad (contando lo que compres a mano), cancela sus órdenes y se para. 0 = sin límite.",
+    unit: "$",
+    value: Number.isFinite(current) ? String(current) : "",
+    onSave: async (raw) => {
+      const dollars = Number(raw);
+      if (raw === "" || !(dollars >= 0)) {
+        toast("Pon una cantidad en dólares", "error");
+        return false;
+      }
+      return saveQuick({ risk: { max_session_loss_dollars: String(dollars) } });
+    },
+  });
+}
+
+/* ===================== avisos al móvil ===================== */
+
+const pushState = { reg: null, key: null, sub: null, prefs: { fills: false, settlements: false }, busy: false, ready: false };
+
+const pushSupported = () => "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
+
+async function setupPush() {
+  const help = $("#push-help");
+  if (!pushSupported()) {
+    for (const toggle of $$("#push-fills, #push-settlements")) toggle.disabled = true;
+    help.textContent = /iPhone|iPad|iPod/.test(navigator.userAgent)
+      ? "En el iPhone los avisos solo funcionan con el panel instalado: Compartir → Añadir a pantalla de inicio, y ábrelo desde ese icono."
+      : "Este navegador no permite avisos.";
+    return;
+  }
+  try {
+    pushState.reg = await navigator.serviceWorker.ready;
+    if (!pushState.key) pushState.key = (await api("/api/push")).public_key;
+    pushState.sub = await pushState.reg.pushManager.getSubscription();
+    pushState.prefs = pushState.sub
+      ? (await api("/api/push/state", { method: "POST", body: { endpoint: pushState.sub.endpoint } })).prefs
+      : { fills: false, settlements: false };
+    pushState.ready = true;
+  } catch (err) {
+    help.textContent = "No se pudieron leer los avisos: " + err.message;
+    return;
+  }
+  renderPush();
+}
+
+function renderPush() {
+  for (const toggle of $$("#push-fills, #push-settlements")) {
+    toggle.disabled = !pushState.ready || pushState.busy;
+    toggle.setAttribute("aria-checked", String(Boolean(pushState.prefs[toggle.dataset.kind])));
+  }
+  const on = pushState.prefs.fills || pushState.prefs.settlements;
+  $("#push-test").hidden = !on;
+  $("#push-help").textContent =
+    Notification.permission === "denied"
+      ? "Has bloqueado los avisos de esta app. Actívalos en los ajustes del móvil (Notificaciones) y vuelve aquí."
+      : on
+        ? "Llegan a este móvil aunque tengas el panel cerrado."
+        : "Te avisa en este móvil cuando el bot compra y cuando se cierra un mercado, con lo ganado o perdido.";
+}
+
+async function togglePush(kind) {
+  if (!pushState.ready || pushState.busy) return;
+  const prefs = { ...pushState.prefs, [kind]: !pushState.prefs[kind] };
+  const wanted = prefs.fills || prefs.settlements;
+  pushState.busy = true;
+  try {
+    let sub = pushState.sub;
+    // El iPhone solo pide permiso si es lo primero que pasa al tocar: suscribirse va antes que nada.
+    if (!sub && wanted) {
+      sub = await pushState.reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64UrlToBytes(pushState.key) });
+    }
+    if (sub) {
+      const res = await api("/api/push/subscribe", { method: "POST", body: { subscription: sub.toJSON(), prefs, origin: location.origin } });
+      pushState.prefs = res.prefs;
+      if (!wanted) {
+        await sub.unsubscribe().catch(() => {});
+        sub = null;
+      }
+    }
+    pushState.sub = sub;
+    toast(wanted ? "Avisos guardados" : "Avisos desactivados", "success");
+  } catch (err) {
+    toast(
+      Notification.permission === "denied" ? "Has bloqueado los avisos: actívalos en los ajustes del móvil" : "No se pudieron activar los avisos: " + err.message,
+      "error",
+    );
+  } finally {
+    pushState.busy = false;
+    renderPush();
+  }
+}
+
+async function testPush() {
+  if (!pushState.sub) return;
+  try {
+    await api("/api/push/test", { method: "POST", body: { endpoint: pushState.sub.endpoint } });
+    toast("Aviso de prueba enviado", "success");
+  } catch (err) {
+    toast(err.message, "error");
+  }
+}
+
+function base64UrlToBytes(text) {
+  const base64 = (text + "=".repeat((4 - (text.length % 4)) % 4)).replace(/-/g, "+").replace(/_/g, "/");
+  return Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
 }
 
 function renderCredentials(c) {
@@ -1672,85 +2043,155 @@ function resultsNoKey() {
   return el(
     "div",
     { class: "card" },
-    el("h2", { text: "Aún no hay resultados" }),
+    el("div", { class: "card-title", text: "Aún no hay resultados" }),
     el("p", {
-      class: "muted small",
-      text: "Para ver lo que ganas o pierdes cada día, configura tu API key de Kalshi en Ajustes. Solo cuenta el dinero real: en simulación no hay resultados.",
+      class: "card-note",
+      text: "Para ver lo que gana el bot, configura tu API key de Kalshi en Ajustes → Avanzado. Solo cuenta el dinero real: en simulación no hay resultados.",
     }),
     el("button", { class: "btn primary full", type: "button", text: "Ir a Ajustes", onclick: () => switchView("settings") }),
   );
 }
 
-function statTile(label, value, sign) {
-  return el(
-    "div",
-    { class: "stat" },
-    el("div", { class: "stat-label", text: label }),
-    el("div", { class: "stat-value " + (sign == null ? "" : signClass(sign)), text: value }),
-  );
+function tile(label, value, cls = "") {
+  return el("div", { class: "tile" }, el("span", { text: label }), el("b", { class: cls, text: value }));
+}
+
+// "2026-10-08" → "JUE 8 OCT"
+function dayHeader(iso) {
+  return dayLabel(iso, { weekday: "short", day: "numeric", month: "short" }).replace(/[.,]/g, "").toUpperCase();
 }
 
 function renderResults(r) {
   const t = r.totals;
-  const hero = el(
-    "div",
-    { class: "card results-hero" },
-    el("div", {
-      class: "muted small",
-      text: `${r.scope === "bot" ? "Ganancia neta del bot" : "Ganancia neta de la cuenta"} · últimos ${r.days} días`,
-    }),
-    el("div", { class: "hero-figure", text: fmt.money(t.net, true) }),
-    el("div", {
-      class: "muted small",
-      text: t.markets
-        ? `${plural(t.markets, "mercado cerrado", "mercados cerrados")} · ${t.wins} ganados · ${t.losses} perdidos`
-        : "Ningún mercado cerrado en este periodo",
-    }),
-  );
-  if (t.markets) {
-    hero.append(
-      el("p", {
-        class: "small",
-        text: `Rendimiento ${fmt.pct(t.return)} sobre ${fmt.money(t.cost)} invertidos (lo esperado: ≈ ${fmt.pct(r.expected_return, 0)}).`,
-      }),
-      el("p", { class: "muted small", text: `Comisiones pagadas: ${fmt.money(t.fees)}, ya descontadas.` }),
-    );
-    if (t.markets < 30) {
-      hero.append(
-        el("p", {
-          class: "muted small",
-          text: "Con menos de 30 mercados manda la suerte: un fallo cuesta lo que ganan unos 15 aciertos. Juzga el bot cuando lleve más.",
-        }),
-      );
-    }
+  const parts = [
+    el(
+      "div",
+      { class: "tiles" },
+      tile("Ganado", fmt.money(t.net, true), signClass(t.net)),
+      tile("Acierto", t.markets ? `${t.wins} de ${t.markets}` : "—"),
+      tile("Entrada", t.avg_price == null ? "—" : fmt.cents(t.avg_price)),
+    ),
+  ];
+  for (const m of r.recent) rememberLabel(m.ticker, m.title === m.ticker ? "" : m.title, m.subtitle);
+  if (r.recent.length) {
+    parts.push(dayGroups(r.recent, r.by_day));
   } else {
     const noHistory = r.scope === "bot" && !r.bot_history;
-    hero.append(
+    parts.push(
       el("p", {
-        class: "muted small",
+        class: "card-note",
         text: noHistory
-          ? "Todavía no hay compras del bot registradas: aparecerán aquí cuando opere con dinero real. Lo que hayas comprado tú está en «Toda la cuenta»."
-          : "Un mercado cuenta cuando Kalshi lo liquida (los partidos, al terminar; el clima, a la mañana siguiente) o cuando se vende antes. En simulación no hay resultados: solo cuenta lo real.",
+          ? "Todavía no hay compras del bot con dinero real: aparecerán aquí cuando opere. Lo que hayas comprado tú está en «Toda la cuenta»."
+          : "Ningún mercado cerrado en este periodo. Un mercado cuenta cuando Kalshi lo liquida (los partidos, al terminar; el clima, a la mañana siguiente) o cuando se vende antes.",
       }),
     );
   }
-
-  const today = r.today_totals;
-  const yesterday = r.yesterday_totals;
-  const stats = el(
-    "div",
-    { class: "stats" },
-    statTile("Hoy", fmt.money(today.net, true), today.net),
-    statTile("Ayer", yesterday ? fmt.money(yesterday.net, true) : "—", yesterday && yesterday.net),
-    statTile(r.open.markets ? `En juego (${r.open.markets})` : "En juego", fmt.money(r.open.exposure)),
+  parts.push(
+    el("p", {
+      class: "help",
+      text:
+        r.scope === "bot"
+          ? "Solo cuenta lo que compró el bot. Lo que compres tú a mano está en «Toda la cuenta»."
+          : "Cuenta todo lo de tu cuenta de Kalshi, también lo que compres a mano.",
+    }),
   );
+  if (t.markets) parts.push(moreResults(r));
+  state.resultsChart = null;
+  $("#results-body").replaceChildren(...parts);
+}
 
+// La lista de mercados cerrados, agrupada por día (con lo ganado ese día).
+function dayGroups(rows, byDay, limit = 30) {
+  const totals = Object.fromEntries((byDay || []).map((d) => [d.date, d.net]));
+  const box = el("div", { class: "rows" });
+  const render = (items) => {
+    const nodes = [];
+    let day = null;
+    for (const m of items) {
+      if (m.date !== day) {
+        day = m.date;
+        const total = totals[day];
+        nodes.push(
+          el(
+            "div",
+            { class: "day-head" },
+            el("span", { class: "eyebrow", text: dayHeader(day) }),
+            el("span", { class: "eyebrow", text: total == null ? "" : fmt.money(total, true) }),
+          ),
+        );
+      }
+      nodes.push(resultItem(m));
+    }
+    box.replaceChildren(...nodes);
+  };
+  render(rows.slice(0, limit));
+  if (rows.length <= limit) return box;
+  const more = el("button", {
+    class: "btn full",
+    type: "button",
+    text: `Ver ${rows.length - limit} más`,
+    onclick: () => {
+      render(rows);
+      more.remove();
+    },
+  });
+  return el("div", {}, box, more);
+}
+
+function resultItem(m) {
+  const label = labelFor(m.ticker, m.title === m.ticker ? "" : m.title, m.subtitle);
+  const sub = [label.group, sizeText(m.contracts, m.cost), m.sold_early ? "vendido antes" : ""];
+  return el(
+    "button",
+    { class: "trade", type: "button", onclick: () => openDetail(m, "results") },
+    chip(m.side === "ambos" ? "both" : m.side),
+    el(
+      "span",
+      { class: "trade-main" },
+      el("span", { class: "trade-title", text: label.short }),
+      el("span", { class: "trade-sub", text: sub.filter(Boolean).join(" · ") }),
+    ),
+    el("span", { class: `trade-value ${signClass(m.net)}`, text: fmt.money(m.net, true) }),
+  );
+}
+
+// Rendimiento, gráfico por día y por tipo de mercado: plegado para no cargar la lista.
+function moreResults(r) {
+  const t = r.totals;
   const chartHost = el("div", { class: "chart" });
-  const chartCard = el(
-    "div",
-    { class: "card" },
-    el("h2", { text: "Ganancia por día" }),
-    el("p", { class: "muted small", text: "Cada barra es un día: hacia arriba lo ganado y hacia abajo lo perdido. Toca el gráfico para ver el día." }),
+  const notes = [
+    `Rendimiento ${fmt.pct(t.return)} sobre ${fmt.money(t.cost)} invertidos (lo esperado: ≈ ${fmt.pct(r.expected_return, 0)}). Comisiones pagadas: ${fmt.money(t.fees)}, ya descontadas.`,
+  ];
+  if (t.markets < 30) notes.push("Con menos de 30 mercados manda la suerte: un fallo cuesta lo que ganan unos 15 aciertos.");
+  const categories = r.by_category.length
+    ? el(
+        "div",
+        { class: "rows" },
+        el("div", { class: "day-head" }, el("span", { class: "eyebrow", text: "Por tipo de mercado" })),
+        r.by_category.map((c) =>
+          el(
+            "div",
+            { class: "trade" },
+            el(
+              "span",
+              { class: "trade-main" },
+              el("span", { class: "trade-title", text: c.label }),
+              el("span", {
+                class: "trade-sub",
+                text: `${plural(c.markets, "mercado", "mercados")} · ${c.wins} ganados · ${c.losses} perdidos · ${fmt.pct(c.return)}`,
+              }),
+            ),
+            el("span", { class: `trade-value ${signClass(c.net)}`, text: fmt.money(c.net, true) }),
+          ),
+        ),
+      )
+    : null;
+  const details = el(
+    "details",
+    { class: "more" },
+    el("summary", { text: "Más datos" }),
+    notes.map((text) => el("p", { class: "card-note", text })),
+    el("div", { class: "day-head" }, el("span", { class: "eyebrow", text: "Ganancia por día" })),
     el(
       "div",
       { class: "legend" },
@@ -1759,91 +2200,281 @@ function renderResults(r) {
     ),
     chartHost,
     dayTable(r.by_day),
+    categories,
   );
-
-  // Sin mercados cerrados el gráfico sería una línea plana: basta con el resumen.
-  const cards = t.markets ? [hero, stats, chartCard] : [hero, stats];
-  if (r.by_category.length) {
-    cards.push(
-      el(
-        "div",
-        { class: "card" },
-        el("h2", { text: "Por tipo de mercado" }),
-        el(
-          "div",
-          { class: "list" },
-          r.by_category.map((c) =>
-            el(
-              "div",
-              { class: "item" },
-              el(
-                "div",
-                { class: "item-main" },
-                el("div", { class: "item-title", text: c.label }),
-                el("div", {
-                  class: "item-sub wrap",
-                  text: `${plural(c.markets, "mercado", "mercados")} · ${c.wins} ganados · ${c.losses} perdidos · rendimiento ${fmt.pct(c.return)}`,
-                }),
-              ),
-              el("div", { class: "item-side" }, el("div", { class: "big " + signClass(c.net), text: fmt.money(c.net, true) })),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-  if (r.recent.length) {
-    const list = el("div", { class: "list" }, r.recent.slice(0, 10).map(resultItem));
-    const card = el("div", { class: "card" }, el("h2", { text: "Últimos mercados cerrados" }), list);
-    if (r.recent.length > 10) {
-      const more = el("button", {
-        class: "btn full",
-        type: "button",
-        text: `Ver ${r.recent.length - 10} más`,
-        onclick: () => {
-          list.append(...r.recent.slice(10).map(resultItem));
-          more.remove();
-        },
-      });
-      card.append(more);
-    }
-    cards.push(card);
-  }
-  cards.push(
-    el("p", {
-      class: "muted small center",
-      text:
-        r.scope === "bot"
-          ? "Solo cuenta lo que compró el bot. Lo que compres tú a mano está en «Toda la cuenta»."
-          : "Cuenta todo lo de tu cuenta de Kalshi, también lo que compres a mano.",
-    }),
-  );
-  $("#results-body").replaceChildren(...cards);
-  state.resultsChart = null;
-  if (t.markets) {
+  // El gráfico se dibuja al abrir: cerrado no tiene ancho.
+  details.addEventListener("toggle", () => {
+    if (!details.open) return;
     drawDailyChart(chartHost, r.by_day);
     state.resultsChart = { host: chartHost, days: r.by_day, width: chartHost.clientWidth };
+  });
+  return details;
+}
+
+/* ===================== inicio: lo que lleva ganado el bot ===================== */
+
+async function loadHomeResults() {
+  const box = $("#home-results");
+  const s = state.status;
+  if (s && !s.credentials.configured) {
+    box.replaceChildren(resultsNoKey());
+    state.curve = null;
+    return;
+  }
+  try {
+    const tz = new Date().getTimezoneOffset();
+    renderHomeResults(await api(`/api/results?days=90&tz=${tz}&scope=bot`));
+  } catch (err) {
+    if (!box.childElementCount) {
+      box.replaceChildren(el("p", { class: "card-note", text: "No se pudieron leer los resultados: " + err.message }));
+    }
   }
 }
 
-function resultItem(m) {
-  const side = m.side === "ambos" ? null : m.side;
-  const label = labelFor(m.ticker, m.title === m.ticker ? "" : m.title, m.subtitle);
-  const outcome = m.sold_early ? "vendido antes" : m.net > 0 ? "ganado" : m.net < 0 ? "perdido" : "sin cambio";
-  const bet = betLine(label, side, `pagaste ${fmt.money(m.cost)}`);
-  bet.classList.add("wrap");
-  return el(
-    "div",
-    { class: "item tappable", onclick: () => openMarket(m.ticker) },
-    avatar(label.kind),
-    el("div", { class: "item-main" }, el("div", { class: "item-title", text: label.title }), bet),
+function renderHomeResults(r) {
+  const t = r.totals;
+  for (const m of r.recent) rememberLabel(m.ticker, m.title === m.ticker ? "" : m.title, m.subtitle);
+  let sub = `${plural(t.markets, "mercado cerrado", "mercados cerrados")} · ${fmt.money(t.cost)} arriesgados`;
+  if (!t.markets) sub = r.bot_history ? "Aún no se ha cerrado ningún mercado del bot." : "Aún no hay compras del bot con dinero real.";
+  const parts = [
     el(
       "div",
-      { class: "item-side" },
-      el("div", { class: "big " + signClass(m.net), text: fmt.money(m.net, true) }),
-      el("div", { class: "tag", text: outcome }),
+      { class: "earned" },
+      el("div", { class: "eyebrow", text: "Ganado por el bot" }),
+      el("div", { class: `earned-value ${valueClass(t.net)}`, text: fmt.money(t.net, true) }),
+      el("div", { class: "earned-sub", text: sub }),
+    ),
+  ];
+  const curveHost = r.curve.length ? el("div", { class: "curve" }) : null;
+  if (curveHost) parts.push(curveHost);
+  if (t.markets) parts.push(hitCard(t));
+  parts.push(sampleCard(t.markets));
+  if (r.recent.length) parts.push(lastCloseCard(r.recent[0]));
+  $("#home-results").replaceChildren(...parts);
+  state.curve = curveHost ? { host: curveHost, points: r.curve, width: curveHost.clientWidth } : null;
+  if (curveHost) drawCurve(curveHost, r.curve);
+}
+
+// Acierto frente al umbral: el precio medio (con comisiones) es el acierto que hace falta.
+function hitCard(t) {
+  const rate = t.markets ? t.wins / t.markets : 0;
+  const breakeven = t.breakeven == null ? null : Number(t.breakeven);
+  const fill = el("div", { class: "fill" + (breakeven != null && rate < breakeven ? " below" : "") });
+  fill.style.width = `${Math.round(rate * 1000) / 10}%`;
+  const gauge = el("div", { class: "gauge" }, el("div", { class: "track" }, fill));
+  let note = "Cuando el bot cierre mercados verás aquí cuántos acierta.";
+  if (breakeven != null) {
+    const at = Math.min(100, Math.max(0, breakeven * 100));
+    const mark = el("div", { class: "mark" });
+    mark.style.left = `${at}%`;
+    const label = el("div", { class: "mark-label", text: `umbral ${fmt.share(breakeven)}` });
+    if (at > 70) label.style.right = "0";
+    else label.style.left = `${at}%`;
+    gauge.append(mark, label);
+    note = `Entra a ${fmt.cents(t.avg_price)} de media, así que necesita acertar más del ${fmt.share(breakeven)} para ganar.`;
+  }
+  return el(
+    "div",
+    { class: "card" },
+    el("div", { class: "card-row" }, el("div", { class: "card-title", text: "Acierto" }), el("div", { class: "card-value", text: `${t.wins} de ${t.markets}` })),
+    gauge,
+    el("p", { class: "card-note", text: note }),
+  );
+}
+
+function sampleCard(markets) {
+  const bar = el("i");
+  bar.style.width = `${Math.min(100, markets)}%`;
+  return el(
+    "div",
+    { class: "card" },
+    el("div", { class: "card-row" }, el("div", { class: "card-title", text: "Muestra" }), el("div", { class: "card-value", text: `${markets} / 100` })),
+    el("div", { class: "progress-plain" }, bar),
+    el("p", {
+      class: "card-note",
+      text: markets >= 100 ? "Ya hay mercados suficientes para saber si el bot tiene ventaja." : "Hasta 100 mercados no se sabe si es ventaja o racha.",
+    }),
+  );
+}
+
+function lastCloseCard(m) {
+  const label = labelFor(m.ticker, m.title === m.ticker ? "" : m.title, m.subtitle);
+  return el(
+    "button",
+    { class: "link-card", type: "button", onclick: () => openDetail(m, "home") },
+    el("span", { class: "lc-text" }, el("span", { class: "eyebrow", text: "Último cierre" }), el("span", { class: "lc-title", text: label.short })),
+    el("span", { class: `lc-value ${signClass(m.net)}`, text: fmt.money(m.net, true) }),
+  );
+}
+
+// Ganancia acumulada mercado a mercado (una sola serie: la línea lima del diseño).
+function drawCurve(host, points) {
+  const width = Math.max(240, Math.floor(host.clientWidth || 320));
+  const height = 100;
+  const top = 12;
+  const bottom = 88;
+  const totals = [0, ...points.map((p) => Number(p.total))];
+  const n = totals.length - 1;
+  const hi = Math.max(0, ...totals);
+  const lo = Math.min(0, ...totals);
+  const y = (v) => top + ((hi - v) / (hi - lo || 1)) * (bottom - top);
+  const x = (i) => 2 + (i / n) * (width - 10);
+  const coords = totals.map((v, i) => [x(i), y(v)]);
+  const line = coords.map(([cx, cy]) => `${cx.toFixed(1)},${cy.toFixed(1)}`).join(" ");
+  const zero = y(0);
+  const chart = svg("svg", {
+    viewBox: `0 0 ${width} ${height}`,
+    height,
+    role: "img",
+    tabindex: "0",
+    "aria-label": `Ganancia acumulada en ${plural(n, "mercado cerrado", "mercados cerrados")}: ${fmt.money(totals[n], true)}. Toca o usa las flechas para ver cada mercado.`,
+  });
+  chart.append(
+    svg("line", { class: "base", x1: 0, x2: width, y1: zero + 0.5, y2: zero + 0.5 }),
+    svg("polygon", { class: "area", points: `${coords[0][0].toFixed(1)},${zero} ${line} ${coords[n][0].toFixed(1)},${zero}` }),
+    svg("polyline", { class: "line", points: line }),
+  );
+  const dots = [];
+  coords.forEach(([cx, cy], i) => {
+    if (i === 0 || (n > 40 && i !== n)) return; // con muchos mercados, solo el último punto
+    const dot = svg("circle", { class: i === n ? "pt last" : "pt", cx, cy, r: i === n ? 5 : 3 });
+    chart.append(dot);
+    dots[i] = dot;
+  });
+  const hit = svg("rect", { x: 0, y: 0, width, height, fill: "transparent" });
+  chart.append(hit);
+
+  const tip = el("div", { class: "curve-tip", hidden: true });
+  let selected = null;
+  const select = (i) => {
+    selected = i;
+    dots.forEach((dot, j) => dot && dot.classList.toggle("on", j === i && j !== n));
+    if (i == null) {
+      tip.hidden = true;
+      return;
+    }
+    const p = points[i - 1];
+    tip.replaceChildren(
+      el("b", { text: fmt.money(p.net, true) }),
+      el("span", { text: `${labelFor(p.ticker).short} · ${dayLabel(p.date, { day: "numeric", month: "short" })}` }),
+      el("span", { text: `Acumulado ${fmt.money(p.total, true)}` }),
+    );
+    tip.hidden = false;
+    const half = tip.offsetWidth / 2;
+    tip.style.left = `${Math.min(Math.max(coords[i][0], half), width - half)}px`;
+    tip.style.top = `${coords[i][1] - 8}px`;
+  };
+  const indexAt = (event) => {
+    const box = chart.getBoundingClientRect();
+    const px = ((event.clientX - box.left) / box.width) * width;
+    return Math.min(n, Math.max(1, Math.round(((px - 2) / (width - 10)) * n)));
+  };
+  hit.addEventListener("pointerdown", (event) => select(indexAt(event)));
+  hit.addEventListener("pointermove", (event) => {
+    if (event.pointerType === "mouse" || event.buttons) select(indexAt(event));
+  });
+  hit.addEventListener("pointerleave", (event) => {
+    if (event.pointerType === "mouse") select(null);
+  });
+  chart.addEventListener("focus", () => {
+    if (selected == null) select(n);
+  });
+  chart.addEventListener("blur", () => select(null));
+  chart.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      select(Math.min(n, Math.max(1, (selected ?? n) + (event.key === "ArrowLeft" ? -1 : 1))));
+    } else if (event.key === "Escape") {
+      select(null);
+    }
+  });
+  const day = (iso) => dayLabel(iso, { day: "numeric", month: "short" });
+  const labels = el("div", { class: "curve-labels" }, el("span", { text: day(points[0].date) }), el("span", { text: day(points[n - 1].date) }));
+  host.replaceChildren(chart, labels, tip);
+}
+
+/* ===================== detalle de un mercado cerrado ===================== */
+
+function openDetail(m, from) {
+  state.detailFrom = from === "home" ? "home" : "results";
+  const label = labelFor(m.ticker, m.title === m.ticker ? "" : m.title, m.subtitle);
+  const contracts = Number(m.contracts);
+  const cost = Number(m.cost);
+  const fees = Number(m.fees);
+  const net = Number(m.net);
+  const avg = contracts > 0 ? cost / contracts : null;
+  const breakeven = contracts > 0 ? (cost + fees) / contracts : null;
+  const upside = contracts - cost; // lo que se gana si acierta, antes de comisiones
+  const icon = svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" });
+  icon.append(svg("path", { d: "M15 5l-7 7 7 7" }));
+  const back = el(
+    "button",
+    { class: "back", type: "button", onclick: () => switchView(state.detailFrom) },
+    icon,
+    el("span", { text: state.detailFrom === "home" ? "Inicio" : "Resultados" }),
+  );
+  const status = m.sold_early ? "Vendido antes" : "Cerrado";
+  const head = el(
+    "div",
+    { class: "detail-head" },
+    el(
+      "div",
+      { class: "tags" },
+      chip(m.side === "ambos" ? "both" : m.side),
+      el("span", { class: "eyebrow", text: `${status} · ${dayLabel(m.date, { day: "numeric", month: "short" })}` }),
+    ),
+    el("h1", { text: label.long }),
+  );
+  const result = el(
+    "div",
+    { class: "earned" },
+    el("div", { class: "eyebrow", text: "Resultado" }),
+    el(
+      "div",
+      { class: "result-row" },
+      el("div", { class: `result-value ${valueClass(net)}`, text: fmt.money(net, true) }),
+      cost > 0 ? el("div", { class: "result-pct", text: fmt.pct(net / cost) }) : null,
     ),
   );
+  let risk = null;
+  if (contracts > 0 && cost > 0 && upside > 0) {
+    const bar = el("div", { class: "risk" });
+    bar.style.width = `${Math.min(97, Math.max(3, (cost / contracts) * 100))}%`;
+    const times = Math.max(1, Math.round(cost / upside));
+    risk = el(
+      "div",
+      { class: "card" },
+      el("div", { class: "card-title", text: "Riesgo y premio" }),
+      el("div", { class: "split" }, bar, el("div", { class: "reward" })),
+      el(
+        "div",
+        { class: "split-labels" },
+        el("span", { text: `${fmt.money(cost)} en riesgo` }),
+        el("span", { class: "pos", text: `${fmt.money(upside)} a ganar` }),
+      ),
+      el("p", {
+        class: "card-note",
+        text:
+          net < 0
+            ? `Esta pérdida se come lo que ganan unos ${times} aciertos a este precio.`
+            : `Una pérdida de este tamaño borra ${times} aciertos como este.`,
+      }),
+    );
+  }
+  const fact = (name, value) => el("div", {}, el("span", { text: name }), el("span", { text: value }));
+  const facts = el(
+    "div",
+    { class: "facts" },
+    fact("Contratos", fmt.qty(m.contracts)),
+    fact("Precio de entrada", avg == null ? "—" : fmt.cents(avg)),
+    fact("Pagó", fmt.money(cost)),
+    fact("Cobró", fmt.money(m.payout)),
+    fact("Comisiones", fmt.money(fees)),
+    fact("Acierto necesario", breakeven == null ? "—" : `más del ${fmt.share(breakeven)}`),
+  );
+  const rules = el("button", { class: "link", type: "button", text: "Ver el mercado y sus reglas", onclick: () => openMarket(m.ticker) });
+  $("#view-detail").replaceChildren(...[back, head, result, risk, facts, rules].filter(Boolean));
+  switchView("detail");
 }
 
 function dayTable(days) {
@@ -2010,9 +2641,15 @@ function drawDailyChart(host, days) {
 
 window.addEventListener("resize", () => {
   const c = state.resultsChart;
-  if (!c || state.view !== "results" || !c.host.isConnected || c.host.clientWidth === c.width) return;
-  c.width = c.host.clientWidth;
-  drawDailyChart(c.host, c.days);
+  if (c && state.view === "results" && c.host.isConnected && c.host.clientWidth !== c.width) {
+    c.width = c.host.clientWidth;
+    drawDailyChart(c.host, c.days);
+  }
+  const k = state.curve;
+  if (k && state.view === "home" && k.host.isConnected && k.host.clientWidth !== k.width) {
+    k.width = k.host.clientWidth;
+    drawCurve(k.host, k.points);
+  }
 });
 
 document.addEventListener("DOMContentLoaded", init);

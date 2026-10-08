@@ -104,6 +104,12 @@ def test_summarize_groups_by_local_day_and_market_type():
     totals = report["totals"]  # el de hace 10 días queda fuera del periodo
     assert (totals["markets"], totals["wins"], totals["losses"], totals["net"]) == (2, 2, 0, D("0.68"))
     assert totals["return"] == D("0.0731") and totals["cost"] == D("9.30") and totals["fees"] == D("0.02")
+    # 10 contratos a 93¢ de media: con comisiones hay que acertar el 93,2 % para no perder.
+    assert (totals["contracts"], totals["avg_price"], totals["breakeven"]) == (D("10"), D("0.93"), D("0.932"))
+    assert [(c["ticker"], c["net"], c["total"]) for c in report["curve"]] == [
+        ("KXHIGHNY-B-T84", D("0.29"), D("0.29")),
+        ("KXMLBGAME-A-LAD", D("0.39"), D("0.68")),
+    ]
     assert report["today_totals"]["net"] == D("0.39") and report["yesterday_totals"]["net"] == D("0.29")
     assert [c["key"] for c in report["by_category"]] == ["partidos", "clima"]
     assert report["recent"][0]["category"] == "partidos" and report["recent"][1]["side"] == "no"
@@ -111,6 +117,7 @@ def test_summarize_groups_by_local_day_and_market_type():
     assert report["expected_return"] == EXPECTED_RETURN
     empty = summarize([], now=NOW, days=1)
     assert empty["totals"]["return"] is None and empty["yesterday_totals"] is None and len(empty["by_day"]) == 1
+    assert empty["totals"]["avg_price"] is None and empty["curve"] == []
 
 
 def test_category_of():

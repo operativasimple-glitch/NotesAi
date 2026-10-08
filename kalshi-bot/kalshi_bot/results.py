@@ -178,15 +178,22 @@ def close_markets(fills: list, settlements: list, bot_orders: Optional[set] = No
 def _totals(markets: list) -> dict:
     cost = sum((m.cost for m in markets), ZERO)
     net = sum((m.net for m in markets), ZERO)
+    fees = sum((m.fees for m in markets), ZERO)
+    contracts = sum((m.contracts for m in markets), ZERO)
+    rate = Decimal("0.0001")
     return {
         "net": net.quantize(MONEY),
         "cost": cost.quantize(MONEY),
         "payout": sum((m.payout for m in markets), ZERO).quantize(MONEY),
-        "fees": sum((m.fees for m in markets), ZERO).quantize(MONEY),
+        "fees": fees.quantize(MONEY),
         "markets": len(markets),
         "wins": sum(1 for m in markets if m.net > 0),
         "losses": sum(1 for m in markets if m.net < 0),
-        "return": (net / cost).quantize(Decimal("0.0001")) if cost > 0 else None,
+        "return": (net / cost).quantize(rate) if cost > 0 else None,
+        "contracts": contracts.quantize(MONEY),
+        # Precio medio de entrada y el acierto que hace falta para no perder (con comisiones).
+        "avg_price": (cost / contracts).quantize(rate) if contracts > 0 else None,
+        "breakeven": ((cost + fees) / contracts).quantize(rate) if contracts > 0 else None,
     }
 
 
@@ -259,6 +266,20 @@ def summarize(
             }
         )
 
+    # Ganancia acumulada mercado a mercado, en el orden en que se cerraron.
+    curve = []
+    running = ZERO
+    for m in sorted(in_period, key=lambda m: m.closed_at):
+        running += m.net
+        curve.append(
+            {
+                "ticker": m.ticker,
+                "date": local_day(m).isoformat(),
+                "net": m.net.quantize(MONEY),
+                "total": running.quantize(MONEY),
+            }
+        )
+
     yesterday = today - timedelta(days=1)
     open_positions = open_positions or {}
     return {
@@ -273,6 +294,7 @@ def summarize(
         "by_day": by_day,
         "by_category": by_category,
         "recent": recent,
+        "curve": curve,
         "open": {
             "markets": len(open_positions),
             "exposure": sum((p.exposure for p in open_positions.values()), ZERO).quantize(MONEY),
@@ -305,6 +327,7 @@ def build_results(
         days=days,
         tz_offset_minutes=tz_offset_minutes,
         open_positions=positions,
+        recent_limit=200,
         only_bot=only_bot,
     )
     report["bot_history"] = bool(bot_orders)

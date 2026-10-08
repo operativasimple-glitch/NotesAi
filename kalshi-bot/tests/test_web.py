@@ -11,12 +11,13 @@ from decimal import Decimal as D
 
 import pytest
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 
 from kalshi_bot.client import KalshiAPIError
 from kalshi_bot.config import write_overrides
 from kalshi_bot.controller import BotController
 from kalshi_bot.models import ASK, BID, Fill, Settlement
+from kalshi_bot.push import b64url, b64url_decode
 from kalshi_bot.web import server as web_server
 from kalshi_bot.web.server import Sessions, make_server
 
@@ -123,6 +124,9 @@ def test_static_files_and_security_headers(panel):
     assert headers["X-Frame-Options"] == "DENY"
     assert panel.call("GET", "/app.js", csrf=False)[0] == 200
     assert panel.call("GET", "/manifest.webmanifest", csrf=False)[0] == 200
+    assert panel.call("GET", "/sw.js", csrf=False)[0] == 200
+    status, font, headers = panel.call("GET", "/fonts/bricolage-grotesque.woff2", csrf=False)
+    assert status == 200 and font[:4] == b"wOF2" and "immutable" in headers["Cache-Control"]
     assert panel.call("GET", "/../config.py", csrf=False)[0] == 404
     assert panel.call("GET", "/healthz", csrf=False)[1] == b"ok"
 
@@ -165,9 +169,39 @@ def test_start_simulation_and_stop(panel):
     status, logs, _ = panel.call("GET", "/api/logs?after=0")
     assert any("SIMULACIÓN" in line["message"] for line in logs)
     assert panel.call("POST", "/api/bot/start", {"mode": "sim"})[0] == 400  # ya está en marcha
+    status, body, _ = panel.call("POST", "/api/bot/restart")  # para aplicar ajustes nuevos
+    assert status == 200 and body["bot"]["state"] == "running" and body["bot"]["mode"] == "sim"
     status, body, _ = panel.call("POST", "/api/bot/stop")
     assert body["bot"]["state"] == "stopped"
+    assert panel.call("POST", "/api/bot/restart")[0] == 400  # parado no hay nada que reiniciar
     assert panel.fake.created == []  # la simulación nunca envía órdenes
+
+
+def test_push_subscription_routes(panel):
+    panel.login()
+    public_key = panel.call("GET", "/api/push")[1]["public_key"]
+    assert len(b64url_decode(public_key)) == 65
+    ua_public = (
+        ec.generate_private_key(ec.SECP256R1())
+        .public_key()
+        .public_bytes(serialization.Encoding.X962, serialization.PublicFormat.UncompressedPoint)
+    )
+    endpoint = "https://fcm.googleapis.com/fcm/send/abc123"
+    sub = {"endpoint": endpoint, "keys": {"p256dh": b64url(ua_public), "auth": b64url(os.urandom(16))}}
+    status, body, _ = panel.call(
+        "POST", "/api/push/subscribe", {"subscription": sub, "prefs": {"settlements": True}, "origin": "https://x.app"}
+    )
+    assert status == 200 and body["prefs"] == {"fills": False, "settlements": True}
+    assert panel.call("POST", "/api/push/state", {"endpoint": endpoint})[1]["prefs"]["settlements"] is True
+    other = {**sub, "endpoint": "http://127.0.0.1:9/robar"}
+    assert panel.call("POST", "/api/push/subscribe", {"subscription": other, "prefs": {"fills": True}})[0] == 400
+
+    panel.controller.push._post = lambda url, data, headers: 201
+    assert panel.call("POST", "/api/push/test", {"endpoint": endpoint})[1] == {"sent": 1}
+    panel.controller.push._post = lambda url, data, headers: 500
+    assert panel.call("POST", "/api/push/test", {"endpoint": endpoint})[0] == 502
+    status, body, _ = panel.call("POST", "/api/push/unsubscribe", {"endpoint": endpoint})
+    assert body["prefs"] == {"fills": False, "settlements": False}
 
 
 def test_live_needs_credentials_and_real_money_confirmation(panel, pem):

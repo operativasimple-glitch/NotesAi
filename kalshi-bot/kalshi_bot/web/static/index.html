@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#05070a">
+  <meta name="theme-color" content="#0d0e11">
   <meta name="color-scheme" content="dark">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
@@ -13,10 +13,12 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
   <link rel="icon" href="/icon-192.png">
+  <link rel="preload" href="/fonts/bricolage-grotesque.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="preload" href="/fonts/dm-mono-400.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/app.css">
   <title>Kalshi Bot</title>
 </head>
-<body>
+<body data-view="home">
   <div id="login" class="login" hidden>
     <form id="login-form" class="login-card" autocomplete="on">
       <img src="/icon-192.png" alt="" class="login-logo" width="72" height="72">
@@ -31,66 +33,68 @@
   <div id="app" hidden>
     <header class="topbar">
       <h1 id="view-title">Inicio</h1>
-      <span id="env-badge" class="badge">—</span>
+      <span id="env-badge" class="env-pill">—</span>
     </header>
 
     <main>
       <!-- INICIO -->
       <section id="view-home" class="view" data-title="Inicio">
-        <div class="card hero" id="hero" data-state="stopped">
-          <div class="hero-top">
-            <span id="state-dot" class="dot"></span>
-            <div class="hero-text">
-              <div id="state-label" class="hero-title">Cargando…</div>
-              <div id="state-sub" class="muted small"></div>
+        <div class="home-head">
+          <div>
+            <div id="home-date" class="eyebrow">—</div>
+            <div class="status-line">
+              <span id="state-dot" class="dot"></span>
+              <span id="state-label" class="status-label">Cargando…</span>
             </div>
+            <div id="state-sub" class="status-sub"></div>
           </div>
-          <div class="equity">
-            <div class="equity-label">Tu dinero en Kalshi</div>
-            <div id="hero-equity" class="equity-value">—</div>
-          </div>
-          <div class="mini-stats">
-            <div><span>Disponible</span><b id="stat-cash">—</b></div>
-            <div><span>En juego</span><b id="stat-portfolio">—</b></div>
-            <div><span>Sesión</span><b id="stat-pnl">—</b></div>
-          </div>
-          <div id="state-banner" class="banner" hidden></div>
-          <div id="start-buttons" class="start-buttons">
-            <button id="btn-live" class="btn primary">Operar en vivo</button>
-            <button id="btn-sim" class="btn">Simular (sin enviar órdenes)</button>
-          </div>
-          <button id="btn-stop" class="btn full" hidden>Detener el bot</button>
-          <button id="btn-kill" class="btn danger-outline full">Freno de emergencia</button>
+          <span id="env-badge-home" class="env-pill">—</span>
         </div>
-        <p id="balance-note" class="muted small center" hidden></p>
+        <div id="state-banner" class="banner" hidden></div>
+        <div id="home-results" class="view-part"></div>
 
-        <div class="card">
-          <div class="card-head"><h2>Posiciones</h2><button class="link" id="btn-refresh-portfolio">Actualizar</button></div>
-          <div id="positions" class="list"></div>
-        </div>
-        <div class="card">
-          <div class="card-head"><h2>Órdenes abiertas</h2></div>
-          <div id="orders" class="list"></div>
-        </div>
-        <div class="card">
-          <div class="card-head"><h2>Actividad</h2><span class="live-pill"><i></i>en directo</span></div>
+        <section class="block">
+          <div class="block-head"><span class="eyebrow">Tu dinero en Kalshi</span><button class="link" id="btn-refresh-portfolio" type="button">Actualizar</button></div>
+          <div class="tiles">
+            <div class="tile"><span>Total</span><b id="stat-equity">—</b></div>
+            <div class="tile"><span>Disponible</span><b id="stat-cash">—</b></div>
+            <div class="tile"><span>En juego</span><b id="stat-portfolio">—</b></div>
+          </div>
+          <p id="session-line" class="help" hidden></p>
+          <p id="balance-note" class="muted small" hidden></p>
+        </section>
+        <section class="block">
+          <div class="block-head"><span class="eyebrow">Apuestas abiertas</span><span class="eyebrow">Probabilidad</span></div>
+          <div id="positions" class="rows"></div>
+        </section>
+        <section class="block">
+          <div class="block-head"><span class="eyebrow">Órdenes esperando</span></div>
+          <div id="orders" class="rows"></div>
+        </section>
+        <section class="block">
+          <div class="block-head"><span class="eyebrow">Actividad</span><span class="live-pill"><i></i>en directo</span></div>
           <div id="logs" class="logs"></div>
-        </div>
+        </section>
       </section>
 
       <!-- RESULTADOS -->
       <section id="view-results" class="view" data-title="Resultados" hidden>
-        <div class="segmented" id="results-scope" role="group" aria-label="Qué contar">
-          <button type="button" data-scope="bot">Solo el bot</button>
-          <button type="button" data-scope="all">Toda la cuenta</button>
-        </div>
-        <div class="segmented" id="results-period" role="group" aria-label="Periodo">
-          <button type="button" data-days="7">7 días</button>
-          <button type="button" data-days="30">30 días</button>
-          <button type="button" data-days="90">90 días</button>
+        <div class="seg-stack">
+          <div class="segmented" id="results-scope" role="group" aria-label="Qué contar">
+            <button type="button" data-scope="bot">Solo el bot</button>
+            <button type="button" data-scope="all">Toda la cuenta</button>
+          </div>
+          <div class="segmented" id="results-period" role="group" aria-label="Periodo">
+            <button type="button" data-days="7">7 días</button>
+            <button type="button" data-days="30">30 días</button>
+            <button type="button" data-days="90">90 días</button>
+          </div>
         </div>
         <div id="results-body"></div>
       </section>
+
+      <!-- DETALLE DE UN MERCADO CERRADO -->
+      <section id="view-detail" class="view" data-title="Detalle" hidden></section>
 
       <!-- MERCADOS -->
       <section id="view-markets" class="view" data-title="Mercados" hidden>
@@ -98,17 +102,17 @@
           <input id="market-query" placeholder="Serie o evento, p. ej. KXHIGHNY" autocapitalize="characters" autocomplete="off" spellcheck="false">
           <button class="btn primary" type="submit">Buscar</button>
         </form>
-        <p class="muted small">La serie aparece en la dirección de kalshi.com: /markets/<b>kxhighny</b>/… Si buscas un evento concreto, pega su ticker (lleva guiones).</p>
+        <p class="help">La serie aparece en la dirección de kalshi.com: /markets/<b>kxhighny</b>/… Si buscas un evento concreto, pega su ticker (lleva guiones).</p>
         <div class="card" id="market-card" hidden><div id="market-list" class="list"></div></div>
         <div class="card" id="event-card" hidden><div id="event-list" class="list"></div></div>
       </section>
 
-      <!-- OPORTUNIDADES -->
+      <!-- ANÁLISIS -->
       <section id="view-opps" class="view" data-title="Análisis" hidden>
         <div class="card">
           <h2>¿Dónde gana más el bot?</h2>
-          <p class="muted small">Simula la estrategia del bot (comprar a 88–97¢ como maker) en los últimos mercados ya liquidados de las series con más volumen, con comisiones y margen de error. "Gana" solo aparece si no puede ser casualidad. Tarda unos minutos.</p>
-          <button id="btn-sweep" class="btn primary full">Buscar las mejores series</button>
+          <p class="card-note">Simula la estrategia del bot (comprar a 88–97¢ como maker) en los últimos mercados ya liquidados de las series con más volumen, con comisiones y margen de error. "Gana" solo aparece si no puede ser casualidad. Tarda unos minutos.</p>
+          <button id="btn-sweep" class="btn primary full" type="button">Buscar las mejores series</button>
           <div id="sweep-progress" class="progress" hidden><div class="progress-bar"></div></div>
           <p id="sweep-status" class="muted small"></p>
           <div id="sweep-results"></div>
@@ -116,24 +120,24 @@
 
         <div class="card">
           <h2>Escáner</h2>
-          <p class="muted small">Busca ahora mismo favoritos (88–97¢), mercados con spread amplio y arbitrajes en eventos de varios resultados. Solo lee: no envía órdenes.</p>
+          <p class="card-note">Busca ahora mismo favoritos (88–97¢), mercados con spread amplio y arbitrajes en eventos de varios resultados. Solo lee: no envía órdenes.</p>
           <div class="grid2">
             <label class="field">Cierran en (horas)<input id="scan-hours" type="number" inputmode="decimal" value="48" min="1"></label>
             <label class="field">Volumen mínimo 24 h<input id="scan-volume" type="number" inputmode="numeric" value="100" min="0"></label>
           </div>
-          <button id="btn-scan" class="btn full">Escanear</button>
+          <button id="btn-scan" class="btn full" type="button">Escanear</button>
           <p id="scan-status" class="muted small"></p>
         </div>
-        <div id="scan-results"></div>
+        <div id="scan-results" class="view-part"></div>
 
         <div class="card">
           <h2>Investigación</h2>
-          <p class="muted small">Descarga mercados ya liquidados y mide cuánto ganó o perdió quien compró a cada precio, como <b>taker</b> (cruza el spread) y como <b>maker</b> (espera en el libro). Así compruebas el "truco" con datos actuales antes de arriesgar dinero.</p>
+          <p class="card-note">Descarga mercados ya liquidados y mide cuánto ganó o perdió quien compró a cada precio, como <b>taker</b> (cruza el spread) y como <b>maker</b> (espera en el libro). Así compruebas el "truco" con datos actuales antes de arriesgar dinero.</p>
           <div class="grid2">
             <label class="field">Serie (opcional)<input id="research-series" placeholder="todas" autocapitalize="characters" autocomplete="off"></label>
             <label class="field">Mercados<input id="research-markets" type="number" inputmode="numeric" value="150" min="10" max="1000"></label>
           </div>
-          <button id="btn-research" class="btn full">Investigar</button>
+          <button id="btn-research" class="btn full" type="button">Investigar</button>
           <div id="research-progress" class="progress" hidden><div class="progress-bar"></div></div>
           <p id="research-status" class="muted small"></p>
           <div id="research-results"></div>
@@ -142,78 +146,136 @@
 
       <!-- AJUSTES -->
       <section id="view-settings" class="view" data-title="Ajustes" hidden>
-        <div class="card">
-          <h2>Cuenta de Kalshi</h2>
-          <p id="cred-status" class="muted small"></p>
-          <div class="segmented" id="env-seg">
-            <button type="button" data-env="demo">Demo (ficticio)</button>
-            <button type="button" data-env="prod">Real</button>
+        <div class="card bot-card">
+          <div>
+            <div id="bot-title" class="bot-title">Bot</div>
+            <div id="bot-sub" class="bot-sub"></div>
           </div>
-          <details id="cred-details">
-            <summary>Configurar API key</summary>
-            <p class="muted small">En Kalshi: tu cuenta → API Keys → crear. Copia el Key ID y guarda la clave privada (el archivo que se descarga; Kalshi solo la enseña una vez). Las keys de demo solo funcionan en Demo y las de kalshi.com solo en Real.</p>
-            <label class="field">Key ID<input id="cred-key-id" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="a1b2c3d4-…"></label>
-            <label class="field">Clave privada<textarea id="cred-pem" rows="5" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="Pega aquí todo el texto, de -----BEGIN a -----END"></textarea></label>
-            <label class="btn full file-btn">Cargar la clave desde un archivo<input id="cred-file" type="file"></label>
-            <button id="btn-save-cred" class="btn primary full" type="button">Guardar y probar</button>
-            <button id="btn-del-cred" class="btn danger-outline full" type="button">Borrar credenciales</button>
-          </details>
-          <button id="btn-diagnose" class="btn full" type="button">Probar conexión</button>
-          <button id="btn-diagnose-order" class="link small block" type="button">Probar también una orden (1 contrato a 1¢ que se cancela al instante)</button>
-          <div id="diag-results" class="diag" hidden></div>
+          <button id="bot-toggle" class="switch big" type="button" role="switch" aria-checked="false" aria-label="Bot activo"><span></span></button>
+        </div>
+        <div id="settings-banner" class="banner" hidden></div>
+
+        <div class="group">
+          <div class="eyebrow">Modo</div>
+          <div class="segmented mode" id="mode-seg" role="group" aria-label="Modo">
+            <button type="button" data-mode="live" id="mode-live">Real</button>
+            <button type="button" data-mode="sim">Simulación</button>
+          </div>
+          <p id="mode-help" class="help"></p>
         </div>
 
-        <div class="card">
-          <h2>Estrategia</h2>
-          <div class="segmented wrap" id="strategy-seg"></div>
-          <p id="strategy-desc" class="muted small"></p>
-          <div id="strategy-params" class="form"></div>
+        <div class="group">
+          <div class="eyebrow">Tamaño y límites</div>
+          <div class="card list-card">
+            <div class="row">
+              <span>Contratos por operación</span>
+              <span class="stepper">
+                <button type="button" id="size-less" aria-label="Menos contratos">−</button>
+                <b id="size-value">—</b>
+                <button type="button" id="size-more" aria-label="Más contratos">+</button>
+              </span>
+            </div>
+            <button type="button" class="row" id="row-max-price"><span>Precio máximo de entrada</span><span class="value" id="max-price-value">—</span></button>
+            <button type="button" class="row" id="row-max-loss"><span>Pérdida máxima</span><span class="value" id="max-loss-value">—</span></button>
+          </div>
+          <p id="limits-help" class="help"></p>
         </div>
 
-        <div class="card" id="fv-card" hidden>
-          <div class="card-head"><h2>Valores justos</h2><button class="link" id="btn-fv-add" type="button">Añadir</button></div>
-          <p class="muted small">Tu probabilidad de que cada mercado resuelva SÍ. El bot compra cuando el precio está por debajo y vende cuando está por encima (con margen).</p>
-          <div id="fv-rows" class="form"></div>
-          <button id="btn-fv-save" class="btn full" type="button">Guardar lista</button>
+        <div class="group">
+          <div class="eyebrow">Avisos</div>
+          <div class="card list-card">
+            <div class="row">
+              <span>Al abrir una operación</span>
+              <button id="push-fills" class="switch" type="button" role="switch" aria-checked="false" aria-label="Avisar al abrir una operación" data-kind="fills"><span></span></button>
+            </div>
+            <div class="row">
+              <span>Al cerrarse un mercado</span>
+              <button id="push-settlements" class="switch" type="button" role="switch" aria-checked="false" aria-label="Avisar al cerrarse un mercado" data-kind="settlements"><span></span></button>
+            </div>
+          </div>
+          <p id="push-help" class="help"></p>
+          <button id="push-test" class="link" type="button" hidden>Enviar un aviso de prueba</button>
         </div>
 
-        <div class="card">
-          <h2>Mercados</h2>
-          <div id="markets-fields" class="form"></div>
-        </div>
+        <button id="btn-kill" class="btn danger-outline full" type="button">Freno de emergencia</button>
 
-        <div class="card">
-          <h2>Riesgo</h2>
-          <div id="risk-fields" class="form"></div>
-        </div>
+        <div class="group advanced">
+          <div class="eyebrow">Avanzado</div>
+          <div class="card">
+            <h2>Cuenta de Kalshi</h2>
+            <p id="cred-status" class="card-note"></p>
+            <div class="segmented" id="env-seg">
+              <button type="button" data-env="demo">Demo (ficticio)</button>
+              <button type="button" data-env="prod">Real</button>
+            </div>
+            <details id="cred-details">
+              <summary>Configurar API key</summary>
+              <p class="help">En Kalshi: tu cuenta → API Keys → crear. Copia el Key ID y guarda la clave privada (el archivo que se descarga; Kalshi solo la enseña una vez). Las keys de demo solo funcionan en Demo y las de kalshi.com solo en Real.</p>
+              <div class="form">
+                <label class="field">Key ID<input id="cred-key-id" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="a1b2c3d4-…"></label>
+                <label class="field">Clave privada<textarea id="cred-pem" rows="5" spellcheck="false" autocomplete="off" autocapitalize="off" autocorrect="off" placeholder="Pega aquí todo el texto, de -----BEGIN a -----END"></textarea></label>
+              </div>
+              <label class="btn full file-btn">Cargar la clave desde un archivo<input id="cred-file" type="file"></label>
+              <button id="btn-save-cred" class="btn primary full" type="button">Guardar y probar</button>
+              <button id="btn-del-cred" class="btn danger-outline full" type="button">Borrar credenciales</button>
+            </details>
+            <button id="btn-diagnose" class="btn full" type="button">Probar conexión</button>
+            <button id="btn-diagnose-order" class="link small block" type="button">Probar también una orden (1 contrato a 1¢ que se cancela al instante)</button>
+            <div id="diag-results" class="diag" hidden></div>
+          </div>
 
-        <div class="save-bar">
-          <button id="btn-save-settings" class="btn primary full" type="button">Guardar ajustes</button>
+          <div class="card">
+            <h2>Estrategia</h2>
+            <div class="segmented wrap" id="strategy-seg"></div>
+            <p id="strategy-desc" class="card-note"></p>
+            <div id="strategy-params" class="form"></div>
+          </div>
+
+          <div class="card" id="fv-card" hidden>
+            <div class="card-head"><h2>Valores justos</h2><button class="link" id="btn-fv-add" type="button">Añadir</button></div>
+            <p class="card-note">Tu probabilidad de que cada mercado resuelva SÍ. El bot compra cuando el precio está por debajo y vende cuando está por encima (con margen).</p>
+            <div id="fv-rows" class="form"></div>
+            <button id="btn-fv-save" class="btn full" type="button">Guardar lista</button>
+          </div>
+
+          <div class="card">
+            <h2>Mercados</h2>
+            <div id="markets-fields" class="form"></div>
+          </div>
+
+          <div class="card">
+            <h2>Riesgo</h2>
+            <div id="risk-fields" class="form"></div>
+          </div>
+
+          <div class="save-bar">
+            <button id="btn-save-settings" class="btn primary full" type="button">Guardar ajustes</button>
+          </div>
+          <button id="btn-logout" class="btn full" type="button">Cerrar sesión</button>
+          <p class="help center">Por qué estos valores: INVESTIGACION.md en el repositorio.</p>
         </div>
-        <button id="btn-logout" class="btn full" type="button">Cerrar sesión</button>
-        <p class="muted small center">Por qué estos valores: INVESTIGACION.md en el repositorio.</p>
       </section>
     </main>
 
     <nav class="tabbar" aria-label="Secciones">
       <button class="tab active" data-view="home" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10.5 12 3l9 7.5V20a1 1 0 0 1-1 1h-5v-6h-6v6H4a1 1 0 0 1-1-1z"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 11l8-7 8 7v8a1 1 0 0 1-1 1h-4v-6h-6v6H5a1 1 0 0 1-1-1z"/></svg>
         <span>Inicio</span>
       </button>
       <button class="tab" data-view="results" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 17 6-6 4 4 8-8M15 7h6v6" fill="none" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l5-5 4 3 7-8"/><path d="M15 7h5v5"/></svg>
         <span>Resultados</span>
       </button>
       <button class="tab" data-view="markets" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19h16M6 16V9m6 7V5m6 11v-6" fill="none" stroke-width="2.2" stroke-linecap="round"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 20V10M12 20V4M18 20v-7"/></svg>
         <span>Mercados</span>
       </button>
       <button class="tab" data-view="opps" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke-width="2.2"/><path d="m16 16 4.5 4.5" fill="none" stroke-width="2.2" stroke-linecap="round"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>
         <span>Análisis</span>
       </button>
       <button class="tab" data-view="settings" type="button">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.4 4.6-1.6.9a7 7 0 0 1-.6 1.5l.5 1.8-1.7 1.7-1.8-.5a7 7 0 0 1-1.5.6l-.9 1.6h-2.4l-.9-1.6a7 7 0 0 1-1.5-.6l-1.8.5-1.7-1.7.5-1.8a7 7 0 0 1-.6-1.5l-1.6-.9v-2.4l1.6-.9a7 7 0 0 1 .6-1.5l-.5-1.8 1.7-1.7 1.8.5a7 7 0 0 1 1.5-.6l.9-1.6h2.4l.9 1.6a7 7 0 0 1 1.5.6l1.8-.5 1.7 1.7-.5 1.8a7 7 0 0 1 .6 1.5l1.6.9z"/></svg>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h10M18 7h2M4 17h2M10 17h10"/><circle cx="16" cy="7" r="2"/><circle cx="8" cy="17" r="2"/></svg>
         <span>Ajustes</span>
       </button>
     </nav>

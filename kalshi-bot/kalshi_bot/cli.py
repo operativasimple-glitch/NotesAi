@@ -397,6 +397,7 @@ def cmd_web(settings: Settings, args) -> int:
     server = make_server(controller, password, args.host, port)
     log.info("Panel web escuchando en http://%s:%d (entorno %s)", args.host, port, settings.env)
     controller.resume_if_needed()
+    controller.start_background()  # avisos al móvil de los mercados que se cierran
 
     def on_term(signum, frame):  # noqa: ARG001
         raise KeyboardInterrupt

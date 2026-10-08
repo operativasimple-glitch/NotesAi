@@ -46,6 +46,10 @@ STATIC_FILES = {
     "/icon-512.png": ("icon-512.png", "image/png"),
     "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
     "/favicon.ico": ("icon-192.png", "image/png"),
+    "/sw.js": ("sw.js", "text/javascript; charset=utf-8"),
+    "/fonts/bricolage-grotesque.woff2": ("fonts/bricolage-grotesque.woff2", "font/woff2"),
+    "/fonts/dm-mono-400.woff2": ("fonts/dm-mono-400.woff2", "font/woff2"),
+    "/fonts/dm-mono-500.woff2": ("fonts/dm-mono-500.woff2", "font/woff2"),
 }
 COOKIE_NAME = "kb_session"
 SESSION_SECONDS = 30 * 24 * 3600
@@ -149,6 +153,7 @@ class PanelApp:
             ("GET", r"/api/status", lambda q, b: c.status()),
             ("POST", r"/api/bot/start", self._start),
             ("POST", r"/api/bot/stop", lambda q, b: (c.stop(), c.status())[1]),
+            ("POST", r"/api/bot/restart", lambda q, b: (c.restart(), c.status())[1]),
             ("POST", r"/api/bot/kill", lambda q, b: c.kill(everything=bool(b.get("everything")))),
             ("GET", r"/api/logs", lambda q, b: c.logs.since(int(q.get("after", "0") or 0))),
             ("GET", r"/api/positions", lambda q, b: c.positions()),
@@ -181,6 +186,15 @@ class PanelApp:
             ("POST", r"/api/sweep", lambda q, b: c.start_sweep(b)),
             ("GET", r"/api/sweep", lambda q, b: c.jobs["sweep"].to_dict()),
             ("POST", r"/api/markets/use-series", lambda q, b: c.use_series(b.get("series") or [])),
+            ("GET", r"/api/push", lambda q, b: {"public_key": c.push.public_key()}),
+            (
+                "POST",
+                r"/api/push/subscribe",
+                lambda q, b: c.push.subscribe(b.get("subscription"), b.get("prefs"), b.get("origin")),
+            ),
+            ("POST", r"/api/push/state", lambda q, b: c.push.prefs(b.get("endpoint"))),
+            ("POST", r"/api/push/unsubscribe", lambda q, b: c.push.unsubscribe(b.get("endpoint"))),
+            ("POST", r"/api/push/test", self._push_test),
         ]
 
     @staticmethod
@@ -223,6 +237,14 @@ class PanelApp:
         if order_test and self.controller.settings().is_production and body.get("confirm") is not True:
             raise ApiError(400, "Confirma la orden de prueba: es dinero real")
         return self.controller.diagnose(order_test=order_test)
+
+    def _push_test(self, query: dict, body: dict):
+        endpoint = str(body.get("endpoint") or "")
+        message = "Así te llegarán los avisos del bot."
+        sent = self.controller.push.notify("test", "Kalshi Bot", message, endpoint=endpoint)
+        if not sent:
+            raise ApiError(502, "No se pudo entregar el aviso de prueba. Vuelve a activar los avisos.")
+        return {"sent": sent}
 
     def _cancel_research(self, query: dict, body: dict):
         self.controller.jobs["research"].cancel = True
@@ -377,7 +399,9 @@ class Handler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self._send(404, b"No encontrado", "text/plain; charset=utf-8")
             return
-        self._send(200, body, content_type, {"Cache-Control": "no-cache"})
+        # Las fuentes no cambian nunca (si cambian, cambia su nombre): se guardan un año.
+        cache = "public, max-age=31536000, immutable" if path.startswith("/fonts/") else "no-cache"
+        self._send(200, body, content_type, {"Cache-Control": cache})
 
 
 class PanelServer(ThreadingHTTPServer):

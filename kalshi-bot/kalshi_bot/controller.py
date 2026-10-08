@@ -37,7 +37,9 @@ from .config import (
 )
 from .engine import Bot, DryRunExecutor, Journal, LiveExecutor
 from .fees import MAKER_FEE_RATE, TAKER_FEE_RATE
-from .models import ASK, BID, GTC, IOC, ONE, OrderIntent, ceil_to_tick, floor_to_tick, to_decimal
+from .models import ASK, BID, GTC, IOC, ONE, ZERO, OrderIntent, ceil_to_tick, floor_to_tick, to_decimal
+from .names import cents, market_name, money, quantity
+from .push import PushService
 from .research import run_research, run_sweep
 from .results import build_results
 from .risk import RiskManager
@@ -48,6 +50,7 @@ from .strategies.fair_value import load_fair_values_csv, parse_probability
 log = logging.getLogger(__name__)
 
 STATE_FILE = "state.json"
+PUSH_STATE_FILE = "push_state.json"  # hasta dónde se avisó de las liquidaciones
 TICKER_RE = re.compile(r"[A-Z0-9][A-Z0-9._-]{1,79}")
 MANUAL_PREFIX = "man"  # las órdenes manuales del panel no las toca el bot
 TEST_PREFIX = "diag"  # orden de prueba del diagnóstico
@@ -217,6 +220,9 @@ class BotController:
         config_dir = Path(config_path).resolve().parent if config_path else Path.cwd()
         load_dotenv(config_dir / ".env")
         self.data_dir = data_dir_from_env(config_dir)
+        self.push = PushService(self.data_dir)
+        self._fill_totals: dict = {}  # orden -> contratos llenados (para el aviso)
+        self._watch_stop = threading.Event()
 
     # --- ajustes ---------------------------------------------------------------
 
@@ -339,6 +345,8 @@ class BotController:
                 env_name=settings.env,
                 journal=journal,
             )
+            if mode == "live":
+                bot.on_fill = self._on_fill
             thread = threading.Thread(target=self._run_bot, args=(bot,), name="kalshi-bot", daemon=True)
             self._bot, self._thread, self._mode = bot, thread, mode
             self._write_state({"desired": mode, "halted": None})
@@ -354,6 +362,15 @@ class BotController:
         if bot.halted_reason:
             self._write_state({"desired": None, "halted": bot.halted_reason})
 
+    def restart(self) -> None:
+        """Para el bot y lo arranca otra vez en el mismo modo, para aplicar ajustes nuevos."""
+        with self._lock:
+            mode = self._mode if self.is_running() else None
+        if mode is None:
+            raise ControllerError("El bot no está en marcha")
+        self.stop()
+        self.start(mode)
+
     def stop(self, timeout: float = 30.0) -> None:
         with self._lock:
             bot, thread = self._bot, self._thread
@@ -366,6 +383,7 @@ class BotController:
 
     def shutdown(self, timeout: float = 30.0) -> None:
         """Apagado del servidor: para el bot pero recuerda que estaba en marcha."""
+        self._watch_stop.set()
         with self._lock:
             bot, thread = self._bot, self._thread
         if bot is not None:
@@ -416,6 +434,94 @@ class BotController:
                 self.start(desired)
             except (ControllerError, ConfigError, ValueError) as exc:
                 log.error("No se pudo reanudar el bot: %s", exc)
+
+    # --- avisos al móvil -----------------------------------------------------------
+
+    def _on_fill(self, fill: dict) -> None:
+        """Se ha llenado una orden del bot (lo llama el bot): aviso al móvil, sin pararlo."""
+        if self.push.wants("fills"):
+            threading.Thread(target=self._notify_fill, args=(fill,), name="push-fill", daemon=True).start()
+
+    def _notify_fill(self, fill: dict) -> None:
+        try:
+            ticker = str(fill.get("ticker") or "")
+            price = to_decimal(fill.get("yes_price_dollars"))
+            count = to_decimal(fill.get("count_fp"), to_decimal(fill.get("count"), ZERO))
+            yes = fill.get("book_side") == "bid"
+            paid = price if yes or price is None else ONE - price
+            # Una orden puede llenarse en varias veces: el aviso lleva lo llenado hasta ahora
+            # y la misma etiqueta, así el móvil cambia el aviso anterior en vez de sumar otro.
+            key = str(fill.get("order_id") or fill.get("fill_id") or ticker)
+            with self._lock:
+                total = self._fill_totals.get(key, ZERO) + count
+                self._fill_totals[key] = total
+                if len(self._fill_totals) > 500:
+                    self._fill_totals = dict(list(self._fill_totals.items())[-200:])
+            info = self.labels([ticker]).get(ticker, {})
+            name = market_name(ticker, info.get("title", ""), info.get("subtitle", ""))
+            body = f"Compra {quantity(total)} {'SÍ' if yes else 'NO'} a {cents(paid)} · {name}"
+            self.push.notify("fills", "Nueva operación del bot", body, tag=f"fill-{key}")
+        except Exception as exc:  # noqa: BLE001 - un aviso que falla no importa al bot
+            log.warning("No se pudo avisar del llenado: %s", exc)
+
+    def check_settlements(self) -> int:
+        """Avisa al móvil de los mercados liquidados desde la última revisión; devuelve cuántos."""
+        if not self.push.wants("settlements"):
+            return 0
+        settings = self.settings()
+        if settings.signer() is None:
+            return 0
+        path = self.data_dir / PUSH_STATE_FILE
+        try:
+            state = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            state = {}
+        now = int(time.time())
+        since = state.get("since") if isinstance(state, dict) else None
+        if not isinstance(since, int):  # la primera vez solo se apunta desde cuándo avisar
+            self._write_json(path, {"since": now, "seen": []})
+            return 0
+        seen = [t for t in state.get("seen") or [] if isinstance(t, str)]
+        client = self.client(settings, require_auth=True)
+        # Una hora de solape por si una liquidación llega con retraso; las repetidas se saltan.
+        fresh = [
+            s
+            for s in client.get_settlements(min_ts=since - 3600, max_pages=3)
+            if s.ticker not in seen and s.time is not None and s.time.timestamp() >= since - 3600
+        ]
+        names = self.labels([s.ticker for s in fresh], client) if fresh else {}
+        for s in sorted(fresh, key=lambda s: s.time):
+            net = s.payout - s.cost - s.fees
+            verdict = "Ganado" if net > 0 else "Perdido" if net < 0 else "Sin cambios"
+            side = "SÍ" if s.yes_count > 0 else "NO" if s.no_count > 0 else ""
+            info = names.get(s.ticker, {})
+            name = market_name(s.ticker, info.get("title", ""), info.get("subtitle", ""))
+            title = f"Mercado cerrado: {verdict.lower()} {money(net, sign=True)}"
+            self.push.notify("settlements", title, " · ".join(p for p in (name, side) if p), tag=f"settle-{s.ticker}")
+            seen.append(s.ticker)
+        self._write_json(path, {"since": now, "seen": seen[-500:]})
+        return len(fresh)
+
+    def start_background(self, interval: float = 300.0) -> None:
+        """Revisa las liquidaciones cada `interval` segundos mientras el panel está en marcha."""
+
+        def loop() -> None:
+            while not self._watch_stop.wait(interval):
+                try:
+                    self.check_settlements()
+                except Exception as exc:  # noqa: BLE001 - se reintenta en la siguiente vuelta
+                    log.debug("No se pudieron revisar las liquidaciones: %s", exc)
+
+        threading.Thread(target=loop, name="push-watch", daemon=True).start()
+
+    def _write_json(self, path: Path, data: dict) -> None:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text(json.dumps(data), encoding="utf-8")
+            tmp.replace(path)
+        except OSError as exc:
+            log.warning("No se pudo guardar %s: %s", path.name, exc)
 
     def _read_state(self) -> dict:
         try:
@@ -597,7 +703,9 @@ class BotController:
             bot_orders=self.bot_order_ids(settings),
             only_bot=only_bot,
         )
-        self._results_cache = {key: (time.monotonic(), data)}
+        self._results_cache[key] = (time.monotonic(), data)
+        while len(self._results_cache) > 4:  # Inicio y Resultados piden periodos distintos
+            self._results_cache.pop(next(iter(self._results_cache)))
         return data
 
     def bot_order_ids(self, settings: Optional[Settings] = None) -> set:

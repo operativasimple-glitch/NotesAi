@@ -67,17 +67,18 @@ chequeo de salud (`/healthz`) y reinicie el bot si se cae.
 
 ### Puesta en marcha (en el panel)
 
-1. **Ajustes → Configurar API key**: pega el Key ID, pulsa **Cargar la clave desde un archivo** y elige el
-   archivo de la clave privada que te dio Kalshi (o pega su texto). Pulsa **Guardar y probar**.
+1. **Ajustes → Avanzado → Configurar API key**: pega el Key ID, pulsa **Cargar la clave desde un archivo** y
+   elige el archivo de la clave privada que te dio Kalshi (o pega su texto). Pulsa **Guardar y probar**.
 2. El panel comprueba cada paso: conexión, key, saldo, cartera, mercados y libro de órdenes. Si te dice que
    la key es de Real, pulsa **Cambiar a Real y volver a probar**.
 3. **Probar también una orden**: envía 1 contrato a 1¢ (no se llena) y lo cancela al instante. Si todo
    sale en verde, el bot puede operar con tu cuenta.
 4. **Análisis → ¿Dónde gana más el bot?**: mira en qué series han ganado los favoritos y pulsa
    **Usar** en la mejor. El botón solo aparece si el rendimiento fue positivo.
-5. **Inicio → Simular** durante al menos un día y revisa la actividad: verás las órdenes que habría puesto.
-6. Cuando estés convencido, **Operar**. Empieza con los límites por defecto: 50 $ comprometidos como
-   máximo y freno si pierdes 20 $.
+5. **Ajustes → Modo: Simulación** y activa el bot durante al menos un día. En **Inicio → Actividad** verás
+   las órdenes que habría puesto.
+6. Cuando estés convencido, **Modo: Real** y activa el bot (pide escribir REAL). Empieza con los límites por
+   defecto: 50 $ comprometidos como máximo y freno si pierdes 20 $.
 
 ### Antes de pagar nada: ¿gana la estrategia?
 
@@ -109,17 +110,21 @@ Abre `http://IP-DEL-ORDENADOR:8000` desde el móvil (en la misma wifi). Para ent
 ### Qué hay en el panel
 
 - **Inicio:**
-  - estado del bot y botones Simular, Operar y Detener;
-  - **Freno de emergencia**: cancela primero y luego para;
-  - tu dinero en Kalshi (disponible y en juego) y el resultado de la sesión;
-  - posiciones con nombre legible ("Máxima en Nueva York · 66–67°") y la probabilidad que les da ahora
-    el mercado; órdenes abiertas (con cancelar);
-  - actividad en directo, en frases: qué compró, qué canceló y qué frenó el riesgo.
+  - el estado del bot y lo **ganado por el bot** (últimos 90 días), con su curva mercado a mercado;
+  - **Acierto**: cuántos mercados acierta frente al umbral que necesita (su precio medio de entrada, con
+    comisiones). Si la barra queda por debajo de la marca, está perdiendo;
+  - **Muestra**: mercados cerrados de 100; antes de 100 no se sabe si es ventaja o racha;
+  - el último mercado cerrado (tócalo para ver el detalle);
+  - tu dinero en Kalshi (total, disponible y en juego) y lo que lleva la sesión;
+  - las apuestas abiertas con nombre legible ("Chicago · 78° a 79°") y la probabilidad que les da ahora el
+    mercado; las órdenes esperando (con cancelar);
+  - la actividad en directo, en frases: qué compró, qué canceló y qué frenó el riesgo.
 - **Resultados:**
-  - lo ganado o perdido en 7, 30 o 90 días, frente a lo esperado según la prueba con datos reales;
-  - hoy, ayer y el dinero que hay en juego;
-  - un gráfico por día (verde azulado, ganado; coral, perdido), con los mismos datos en una tabla;
-  - por tipo de mercado (partidos, clima…) y los últimos mercados cerrados;
+  - ganado, acierto y precio medio de entrada en 7, 30 o 90 días;
+  - los mercados cerrados día a día. Toca uno para ver su detalle: resultado, riesgo frente a premio
+    (cuántos aciertos borra una pérdida así) y el acierto que hacía falta;
+  - en **Más datos**: rendimiento frente a lo esperado, un gráfico por día (oliva, ganado; rosa, perdido;
+    con los mismos datos en una tabla) y el reparto por tipo de mercado;
   - **Solo el bot** (por defecto) cuenta lo que compró el bot; **Toda la cuenta** suma también lo que
     compres a mano. Las órdenes del bot se reconocen por su diario, que se guarda en `/data`. En simulación
     no hay resultados.
@@ -134,8 +139,24 @@ Abre `http://IP-DEL-ORDENADOR:8000` desde el móvil (en la misma wifi). Para ent
   - escáner: favoritos, spreads amplios y arbitraje en eventos;
   - investigación: rendimiento por tramo de precio, takers frente a makers, con mercados ya liquidados.
 - **Ajustes:**
-  - cuenta y entorno (Demo o Real), con **Probar conexión** y una orden de prueba de 1¢;
-  - estrategia y sus parámetros, valores justos, qué mercados seguir y límites de riesgo.
+  - el interruptor del bot y el modo: **Real** (envía órdenes) o **Simulación** (no envía nada);
+  - contratos por operación, precio máximo de entrada y pérdida máxima. Con el bot en marcha, los cambios
+    se aplican al reiniciarlo: el panel ofrece **Reiniciar ahora**;
+  - **Avisos** al móvil: cuando el bot compra y cuando se cierra un mercado, con lo ganado o perdido (ver
+    abajo);
+  - **Freno de emergencia**: cancela primero y luego para;
+  - **Avanzado**: cuenta y entorno (Demo o Real), **Probar conexión** y una orden de prueba de 1¢; estrategia y
+    sus parámetros, valores justos, qué mercados seguir y límites de riesgo.
+
+Avisos al móvil:
+
+- En el iPhone (iOS 16.4 o posterior) solo funcionan con el panel instalado: abre el panel en Safari,
+  **Compartir → Añadir a pantalla de inicio**, ábrelo desde ese icono y activa los avisos en **Ajustes**.
+  En Android funcionan también desde Chrome.
+- Los avisos van cifrados de punta a punta: el panel los cifra para tu móvil y los entrega el servicio de
+  avisos del propio navegador (Apple o Google), que no puede leerlos.
+- La clave del panel para los avisos (`push_vapid.pem`) y las suscripciones se guardan en `/data`. Si borras
+  el volumen, vuelve a activar los avisos.
 
 Seguridad del panel:
 
@@ -290,6 +311,7 @@ kalshi-bot/
 │   ├── strategies/                              favorites, fair_value, market_maker
 │   ├── scanner.py, research.py                  escáner e investigación
 │   ├── controller.py, web/                      panel web (servidor + PWA)
+│   ├── push.py, names.py                        avisos al móvil (Web Push) y nombres legibles
 │   └── config.py, cli.py
 ├── tests/                                       pruebas sin conexión (pytest)
 ├── INVESTIGACION.md                             dónde está la ventaja, con fuentes
@@ -316,6 +338,8 @@ Simulan la API de Kalshi y levantan el panel en local, así que no necesitan con
   Puedes forzar otra con `KALSHI_BASE_URL`.
 - El bot opera contratos enteros y consulta la API por REST cada `poll_interval_seconds`.
 - Las comisiones del bot son estimaciones conservadoras.
+- El panel sirve sus propias fuentes (Bricolage Grotesque y DM Mono, licencia SIL OFL 1.1: ver
+  `kalshi_bot/web/static/fonts/OFL.txt`); no carga nada de fuera.
 - Proyecto independiente, sin relación con Kalshi.
 
 ## Solución de problemas
@@ -329,3 +353,5 @@ Lo primero: **Ajustes → Probar conexión**. Dice qué paso falla y qué hacer.
   6 h y la temperatura máxima de 7 ciudades. Revisa **Ajustes → Mercados** (o `[markets]`).
 - **HTTP 429**: demasiadas peticiones. Sube `poll_interval_seconds` o baja `reads_per_second`.
 - **No puedo entrar al panel**: comprueba `DASHBOARD_PASSWORD`. Tras 5 fallos, espera un minuto.
+- **No llegan los avisos**: en el iPhone el panel tiene que estar instalado en la pantalla de inicio. Mira que
+  la app tenga permiso en **Ajustes del móvil → Notificaciones** y pulsa **Enviar un aviso de prueba**.
