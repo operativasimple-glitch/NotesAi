@@ -481,20 +481,58 @@ class BotController:
             for p in sorted(client.get_positions().values(), key=lambda p: p.ticker)
         ]
 
-    def results(self, days: Any = 30, tz_offset_minutes: Any = 0) -> dict:
-        """Lo ganado o perdido en los mercados cerrados de los últimos `days` días."""
+    def results(self, days: Any = 30, tz_offset_minutes: Any = 0, scope: Any = "bot") -> dict:
+        """Lo ganado o perdido en los mercados cerrados de los últimos `days` días.
+
+        scope "bot": solo lo que compró el bot; "all": toda la cuenta.
+        """
         try:
             days, tz = int(days), int(tz_offset_minutes)
         except (TypeError, ValueError) as exc:
             raise ControllerError("Periodo no válido") from exc
         days, tz = min(max(days, 1), 90), min(max(tz, -14 * 60), 14 * 60)
-        cached = self._results_cache.get((days, tz))
+        only_bot = scope != "all"
+        key = (days, tz, only_bot)
+        cached = self._results_cache.get(key)
         if cached and time.monotonic() - cached[0] < 20:
             return cached[1]
-        client = self.client(require_auth=True)
-        data = build_results(client, now=datetime.now(timezone.utc), days=days, tz_offset_minutes=tz)
-        self._results_cache = {(days, tz): (time.monotonic(), data)}
+        settings = self.settings()
+        client = self.client(settings, require_auth=True)
+        data = build_results(
+            client,
+            now=datetime.now(timezone.utc),
+            days=days,
+            tz_offset_minutes=tz,
+            bot_orders=self.bot_order_ids(settings),
+            only_bot=only_bot,
+        )
+        self._results_cache = {key: (time.monotonic(), data)}
         return data
+
+    def bot_order_ids(self, settings: Optional[Settings] = None) -> set:
+        """Ids de las órdenes reales que ha enviado el bot, sacados de su diario."""
+        settings = settings or self.settings()
+        prefix = settings.engine.order_prefix + "-"
+        ids: set = set()
+        try:
+            with open(settings.log_dir / "journal.jsonl", encoding="utf-8") as fh:
+                for line in fh:
+                    if '"place"' not in line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                    except ValueError:
+                        continue
+                    if entry.get("event") != "place" or entry.get("dry_run"):
+                        continue
+                    if not str(entry.get("client_order_id") or "").startswith(prefix):
+                        continue
+                    order_id = (entry.get("response") or {}).get("order_id")
+                    if order_id:
+                        ids.add(order_id)
+        except OSError:
+            pass
+        return ids
 
     def orders(self) -> list:
         settings = self.settings()

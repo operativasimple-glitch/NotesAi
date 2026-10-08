@@ -11,7 +11,9 @@ liquidarse o, si se vendió todo antes, con la última venta. Si los llenados no
 cuadran con la liquidación (el mercado se abrió antes del periodo descargado),
 se usa la liquidación tal cual.
 
-Incluye todo lo de la cuenta, también lo que se compre a mano.
+Con `only_bot` solo cuenta lo que compró el bot (lo que el panel enseña por defecto): los
+mercados con algún llenado de una orden suya, que salen del diario del bot. Sin él cuenta
+toda la cuenta, también lo que se compre a mano.
 """
 
 from __future__ import annotations
@@ -54,6 +56,7 @@ class ClosedMarket:
     fees: Decimal
     sold_early: bool
     result: str = ""  # cómo resolvió el mercado ("" si se vendió todo antes)
+    bot: bool = False  # lo compró (al menos en parte) el bot
 
     @property
     def net(self) -> Decimal:
@@ -72,6 +75,7 @@ class _Ledger:
         self.bought_no = ZERO
         self.sold = ZERO
         self.last_time: Optional[datetime] = None
+        self.bot = False
 
     def add(self, fill: Fill) -> None:
         count, price = fill.count, fill.price
@@ -98,11 +102,18 @@ class _Ledger:
         return "yes" if self.bought_yes else "no"
 
 
-def close_markets(fills: list, settlements: list) -> tuple:
-    """Devuelve (mercados cerrados, tickers con posición aún abierta)."""
+def close_markets(fills: list, settlements: list, bot_orders: Optional[set] = None) -> tuple:
+    """Devuelve (mercados cerrados, tickers con posición aún abierta).
+
+    bot_orders: ids de las órdenes del bot; un mercado es "del bot" si alguno de sus
+    llenados viene de una de ellas.
+    """
+    bot_orders = bot_orders or set()
     ledgers: dict = {}
     for fill in sorted(fills, key=lambda f: f.time or datetime.min.replace(tzinfo=timezone.utc)):
-        ledgers.setdefault(fill.ticker, _Ledger()).add(fill)
+        ledger = ledgers.setdefault(fill.ticker, _Ledger())
+        ledger.add(fill)
+        ledger.bot = ledger.bot or fill.order_id in bot_orders
 
     closed: list = []
     settled: set = set()
@@ -136,6 +147,7 @@ def close_markets(fills: list, settlements: list) -> tuple:
                 ledger.fees,
                 ledger.sold > 0,
                 s.result,
+                ledger.bot,
             )
         )
 
@@ -156,6 +168,7 @@ def close_markets(fills: list, settlements: list) -> tuple:
                     ledger.payout,
                     ledger.fees,
                     True,
+                    bot=ledger.bot,
                 )
             )
     closed.sort(key=lambda m: m.closed_at, reverse=True)
@@ -185,11 +198,15 @@ def summarize(
     tz_offset_minutes: int = 0,
     open_positions: Optional[dict] = None,
     recent_limit: int = 30,
+    only_bot: bool = False,
 ) -> dict:
     """Agrupa los mercados cerrados por día (hora local), por tipo de mercado y en totales.
 
     tz_offset_minutes: lo que da getTimezoneOffset() en el navegador (UTC − hora local).
+    only_bot: deja solo los mercados que compró el bot.
     """
+    if only_bot:
+        closed = [m for m in closed if m.bot]
     local_tz = timezone(-timedelta(minutes=tz_offset_minutes))
     today = now.astimezone(local_tz).date()
     first = today - timedelta(days=days - 1)
@@ -246,6 +263,7 @@ def summarize(
     open_positions = open_positions or {}
     return {
         "days": days,
+        "scope": "bot" if only_bot else "all",
         "first_day": first.isoformat(),
         "today": today.isoformat(),
         "generated_at": now.isoformat(),
@@ -263,14 +281,33 @@ def summarize(
     }
 
 
-def build_results(client, *, now: datetime, days: int, tz_offset_minutes: int = 0) -> dict:
+def build_results(
+    client,
+    *,
+    now: datetime,
+    days: int,
+    tz_offset_minutes: int = 0,
+    bot_orders: Optional[set] = None,
+    only_bot: bool = False,
+) -> dict:
     """Descarga de Kalshi lo necesario y devuelve el resumen para el panel."""
     since = int((now - timedelta(days=days + 1)).timestamp())
     settlements = client.get_settlements(min_ts=since)
     fills = client.get_fill_history(min_ts=since - LOOKBACK_DAYS * 86400)
-    closed, _ = close_markets(fills, settlements)
+    closed, _ = close_markets(fills, settlements, bot_orders)
     positions = client.get_positions()
-    report = summarize(closed, now=now, days=days, tz_offset_minutes=tz_offset_minutes, open_positions=positions)
+    if only_bot:
+        bot_tickers = {f.ticker for f in fills if f.order_id in (bot_orders or set())}
+        positions = {t: p for t, p in positions.items() if t in bot_tickers}
+    report = summarize(
+        closed,
+        now=now,
+        days=days,
+        tz_offset_minutes=tz_offset_minutes,
+        open_positions=positions,
+        only_bot=only_bot,
+    )
+    report["bot_history"] = bool(bot_orders)
     tickers = [row["ticker"] for row in report["recent"]]
     titles: dict = {}
     try:

@@ -153,7 +153,11 @@ class PanelApp:
             ("GET", r"/api/logs", lambda q, b: c.logs.since(int(q.get("after", "0") or 0))),
             ("GET", r"/api/positions", lambda q, b: c.positions()),
             ("GET", r"/api/orders", lambda q, b: c.orders()),
-            ("GET", r"/api/results", lambda q, b: c.results(q.get("days") or 30, q.get("tz") or 0)),
+            (
+                "GET",
+                r"/api/results",
+                lambda q, b: c.results(q.get("days") or 30, q.get("tz") or 0, q.get("scope") or "bot"),
+            ),
             ("POST", r"/api/orders", self._place_order),
             ("POST", r"/api/orders/cancel", lambda q, b: c.cancel_order(str(b.get("order_id")), b.get("ticker"))),
             ("GET", r"/api/settings", lambda q, b: c.settings_payload()),

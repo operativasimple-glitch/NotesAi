@@ -134,3 +134,36 @@ def test_build_results_adds_market_titles():
 
     fake.get_markets = broken  # sin títulos se ve el ticker
     assert build_results(fake, now=NOW, days=30)["recent"][0]["title"] == "KXMLBGAME-A-LAD"
+
+
+def test_bot_only_results_leave_out_manual_trades():
+    bot = fill("KXHIGHMIA-A-T90", BID, "0.92", 5, 5)
+    bot.order_id = "ord-bot"
+    manual = fill("KXMLBGAME-B-LAD", BID, "0.50", 10, 5)  # apuesta a mano a una moneda al aire
+    closed, _ = close_markets(
+        [bot, manual],
+        [
+            settlement("KXHIGHMIA-A-T90", "yes", yes=5, cost="4.60", revenue_cents=500, hours_ago=1),
+            settlement("KXMLBGAME-B-LAD", "no", yes=10, cost="5.00", revenue_cents=0, hours_ago=2),
+            # Abierto antes del periodo descargado: no se sabe de quién es, así que no cuenta como del bot.
+            settlement("KXHIGHNY-C-T66", "yes", yes=5, cost="4.85", revenue_cents=500, hours_ago=3),
+        ],
+        bot_orders={"ord-bot"},
+    )
+    assert {m.ticker: m.bot for m in closed} == {
+        "KXHIGHMIA-A-T90": True,
+        "KXMLBGAME-B-LAD": False,
+        "KXHIGHNY-C-T66": False,
+    }
+    everything = summarize(closed, now=NOW, days=7)
+    only_bot = summarize(closed, now=NOW, days=7, only_bot=True)
+    assert (everything["scope"], everything["totals"]["markets"], everything["totals"]["losses"]) == ("all", 3, 1)
+    assert (only_bot["scope"], only_bot["totals"]["markets"], only_bot["totals"]["net"]) == ("bot", 1, D("0.39"))
+
+    fake = FakeKalshi()
+    fake.fill_history, fake.settlements = [bot, manual], []
+    fake.set_position("KXHIGHMIA-A-T90", 5, exposure="4.60")
+    fake.set_position("KXMLBGAME-B-LAD", 10, exposure="5.00")
+    report = build_results(fake, now=NOW, days=7, bot_orders={"ord-bot"}, only_bot=True)
+    assert report["open"] == {"markets": 1, "exposure": D("4.60")} and report["bot_history"] is True
+    assert build_results(fake, now=NOW, days=7)["open"]["markets"] == 2

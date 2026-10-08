@@ -179,6 +179,7 @@ const state = {
   readers: {},
   fairValues: [],
   resultsDays: 30,
+  resultsScope: "bot",
 };
 
 function showLogin() {
@@ -216,6 +217,9 @@ async function init() {
   $("#btn-refresh-portfolio").addEventListener("click", refreshPortfolio);
   for (const button of $$("#results-period button")) {
     button.addEventListener("click", () => loadResults(Number(button.dataset.days)));
+  }
+  for (const button of $$("#results-scope button")) {
+    button.addEventListener("click", () => loadResults(null, button.dataset.scope));
   }
   $("#market-search").addEventListener("submit", searchMarkets);
   $("#btn-scan").addEventListener("click", runScan);
@@ -1018,7 +1022,7 @@ const MARKET_FIELDS = [
   { key: "series", label: "Series", type: "list", help: "Por defecto, partidos (KXMLBGAME, KXNFLGAME…) y temperatura máxima en 7 ciudades (KXHIGHNY, KXHIGHMIA…): donde los datos dieron ventaja. Si tu estado bloquea los deportes, quita los partidos." },
   { key: "max_hours_to_close", label: "Solo los que terminan en las próximas (horas)", type: "number", help: "0 = sin límite. En los partidos cuenta el final previsto, no el cierre oficial." },
   { key: "max_markets", label: "Mercados máximos a la vez", type: "number" },
-  { key: "max_markets_per_event", label: "Máximo por evento", type: "number", help: "1 evita apostar varias veces a lo mismo (cada partido tiene dos mercados)." },
+  { key: "max_markets_per_event", label: "Máximo por evento", type: "number", help: "1 evita apostar varias veces a lo mismo: cada partido tiene dos mercados y cada día de clima varios tramos casi iguales." },
   { key: "min_volume_24h", label: "Volumen mínimo en 24 h (contratos)", type: "number" },
   { key: "min_hours_to_close", label: "Ignorar si termina en menos de (horas)", type: "number" },
   { key: "closing_within_hours", label: "Buscar además en todos los mercados que terminan en (horas)", type: "number", help: "0 = no buscar; usa solo series, eventos o mercados fijos." },
@@ -1383,10 +1387,14 @@ function dayLabel(iso, options) {
 
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
-async function loadResults(days) {
+async function loadResults(days, scope) {
   if (days) state.resultsDays = days;
+  if (scope) state.resultsScope = scope;
   for (const button of $$("#results-period button")) {
     button.classList.toggle("active", Number(button.dataset.days) === state.resultsDays);
+  }
+  for (const button of $$("#results-scope button")) {
+    button.classList.toggle("active", button.dataset.scope === state.resultsScope);
   }
   const body = $("#results-body");
   const s = state.status;
@@ -1400,7 +1408,7 @@ async function loadResults(days) {
   const ticket = (state.resultsTicket = (state.resultsTicket || 0) + 1);
   try {
     const tz = new Date().getTimezoneOffset();
-    const r = await api(`/api/results?days=${state.resultsDays}&tz=${tz}`);
+    const r = await api(`/api/results?days=${state.resultsDays}&tz=${tz}&scope=${state.resultsScope}`);
     if (ticket === state.resultsTicket) renderResults(r);
   } catch (err) {
     if (ticket !== state.resultsTicket) return;
@@ -1444,7 +1452,10 @@ function renderResults(r) {
   const hero = el(
     "div",
     { class: "card results-hero" },
-    el("div", { class: "muted small", text: `Ganancia neta · últimos ${r.days} días` }),
+    el("div", {
+      class: "muted small",
+      text: `${r.scope === "bot" ? "Ganancia neta del bot" : "Ganancia neta de la cuenta"} · últimos ${r.days} días`,
+    }),
     el("div", { class: "hero-figure", text: fmt.money(t.net, true) }),
     el("div", {
       class: "muted small",
@@ -1470,10 +1481,13 @@ function renderResults(r) {
       );
     }
   } else {
+    const noHistory = r.scope === "bot" && !r.bot_history;
     hero.append(
       el("p", {
         class: "muted small",
-        text: "Un mercado cuenta cuando Kalshi lo liquida (los partidos, al terminar; el clima, a la mañana siguiente) o cuando se vende antes. En simulación no hay resultados: solo cuenta lo real.",
+        text: noHistory
+          ? "Todavía no hay compras del bot registradas: aparecerán aquí cuando opere con dinero real. Lo que hayas comprado tú está en «Toda la cuenta»."
+          : "Un mercado cuenta cuando Kalshi lo liquida (los partidos, al terminar; el clima, a la mañana siguiente) o cuando se vende antes. En simulación no hay resultados: solo cuenta lo real.",
       }),
     );
   }
@@ -1555,7 +1569,10 @@ function renderResults(r) {
   cards.push(
     el("p", {
       class: "muted small center",
-      text: "Cuenta todo lo de tu cuenta de Kalshi, también lo que compres a mano.",
+      text:
+        r.scope === "bot"
+          ? "Solo cuenta lo que compró el bot. Lo que compres tú a mano está en «Toda la cuenta»."
+          : "Cuenta todo lo de tu cuenta de Kalshi, también lo que compres a mano.",
     }),
   );
   $("#results-body").replaceChildren(...cards);

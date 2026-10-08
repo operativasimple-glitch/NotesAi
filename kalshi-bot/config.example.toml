@@ -37,9 +37,11 @@ events = []
 refresh_minutes = 5              # cada cuánto se vuelve a buscar mercados
 
 # Ajustes propios por serie (por el principio del ticker). El clima abre la víspera y cierra a
-# medianoche (hora local), con varios tramos de temperatura por día:
+# medianoche (hora local). Usa el max_markets_per_event general (1 tramo por ciudad y día):
+# los tramos de un mismo día son casi la misma apuesta. Para permitir más, añade p. ej.
+# max_markets_per_event = 2 en la regla.
 [markets.series_rules]
-KXHIGH = { max_hours_to_close = 40, max_markets_per_event = 4 }
+KXHIGH = { max_hours_to_close = 40 }
 
 [risk]
 max_order_contracts = 10         # contratos por orden (con menos, el redondeo de la comisión pesa)

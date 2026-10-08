@@ -47,9 +47,11 @@ log = logging.getLogger(__name__)
 GAME_SERIES = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
 WEATHER_SERIES = ["KXHIGHLAX", "KXHIGHNY", "KXHIGHCHI", "KXHIGHMIA", "KXHIGHAUS", "KXHIGHDEN", "KXHIGHPHIL"]
 DEFAULT_SERIES = GAME_SERIES + WEATHER_SERIES
-# El clima abre la víspera y cierra a medianoche (hora local), con varios tramos de
-# temperatura por día: necesita una ventana más larga y más de un mercado por evento.
-DEFAULT_SERIES_RULES = {"KXHIGH": {"max_hours_to_close": 40, "max_markets_per_event": 4}}
+# El clima abre la víspera y cierra a medianoche (hora local): necesita una ventana más
+# larga. Los tramos de un mismo día son casi la misma apuesta (si falla uno, suele fallar
+# el de al lado), así que se queda en un tramo por ciudad y día, como el máximo por evento
+# general; con más dinero se puede subir en el panel (Ajustes → Mercados).
+DEFAULT_SERIES_RULES = {"KXHIGH": {"max_hours_to_close": 40}}
 
 CREDENTIALS_FILE = "credentials.json"
 KEY_FILE = "kalshi-key.pem"

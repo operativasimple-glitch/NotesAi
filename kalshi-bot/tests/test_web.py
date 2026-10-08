@@ -421,8 +421,38 @@ def test_results_api(panel, pem):
             }
         )
     ]
-    status, body, _ = panel.call("GET", "/api/results?days=500&tz=300")
-    assert status == 200 and body["days"] == 90 and len(body["by_day"]) == 90
+    status, body, _ = panel.call("GET", "/api/results?days=500&tz=300&scope=all")
+    assert status == 200 and body["days"] == 90 and len(body["by_day"]) == 90 and body["scope"] == "all"
     assert D(body["totals"]["net"]) == D("0.39") and body["totals"]["wins"] == 1
     assert body["recent"][0]["title"] == "¿Mercado de prueba?" and body["by_category"][0]["key"] == "otros"
     assert panel.call("GET", "/api/results?days=semana")[0] == 400
+
+    # Por defecto, solo lo del bot: sin su diario no hay nada suyo.
+    status, body, _ = panel.call("GET", "/api/results?days=30")
+    assert body["scope"] == "bot" and body["totals"]["markets"] == 0 and body["bot_history"] is False
+    # Con la orden en su diario, ese mercado ya cuenta como del bot.
+    panel.fake.fill_history[0].order_id = "ord-bot"
+    journal = panel.controller.settings().log_dir / "journal.jsonl"
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    journal.write_text(
+        json.dumps({"event": "place", "client_order_id": "kb-1", "response": {"order_id": "ord-bot"}}) + "\n",
+        encoding="utf-8",
+    )
+    status, body, _ = panel.call("GET", "/api/results?days=7")
+    assert body["bot_history"] is True and D(body["totals"]["net"]) == D("0.39")
+
+
+def test_bot_order_ids_come_from_real_bot_orders_in_the_journal(panel):
+    journal = panel.controller.settings().log_dir / "journal.jsonl"
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    lines = [
+        {"event": "place", "client_order_id": "kb-1", "response": {"order_id": "A"}},
+        {"event": "place", "client_order_id": "kb-2", "dry_run": True},  # simulación: no es real
+        {"event": "place", "client_order_id": "man-3", "response": {"order_id": "B"}},  # otro prefijo
+        {"event": "cancel", "order_id": "C"},
+        {"event": "place", "client_order_id": "kb-4", "response": {"order_id": "D"}},
+    ]
+    journal.write_text("\n".join(json.dumps(x) for x in lines) + "\n{roto\n", encoding="utf-8")
+    assert panel.controller.bot_order_ids() == {"A", "D"}
+    journal.unlink()
+    assert panel.controller.bot_order_ids() == set()

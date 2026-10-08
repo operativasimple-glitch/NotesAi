@@ -8,7 +8,9 @@ from decimal import Decimal
 
 from kalshi_bot.models import Balance, Market, Order, OrderBook, Position
 
-NOW = datetime(2026, 10, 7, 15, 0, tzinfo=timezone.utc)
+# Relativo al reloj real: la CLI y el panel usan la hora de verdad, y unos mercados de prueba
+# con fecha fija acabarían "cerrando" en el pasado.
+NOW = datetime.now(timezone.utc).replace(second=0, microsecond=0)
 
 
 class FakeResponse:

@@ -117,7 +117,9 @@ Abre `http://IP-DEL-ORDENADOR:8000` desde el móvil (en la misma wifi). Para ent
   - hoy, ayer y el dinero que hay en juego;
   - un gráfico por día (azul, ganado; rojo, perdido), con los mismos datos en una tabla;
   - por tipo de mercado (partidos, clima…) y los últimos mercados cerrados;
-  - cuenta todo lo de tu cuenta de Kalshi, también lo que compres a mano. En simulación no hay resultados.
+  - **Solo el bot** (por defecto) cuenta lo que compró el bot; **Toda la cuenta** suma también lo que
+    compres a mano. Las órdenes del bot se reconocen por su diario, que se guarda en `/data`. En simulación
+    no hay resultados.
 - **Mercados:**
   - busca por serie o evento;
   - toca un mercado para ver su libro;
@@ -165,7 +167,7 @@ Resumen de [INVESTIGACION.md](INVESTIGACION.md):
   - 10 contratos por orden;
   - en los partidos (MLB, NFL, NHL, NBA y universitario) que terminan en las próximas 6 h, uno por
     partido, hasta 15 min antes del final previsto;
-  - y en la temperatura máxima diaria de 7 ciudades (hasta 4 tramos por día). Si tu estado bloquea los
+  - y en la temperatura máxima diaria de 7 ciudades (un tramo por ciudad y día). Si tu estado bloquea los
     contratos deportivos, quita los partidos en **Ajustes → Mercados**: el clima sigue funcionando.
 - **La ventaja es pequeña** (unos céntimos por contrato) y **un fallo a 95¢ borra 19 aciertos**. Por
   eso importan los límites de riesgo y la diversificación.
