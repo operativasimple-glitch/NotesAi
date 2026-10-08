@@ -218,6 +218,33 @@ def test_manual_order_portfolio_and_cancel(panel, pem):
     assert panel.call("POST", "/api/orders", {"ticker": T, "outcome": "yes", "price": "1.5", "count": 1})[0] == 400
 
 
+def test_portfolio_shows_market_names_and_what_each_position_is_worth(panel, pem):
+    panel.login()
+    panel.call("POST", "/api/credentials", {"key_id": "abc12345", "private_key": pem, "env": "demo"})
+    panel.fake.set_position(T, -10, exposure="9.30")
+    p = panel.call("GET", "/api/positions")[1][0]
+    assert (p["title"], p["subtitle"]) == ("¿Mercado de prueba?", "50 o más")
+    # El SÍ cotiza a 45¢ / 48¢: el NO vale ahora 1 − 0,465.
+    assert (D(p["chance"]), D(p["value"]), D(p["payout"])) == (D("0.535"), D("5.35"), D("10"))
+    assert 2.9 < p["hours_to_close"] <= 3 and p["status"] == "active"
+
+    panel.call("POST", "/api/orders", {"ticker": T, "outcome": "no", "price": "0.93", "count": 10})
+    assert panel.call("GET", "/api/orders")[1][0]["title"] == "¿Mercado de prueba?"
+
+    queries = len(panel.fake.market_queries)
+    names = panel.call("GET", f"/api/labels?tickers={T},no-valido!,KXNADA-1")[1]
+    assert names == {T: {"title": "¿Mercado de prueba?", "subtitle": "50 o más"}}
+    panel.call("GET", f"/api/labels?tickers={T},KXNADA-1")
+    assert len(panel.fake.market_queries) == queries + 1  # los nombres se guardan, también los que no existen
+
+    def broken(**kwargs):
+        raise RuntimeError("caída")
+
+    panel.fake.get_markets = broken  # sin nombres ni precios, las posiciones se siguen viendo
+    p = panel.call("GET", "/api/positions")[1][0]
+    assert (p["title"], p["chance"], p["value"], D(p["contracts"])) == ("", None, None, D("10"))
+
+
 def test_settings_roundtrip_and_validation(panel):
     panel.login()
     status, payload, _ = panel.call("GET", "/api/settings")

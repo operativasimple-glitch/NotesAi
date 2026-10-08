@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#f2f3f7" media="(prefers-color-scheme: light)">
-  <meta name="theme-color" content="#0b0d14" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#05070a">
+  <meta name="color-scheme" content="dark">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Kalshi Bot">
   <meta name="description" content="Panel para controlar tu bot de Kalshi desde el móvil">
   <link rel="manifest" href="/manifest.webmanifest">
@@ -37,7 +37,7 @@
     <main>
       <!-- INICIO -->
       <section id="view-home" class="view" data-title="Inicio">
-        <div class="card hero">
+        <div class="card hero" id="hero" data-state="stopped">
           <div class="hero-top">
             <span id="state-dot" class="dot"></span>
             <div class="hero-text">
@@ -45,19 +45,22 @@
               <div id="state-sub" class="muted small"></div>
             </div>
           </div>
+          <div class="equity">
+            <div class="equity-label">Tu dinero en Kalshi</div>
+            <div id="hero-equity" class="equity-value">—</div>
+          </div>
+          <div class="mini-stats">
+            <div><span>Disponible</span><b id="stat-cash">—</b></div>
+            <div><span>En juego</span><b id="stat-portfolio">—</b></div>
+            <div><span>Sesión</span><b id="stat-pnl">—</b></div>
+          </div>
           <div id="state-banner" class="banner" hidden></div>
-          <div id="start-buttons" class="btn-row">
-            <button id="btn-sim" class="btn">Simular</button>
+          <div id="start-buttons" class="start-buttons">
             <button id="btn-live" class="btn primary">Operar en vivo</button>
+            <button id="btn-sim" class="btn">Simular (sin enviar órdenes)</button>
           </div>
           <button id="btn-stop" class="btn full" hidden>Detener el bot</button>
           <button id="btn-kill" class="btn danger-outline full">Freno de emergencia</button>
-        </div>
-
-        <div class="stats">
-          <div class="stat"><div class="stat-label">Saldo</div><div id="stat-cash" class="stat-value">—</div></div>
-          <div class="stat"><div class="stat-label">Posiciones</div><div id="stat-portfolio" class="stat-value">—</div></div>
-          <div class="stat"><div class="stat-label">Sesión</div><div id="stat-pnl" class="stat-value">—</div></div>
         </div>
         <p id="balance-note" class="muted small center" hidden></p>
 
@@ -70,7 +73,7 @@
           <div id="orders" class="list"></div>
         </div>
         <div class="card">
-          <div class="card-head"><h2>Actividad</h2><span class="muted small">en directo</span></div>
+          <div class="card-head"><h2>Actividad</h2><span class="live-pill"><i></i>en directo</span></div>
           <div id="logs" class="logs"></div>
         </div>
       </section>
@@ -101,7 +104,7 @@
       </section>
 
       <!-- OPORTUNIDADES -->
-      <section id="view-opps" class="view" data-title="Oportunidades" hidden>
+      <section id="view-opps" class="view" data-title="Análisis" hidden>
         <div class="card">
           <h2>¿Dónde gana más el bot?</h2>
           <p class="muted small">Simula la estrategia del bot (comprar a 88–97¢ como maker) en los últimos mercados ya liquidados de las series con más volumen, con comisiones y margen de error. "Gana" solo aparece si no puede ser casualidad. Tarda unos minutos.</p>
@@ -207,7 +210,7 @@
       </button>
       <button class="tab" data-view="opps" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5" fill="none" stroke-width="2.2"/><path d="m16 16 4.5 4.5" fill="none" stroke-width="2.2" stroke-linecap="round"/></svg>
-        <span>Oportunidades</span>
+        <span>Análisis</span>
       </button>
       <button class="tab" data-view="settings" type="button">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm8.4 4.6-1.6.9a7 7 0 0 1-.6 1.5l.5 1.8-1.7 1.7-1.8-.5a7 7 0 0 1-1.5.6l-.9 1.6h-2.4l-.9-1.6a7 7 0 0 1-1.5-.6l-1.8.5-1.7-1.7.5-1.8a7 7 0 0 1-.6-1.5l-1.6-.9v-2.4l1.6-.9a7 7 0 0 1 .6-1.5l-.5-1.8 1.7-1.7 1.8.5a7 7 0 0 1 1.5-.6l.9-1.6h2.4l.9 1.6a7 7 0 0 1 1.5.6l1.8-.5 1.7 1.7-.5 1.8a7 7 0 0 1 .6 1.5l1.6.9z"/></svg>

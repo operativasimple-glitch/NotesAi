@@ -298,6 +298,7 @@ class Bot:
         self._errors_since: Optional[float] = None
         self._trading_paused = False
         self._seen_fills: dict = {}  # fill_id -> None, en orden de llegada
+        self._risk_notes: dict = {}  # ticker -> avisos del riesgo de la última vuelta
         self._fills_since: Optional[int] = None
         # Estado observable (lo lee el panel web desde otro hilo).
         self.running = False
@@ -452,6 +453,10 @@ class Bot:
 
         refreshed = self._refresh_markets_if_needed(now)
         self._update_exit_markets(positions, refreshed)
+        if refreshed:  # olvida los avisos de mercados que ya no se siguen
+            self._risk_notes = {
+                t: n for t, n in self._risk_notes.items() if t in self.markets or t in self.exit_markets
+            }
         if self.client.authenticated and not self.executor.dry_run:
             self._log_new_fills()
 
@@ -530,8 +535,14 @@ class Bot:
             intents = self._apply_cooldown(ticker, intents, now)
             committed = positions_exposure + sum((c for t, c in resting_collateral.items() if t != ticker), ZERO)
             approved, notes = self.risk.filter_intents(intents, position=position, committed_exposure=committed)
-            for note in notes:
-                log.info("[%s] riesgo: %s", ticker, note)
+            # Cada aviso se dice una vez: repetido en cada vuelta taparía el resto de la actividad.
+            if tuple(notes) != self._risk_notes.get(ticker, ()):
+                for note in notes:
+                    log.info("[%s] riesgo: %s", ticker, note)
+            if notes:
+                self._risk_notes[ticker] = tuple(notes)
+            else:
+                self._risk_notes.pop(ticker, None)
 
             self._execute(ticker, own, approved, now)
             resting_collateral[ticker] = sum((i.count * i.cost_per_contract() for i in approved if i.is_resting), ZERO)

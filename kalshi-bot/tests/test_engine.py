@@ -1,4 +1,5 @@
 import json
+import logging
 from datetime import timedelta
 from decimal import Decimal as D
 
@@ -178,6 +179,20 @@ def test_risk_limits_are_applied():
     bot, fake, _ = setup(limits=RiskLimits(max_order_contracts=D("1")))
     bot.tick()
     assert {c["intent"].count for c in fake.created} == {D("1")}
+
+
+def test_each_risk_note_is_logged_once_not_every_tick(caplog):
+    bot, fake, _ = setup(limits=RiskLimits(max_order_contracts=D("1")))
+    notes = lambda: [r.getMessage() for r in caplog.records if "riesgo:" in r.getMessage()]  # noqa: E731
+    with caplog.at_level(logging.INFO, logger="kalshi_bot.engine"):
+        bot.tick()
+        first = notes()
+        bot.tick()
+        bot.tick()
+        assert first and notes() == first  # mismo aviso: no se repite
+        fake.books[T] = make_book(T, bids=[("0.30", 10)], asks=[("0.50", 10)])
+        bot.tick()
+    assert len(notes()) > len(first)  # cambia el precio: aviso nuevo
 
 
 def test_existing_position_limits_quotes():

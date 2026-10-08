@@ -153,6 +153,7 @@ class PanelApp:
             ("GET", r"/api/logs", lambda q, b: c.logs.since(int(q.get("after", "0") or 0))),
             ("GET", r"/api/positions", lambda q, b: c.positions()),
             ("GET", r"/api/orders", lambda q, b: c.orders()),
+            ("GET", r"/api/labels", lambda q, b: c.labels(q.get("tickers") or "")),
             (
                 "GET",
                 r"/api/results",

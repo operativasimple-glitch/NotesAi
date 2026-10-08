@@ -73,7 +73,7 @@ chequeo de salud (`/healthz`) y reinicie el bot si se cae.
    la key es de Real, pulsa **Cambiar a Real y volver a probar**.
 3. **Probar también una orden**: envía 1 contrato a 1¢ (no se llena) y lo cancela al instante. Si todo
    sale en verde, el bot puede operar con tu cuenta.
-4. **Oportunidades → ¿Dónde gana más el bot?**: mira en qué series han ganado los favoritos y pulsa
+4. **Análisis → ¿Dónde gana más el bot?**: mira en qué series han ganado los favoritos y pulsa
    **Usar** en la mejor. El botón solo aparece si el rendimiento fue positivo.
 5. **Inicio → Simular** durante al menos un día y revisa la actividad: verás las órdenes que habría puesto.
 6. Cuando estés convencido, **Operar**. Empieza con los límites por defecto: 50 $ comprometidos como
@@ -111,11 +111,14 @@ Abre `http://IP-DEL-ORDENADOR:8000` desde el móvil (en la misma wifi). Para ent
 - **Inicio:**
   - estado del bot y botones Simular, Operar y Detener;
   - **Freno de emergencia**: cancela primero y luego para;
-  - saldo, resultado de la sesión, posiciones, órdenes (con cancelar) y actividad en directo.
+  - tu dinero en Kalshi (disponible y en juego) y el resultado de la sesión;
+  - posiciones con nombre legible ("Máxima en Nueva York · 66–67°") y la probabilidad que les da ahora
+    el mercado; órdenes abiertas (con cancelar);
+  - actividad en directo, en frases: qué compró, qué canceló y qué frenó el riesgo.
 - **Resultados:**
   - lo ganado o perdido en 7, 30 o 90 días, frente a lo esperado según la prueba con datos reales;
   - hoy, ayer y el dinero que hay en juego;
-  - un gráfico por día (azul, ganado; rojo, perdido), con los mismos datos en una tabla;
+  - un gráfico por día (verde azulado, ganado; coral, perdido), con los mismos datos en una tabla;
   - por tipo de mercado (partidos, clima…) y los últimos mercados cerrados;
   - **Solo el bot** (por defecto) cuenta lo que compró el bot; **Toda la cuenta** suma también lo que
     compres a mano. Las órdenes del bot se reconocen por su diario, que se guarda en `/data`. En simulación
@@ -125,7 +128,7 @@ Abre `http://IP-DEL-ORDENADOR:8000` desde el móvil (en la misma wifi). Para ent
   - toca un mercado para ver su libro;
   - compra SÍ o NO con orden limitada (con coste, ganancia máxima y comisión estimada);
   - "Seguir con el bot".
-- **Oportunidades:**
+- **Análisis** (antes "Oportunidades"):
   - "¿Dónde gana más el bot?": ordena las series por lo que ganaron los favoritos y, con un toque,
     centra el bot en la mejor;
   - escáner: favoritos, spreads amplios y arbitraje en eventos;

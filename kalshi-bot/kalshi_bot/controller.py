@@ -12,6 +12,7 @@ import csv
 import io
 import json
 import logging
+import re
 import threading
 import time
 from dataclasses import replace
@@ -47,6 +48,7 @@ from .strategies.fair_value import load_fair_values_csv, parse_probability
 log = logging.getLogger(__name__)
 
 STATE_FILE = "state.json"
+TICKER_RE = re.compile(r"[A-Z0-9][A-Z0-9._-]{1,79}")
 MANUAL_PREFIX = "man"  # las órdenes manuales del panel no las toca el bot
 TEST_PREFIX = "diag"  # orden de prueba del diagnóstico
 ENV_LABELS = {"demo": "Demo", "prod": "Real"}
@@ -211,6 +213,7 @@ class BotController:
         self.logs = LogBuffer()
         self.jobs = {"scan": Job("scan"), "research": Job("research"), "sweep": Job("sweep")}
         self._results_cache: dict = {}  # (días, zona horaria) -> (instante, resultado)
+        self._titles: dict = {}  # ticker -> (título, subtítulo) de cada mercado ya consultado
         config_dir = Path(config_path).resolve().parent if config_path else Path.cwd()
         load_dotenv(config_dir / ".env")
         self.data_dir = data_dir_from_env(config_dir)
@@ -492,18 +495,82 @@ class BotController:
     # --- portafolio y órdenes ---------------------------------------------------------
 
     def positions(self) -> list:
+        """Posiciones abiertas, con el nombre del mercado y lo que vale ahora cada una."""
         client = self.client(require_auth=True)
-        return [
-            {
-                "ticker": p.ticker,
-                "side": "yes" if p.position > 0 else "no",
-                "contracts": abs(p.position),
-                "exposure": p.exposure,
-                "realized_pnl": p.realized_pnl,
-                "fees_paid": p.fees_paid,
-            }
-            for p in sorted(client.get_positions().values(), key=lambda p: p.ticker)
-        ]
+        held = sorted(client.get_positions().values(), key=lambda p: p.ticker)
+        markets = self._fetch_markets(client, [p.ticker for p in held])
+        now = datetime.now(timezone.utc)
+        rows = []
+        for p in held:
+            side = "yes" if p.position > 0 else "no"
+            contracts = abs(p.position)
+            market = markets.get(p.ticker)
+            chance = market.chance(side) if market else None
+            hours = market.hours_to_close(now) if market else None
+            rows.append(
+                {
+                    "ticker": p.ticker,
+                    "title": market.title if market else "",
+                    "subtitle": market.subtitle if market else "",
+                    "side": side,
+                    "contracts": contracts,
+                    "exposure": p.exposure,
+                    "realized_pnl": p.realized_pnl,
+                    "fees_paid": p.fees_paid,
+                    "chance": chance,  # probabilidad que da el mercado a tu lado (0-1)
+                    "value": (contracts * chance).quantize(Decimal("0.01")) if chance is not None else None,
+                    "payout": contracts,  # lo que cobras si aciertas: $1 por contrato
+                    "hours_to_close": round(hours, 2) if hours is not None else None,
+                    "status": market.status if market else "",
+                }
+            )
+        return rows
+
+    # --- nombres de los mercados -----------------------------------------------------
+
+    def _fetch_markets(self, client: KalshiClient, tickers: list) -> dict:
+        """Los mercados pedidos, de 50 en 50, y guarda sus nombres (no cambian).
+
+        Si Kalshi falla devuelve los que se pudieron leer: los nombres son un extra y
+        sin ellos el panel enseña el ticker.
+        """
+        found: dict = {}
+        for start in range(0, len(tickers), 50):
+            chunk = tickers[start : start + 50]
+            try:
+                markets = client.get_markets(status=None, tickers=chunk, max_pages=1)
+            except Exception as exc:  # noqa: BLE001 - ver arriba
+                log.debug("No se pudieron leer los mercados %s: %s", ", ".join(chunk), exc)
+                break
+            for market in markets:
+                found[market.ticker] = market
+            with self._lock:
+                if len(self._titles) > 5000:
+                    self._titles.clear()
+                for ticker in chunk:
+                    market = found.get(ticker)
+                    self._titles[ticker] = (market.title, market.subtitle) if market else ("", "")
+        return found
+
+    def labels(self, tickers: Any, client: Optional[KalshiClient] = None) -> dict:
+        """Título y subtítulo de cada mercado ({ticker: {...}}), para no enseñar tickers."""
+        if isinstance(tickers, str):
+            tickers = tickers.split(",")
+        wanted: list = []
+        for raw in tickers or []:
+            ticker = str(raw).strip().upper()
+            if TICKER_RE.fullmatch(ticker) and ticker not in wanted:
+                wanted.append(ticker)
+        wanted = wanted[:100]
+        missing = [t for t in wanted if t not in self._titles]
+        if missing:
+            self._fetch_markets(client or self.client(), missing)
+        names = {}
+        for ticker in wanted:
+            title, subtitle = self._titles.get(ticker, ("", ""))
+            if title:
+                names[ticker] = {"title": title, "subtitle": subtitle}
+        return names
 
     def results(self, days: Any = 30, tz_offset_minutes: Any = 0, scope: Any = "bot") -> dict:
         """Lo ganado o perdido en los mercados cerrados de los últimos `days` días.
@@ -562,10 +629,14 @@ class BotController:
         settings = self.settings()
         client = self.client(settings, require_auth=True)
         prefix = settings.engine.order_prefix + "-"
+        resting = sorted(client.get_orders(status="resting"), key=lambda o: (o.ticker, o.side, o.price))
+        names = self.labels([o.ticker for o in resting], client) if resting else {}
         return [
             {
                 "order_id": o.order_id,
                 "ticker": o.ticker,
+                "title": names.get(o.ticker, {}).get("title", ""),
+                "subtitle": names.get(o.ticker, {}).get("subtitle", ""),
                 "side": o.side,
                 "outcome": "yes" if o.side == BID else "no",
                 "price": o.price if o.side == BID else ONE - o.price,
@@ -574,7 +645,7 @@ class BotController:
                 "source": "bot" if o.client_order_id.startswith(prefix) else "manual",
                 "created_time": _iso(o.created_time),
             }
-            for o in sorted(client.get_orders(status="resting"), key=lambda o: (o.ticker, o.side, o.price))
+            for o in resting
         ]
 
     def cancel_order(self, order_id: str, ticker: Optional[str]) -> dict:
@@ -939,7 +1010,7 @@ class BotController:
         return {"series": clean}
 
     def add_ticker(self, ticker: str) -> dict:
-        """Añade un mercado a la lista fija del bot (desde Oportunidades)."""
+        """Añade un mercado a la lista fija del bot (desde Análisis o Mercados)."""
         overrides = self.overrides()
         markets = dict(overrides.get("markets") or {})
         current = list(markets.get("tickers") or self.settings().engine.tickers)

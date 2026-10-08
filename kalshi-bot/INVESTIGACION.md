@@ -415,7 +415,7 @@ Conclusiones:
    operaciones. Calcula, por tramo de precio, cuánto ganó o perdió quien compró como taker y como maker,
    como en el estudio pero con datos actuales y en la categoría que elijas. Si en tus series comprar a
    90–97¢ no sale positivo, no actives `favorites` ahí.
-2. **`scan` (o la pestaña Oportunidades)** lista, ahora mismo:
+2. **`scan` (o la pestaña Análisis)** lista, ahora mismo:
    - favoritos que cumplen los filtros;
    - mercados con spread amplio, para el creador de mercado;
    - eventos de varios resultados donde comprar NO en todos deja beneficio tras comisiones.

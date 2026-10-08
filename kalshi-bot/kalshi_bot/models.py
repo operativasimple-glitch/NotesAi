@@ -207,6 +207,23 @@ class Market:
         end = self.ends_at
         return None if end is None else (end - now).total_seconds() / 3600
 
+    def chance(self, side: str) -> Optional[Decimal]:
+        """Probabilidad que da ahora el mercado a un lado ("yes" o "no"), de 0 a 1.
+
+        Es el punto medio entre compra y venta; si falta uno, el otro, y si no hay
+        ninguno, el último precio. Un mercado ya resuelto da 1 o 0.
+        """
+        if self.result in ("yes", "no"):
+            return ONE if self.result == side else ZERO
+        bid, ask = self.yes_bid, self.yes_ask
+        if bid is not None and ask is not None:
+            yes = (bid + ask) / 2
+        else:
+            yes = bid if bid is not None else ask if ask is not None else self.last_price
+        if yes is None:
+            return None
+        return yes if side == "yes" else ONE - yes
+
 
 def _parse_ranges(raw: Any) -> tuple:
     ranges = []

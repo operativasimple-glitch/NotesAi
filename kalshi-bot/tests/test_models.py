@@ -83,6 +83,18 @@ def test_market_from_api():
     assert make_market(status="closed").is_active is False
 
 
+def test_market_chance_for_each_side():
+    m = make_market(yes_bid_dollars="0.9000", yes_ask_dollars="0.9400")
+    assert (m.chance("yes"), m.chance("no")) == (D("0.92"), D("0.08"))
+    nobody_sells = make_market(yes_bid_dollars="0.9800", yes_ask_dollars="1.0000")
+    assert nobody_sells.chance("yes") == D("0.98")
+    no_book = make_market(yes_bid_dollars="0", yes_ask_dollars="1", last_price_dollars="0.0700")
+    assert no_book.chance("no") == D("0.93")
+    assert make_market(yes_bid_dollars="0", yes_ask_dollars="1", last_price_dollars="0").chance("yes") is None
+    settled = make_market(result="no")
+    assert (settled.chance("no"), settled.chance("yes")) == (D("1"), D("0"))
+
+
 def test_order_from_api_v2_and_legacy():
     v2 = Order.from_api(
         {

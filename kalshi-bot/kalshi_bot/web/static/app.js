@@ -65,9 +65,134 @@ const fmt = {
     if (!iso) return "";
     return new Date(iso).toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
   },
+  // Hora corta; si no es de hoy, con el día delante ("7 oct 22:15").
+  clock(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    const time = d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
+    if (d.toDateString() === new Date().toDateString()) return time;
+    return `${d.toLocaleDateString("es-ES", { day: "numeric", month: "short" })} ${time}`;
+  },
 };
 
 const signClass = (v) => (Number(v) > 0 ? "pos" : Number(v) < 0 ? "neg" : "");
+const cap = (text) => (text ? text.charAt(0).toUpperCase() + text.slice(1) : "");
+
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svg(tag, attrs) {
+  const node = document.createElementNS(SVG_NS, tag);
+  for (const [key, value] of Object.entries(attrs || {})) if (value != null) node.setAttribute(key, value);
+  return node;
+}
+
+/* ===================== nombres de los mercados ===================== */
+
+// Las series del bot: KXHIGH + ciudad (temperatura máxima) y KX + liga + GAME (partidos).
+const CITIES = {
+  NY: "Nueva York",
+  LAX: "Los Ángeles",
+  CHI: "Chicago",
+  MIA: "Miami",
+  AUS: "Austin",
+  DEN: "Denver",
+  PHIL: "Filadelfia",
+};
+const MONTHS = { JAN: "ene", FEB: "feb", MAR: "mar", APR: "abr", MAY: "may", JUN: "jun", JUL: "jul", AUG: "ago", SEP: "sept", OCT: "oct", NOV: "nov", DEC: "dic" };
+const ICONS = {
+  weather: ["M14 4v10.54a4 4 0 1 1-4 0V4a2 2 0 0 1 4 0Z"],
+  sports: ["M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18Z", "M5.6 5.6C7.8 7.5 9 9.6 9 12s-1.2 4.5-3.4 6.4", "M18.4 5.6C16.2 7.5 15 9.6 15 12s1.2 4.5 3.4 6.4"],
+  other: ["m3 17 6-6 4 4 8-8", "M15 7h6v6"],
+};
+
+// "KXHIGHNY-26OCT08-B66.5" → "8 oct": la fecha del evento va en el ticker.
+function tickerDate(ticker) {
+  const m = /^(\d{2})([A-Z]{3})(\d{2})/.exec(ticker.split("-")[1] || "");
+  return m && MONTHS[m[2]] ? `${Number(m[3])} ${MONTHS[m[2]]}` : "";
+}
+
+// Los tramos llegan en inglés: "66° to 67°", "82° or below", "91° or above".
+function bracketText(text) {
+  return text
+    .replace(/(-?\d+(?:\.\d+)?)°?\s+to\s+(-?\d+(?:\.\d+)?)°/i, "$1–$2°")
+    .replace(/\s+or (below|less|lower)\b/i, " o menos")
+    .replace(/\s+or (above|more|higher)\b/i, " o más");
+}
+
+// Nombre legible de un mercado: { kind, title (el evento), outcome (a qué se apuesta), date }.
+function marketLabel(ticker, title, subtitle) {
+  const t = String(ticker || "");
+  const parts = t.split("-");
+  const date = tickerDate(t);
+  const weather = /^KX(HIGH|LOW)([A-Z]+)$/.exec(parts[0]);
+  if (weather) {
+    const city = CITIES[weather[2]] || weather[2];
+    let outcome = subtitle ? bracketText(subtitle) : "";
+    const tail = /^B(-?\d+)\.5$/.exec(parts[2] || ""); // sin nombre: "B66.5" es el tramo 66–67°
+    if (!outcome && tail) outcome = `${tail[1]}–${Number(tail[1]) + 1}°`;
+    if (!outcome && parts[2]) outcome = `tramo ${parts[2]}`;
+    return { kind: "weather", title: `${weather[1] === "HIGH" ? "Máxima" : "Mínima"} en ${city}`, outcome, date };
+  }
+  const game = /^KX([A-Z0-9]+)GAME$/.exec(parts[0]);
+  if (game) {
+    const match = title ? title.replace(/\s*winner\??$/i, "").replace(/\?$/, "") : game[1];
+    const team = subtitle || parts[2] || "";
+    return { kind: "sports", title: match, outcome: team ? `gana ${team}` : "", date, league: game[1] };
+  }
+  return { kind: "other", title: title || t, outcome: subtitle || "", date };
+}
+
+// Nombres que ya se conocen (de posiciones, órdenes o /api/labels); null = no tiene.
+const labelCache = new Map();
+let labelQueue = new Set();
+let labelTimer = null;
+
+function rememberLabel(ticker, title, subtitle) {
+  if (ticker && title) labelCache.set(ticker, { title, subtitle: subtitle || "" });
+}
+
+function labelFor(ticker, title, subtitle) {
+  rememberLabel(ticker, title, subtitle);
+  const known = labelCache.get(ticker);
+  return marketLabel(ticker, known && known.title, known && known.subtitle);
+}
+
+const labelText = (l) => [l.title, l.outcome].filter(Boolean).join(" · ");
+
+// Nombre de un mercado dentro de una frase; si aún no se conoce, se pide y se actualiza solo.
+function tickerNode(ticker) {
+  if (!labelCache.has(ticker)) {
+    labelQueue.add(ticker);
+    clearTimeout(labelTimer);
+    labelTimer = setTimeout(flushLabels, 80);
+  }
+  return el("span", { class: "tk", "data-ticker": ticker, text: labelText(labelFor(ticker)) });
+}
+
+async function flushLabels() {
+  const tickers = [...labelQueue].filter((t) => !labelCache.has(t)).slice(0, 100);
+  labelQueue = new Set();
+  if (tickers.length) {
+    for (const t of tickers) labelCache.set(t, null); // no se vuelven a pedir aunque falle
+    try {
+      const names = await api(`/api/labels?tickers=${encodeURIComponent(tickers.join(","))}`);
+      for (const [t, n] of Object.entries(names || {})) labelCache.set(t, n);
+    } catch {
+      /* se queda el nombre sacado del ticker */
+    }
+  }
+  renameTickers();
+}
+
+function renameTickers() {
+  for (const node of $$(".tk[data-ticker]")) node.textContent = labelText(labelFor(node.dataset.ticker));
+}
+
+function avatar(kind) {
+  const icon = svg("svg", { viewBox: "0 0 24 24", "aria-hidden": "true" });
+  for (const d of ICONS[kind] || ICONS.other) icon.append(svg("path", { d }));
+  return el("div", { class: `avatar ${kind}` }, icon);
+}
 
 function feeEstimate(rate, count, price) {
   const raw = rate * count * price * (1 - price);
@@ -318,17 +443,21 @@ function renderStatus(s) {
   dot.className = "dot";
   let label = "Detenido";
   let sub = `Estrategia: ${strategyLabel(bot.strategy)}`;
+  let mood = "stopped";
   if (bot.state === "running") {
     const live = bot.mode === "live";
     dot.classList.add(live ? "running" : "sim");
+    mood = live ? "live" : "sim";
     label = live ? (s.is_production ? "Operando con dinero real" : "Operando en demo") : "Simulando";
     const parts = [strategyLabel(bot.strategy), `${bot.markets.length} mercados`];
     if (bot.last_tick_at) parts.push(`última vuelta ${fmt.ago(bot.last_tick_at)}`);
     sub = parts.join(" · ");
   } else if (bot.state === "halted") {
     dot.classList.add("halted");
+    mood = "halted";
     label = "Frenado";
   }
+  $("#hero").dataset.state = mood;
   $("#state-label").textContent = label;
   $("#state-sub").textContent = sub;
 
@@ -352,14 +481,15 @@ function renderStatus(s) {
   $("#btn-stop").hidden = !running;
   const live = $("#btn-live");
   live.disabled = !s.credentials.configured;
-  live.textContent = s.is_production ? "Operar (dinero real)" : "Operar en demo";
+  live.textContent = s.is_production ? "Operar con dinero real" : "Operar en demo";
 
   const balance = s.balance;
+  $("#hero-equity").textContent = balance ? fmt.money(balance.equity) : "—";
   $("#stat-cash").textContent = balance ? fmt.money(balance.cash) : "—";
   $("#stat-portfolio").textContent = balance ? fmt.money(balance.portfolio_value) : "—";
   const pnl = $("#stat-pnl");
   pnl.textContent = s.session_pnl == null ? "—" : fmt.money(s.session_pnl, true);
-  pnl.className = "stat-value " + signClass(s.session_pnl);
+  pnl.className = signClass(s.session_pnl);
   const note = $("#balance-note");
   note.hidden = !(s.balance_error || (!s.credentials.configured && running));
   note.textContent = s.balance_error
@@ -449,7 +579,7 @@ async function refreshLogs() {
     const placeholder = box.querySelector(".empty");
     if (placeholder) placeholder.remove();
     for (const line of lines) {
-      box.append(el("div", { class: `log-line ${line.level}` }, el("span", { class: "t", text: fmt.time(line.ts) }), line.message));
+      box.append(logLine(line));
       state.logsAfter = line.id;
     }
     while (box.childElementCount > 300) box.firstElementChild.remove();
@@ -457,6 +587,96 @@ async function refreshLogs() {
   } catch {
     /* se reintenta en la siguiente vuelta */
   }
+}
+
+function logLine(line) {
+  const { kind, main, extra } = describeLog(line.message);
+  return el(
+    "div",
+    { class: `log-line ${kind} ${line.level}` },
+    el("span", { class: "ld", "aria-hidden": "true" }),
+    el("div", { class: "lm" }, main, extra && extra.length ? el("span", { class: "lx" }, extra) : null),
+    el("span", { class: "t", title: fmt.time(line.ts), text: fmt.clock(line.ts) }),
+  );
+}
+
+// Lo que hace una orden de la API (lado del libro y precio del SÍ) dicho como compra de SÍ o de NO.
+function orderWords(book, count, yesPrice) {
+  const yes = book === "bid";
+  const price = yes ? Number(yesPrice) : 1 - Number(yesPrice);
+  return `${fmt.qty(count)} ${yes ? "SÍ" : "NO"} a ${fmt.cents(price)}`;
+}
+
+const EXIT_REASON = /^(cortar pérdidas|cobrar antes)/;
+
+function riskReason(text) {
+  const exposure = /^exposición total máxima \$([\d.]+)/.exec(text);
+  if (exposure) return `llegaría al máximo comprometido (${fmt.money(exposure[1])})`;
+  if (text.startsWith("precio fuera")) return "precio fuera de los límites de Riesgo";
+  if (text.startsWith("límite de posición")) return "límite de contratos por mercado";
+  return text;
+}
+const DESCRIBE = /^(COMPRA|VENDE) YES ([\d.]+) @ ([\d.]+)(?: \(= COMPRA NO @ [\d.]+\))? \[([A-Z]+)( post-only)?\] (\S+)$/;
+
+// Convierte las líneas del log del bot en frases: qué compró, qué canceló, qué falló.
+function describeLog(message) {
+  let m = /^ORDEN (.+?) \| id=\S* llenado=(\S*) pendiente=(\S*) \| ?(.*)$/.exec(message);
+  let d = m && DESCRIBE.exec(m[1]);
+  if (d) {
+    const book = d[1] === "COMPRA" ? "bid" : "ask";
+    const filled = Number(m[2]) || 0;
+    const pending = Number(m[3]) || 0;
+    const leaving = EXIT_REASON.test(m[4]);
+    // Al salir, comprar SÍ cierra un NO y vender SÍ cierra un SÍ.
+    const what = leaving ? `vender ${orderWords(book === "bid" ? "ask" : "bid", d[2], d[3])}` : `comprar ${orderWords(book, d[2], d[3])}`;
+    const status = filled > 0 && pending === 0 ? "llenada al momento" : filled > 0 ? "llenada en parte" : "esperando en el libro";
+    return {
+      kind: "order",
+      main: [el("b", { text: "Orden" }), ` · ${what}`],
+      extra: [tickerNode(d[6]), ` · ${leaving ? m[4] : status}`],
+    };
+  }
+  m = /^\[SIMULACIÓN\] cancelar (\S+) (bid|ask) ([\d.]+) @ ([\d.]+)/.exec(message);
+  if (m) return { kind: "cancel", main: [el("b", { text: "Simulación" }), ` · retiraría ${orderWords(m[2], m[3], m[4])}`], extra: [tickerNode(m[1])] };
+  m = /^\[SIMULACIÓN\] (.+?) \| ?(.*)$/.exec(message);
+  d = m && DESCRIBE.exec(m[1]);
+  if (d) {
+    const book = d[1] === "COMPRA" ? "bid" : "ask";
+    return { kind: "order sim", main: [el("b", { text: "Simulación" }), ` · compraría ${orderWords(book, d[2], d[3])}`], extra: [tickerNode(d[6])] };
+  }
+  m = /^CANCELADA (\S+) (bid|ask) ([\d.]+) @ ([\d.]+)/.exec(message);
+  if (m) return { kind: "cancel", main: [el("b", { text: "Cancelada" }), ` · ${orderWords(m[2], m[3], m[4])}`], extra: [tickerNode(m[1])] };
+  m = /^LLENADO( \(fuera del bot\))? (COMPRA|VENDE) YES ([\d.]+) @ ([\d.]+) (\S+) \((maker|taker), comisión \$([\d.]+|\?)\)/.exec(message);
+  if (m) {
+    const fee = m[7] === "?" ? "" : ` · comisión ${fmt.money(m[7])}`;
+    return {
+      kind: "fill",
+      main: [el("b", { text: m[1] ? "Comprado a mano" : "Comprado" }), ` · ${orderWords(m[2] === "COMPRA" ? "bid" : "ask", m[3], m[4])}`],
+      extra: [tickerNode(m[5]), fee],
+    };
+  }
+  m = /^Arrancando bot \| entorno=(\S+) \| modo=(.+?) \| estrategia=(\S+)/.exec(message);
+  if (m) {
+    const how = m[2].startsWith("EN VIVO") ? (m[1] === "prod" ? "con dinero real" : "en demo") : "en simulación";
+    return { kind: "start", main: [el("b", { text: "Bot en marcha" }), ` · ${how}`], extra: [`Estrategia ${strategyLabel(m[3])}`] };
+  }
+  m = /^Saldo disponible \$([\d.]+) \| valor del portafolio \$([\d.]+)/.exec(message);
+  if (m) return { kind: "info", main: [`Saldo ${fmt.money(m[1])}`], extra: [`en posiciones ${fmt.money(m[2])}`] };
+  m = /^Mercados seguidos \((\d+)\): (.*)$/.exec(message);
+  if (m) return { kind: "info", main: [`Siguiendo ${plural(Number(m[1]), "mercado", "mercados")}`], extra: [] };
+  m = /^\[(\S+)\] riesgo: (rechazada \((.+?)\)|recortada de [\d.]+ a ([\d.]+) contratos): (.+)$/.exec(message);
+  d = m && DESCRIBE.exec(m[5]);
+  if (d) {
+    const book = d[1] === "COMPRA" ? "bid" : "ask";
+    const why = m[3] ? riskReason(m[3]) : "límite de contratos por orden";
+    const main = m[4]
+      ? [el("b", { text: "Recortada" }), ` · comprar ${orderWords(book, m[4], d[3])} (pedía ${fmt.qty(d[2])})`]
+      : [el("b", { text: "No se compra" }), ` · ${orderWords(book, d[2], d[3])}`];
+    return { kind: "risk", main, extra: [tickerNode(m[1]), ` · ${why}`] };
+  }
+  m = /^\[([A-Z0-9][A-Z0-9._-]+)\] (.*)$/.exec(message);
+  if (m) return { kind: "info", main: [cap(m[2])], extra: [tickerNode(m[1])] };
+  return { kind: "info", main: [message], extra: [] };
 }
 
 function empty(text) {
@@ -476,6 +696,7 @@ async function refreshPortfolio() {
     const [pos, ord] = await Promise.all([api("/api/positions"), api("/api/orders")]);
     positions.replaceChildren(...(pos.length ? pos.map(positionItem) : [empty("No tienes posiciones abiertas.")]));
     orders.replaceChildren(...(ord.length ? ord.map(orderItem) : [empty("No hay órdenes abiertas.")]));
+    renameTickers();
   } catch (err) {
     positions.replaceChildren(empty(err.message));
   }
@@ -485,21 +706,41 @@ function sideBadge(outcome, text) {
   return el("span", { class: `badge ${outcome}`, text: text || (outcome === "yes" ? "SÍ" : "NO") });
 }
 
+// Primera línea bajo el título: [SÍ/NO] tramo o equipo · fecha.
+function betLine(label, side, extra) {
+  const text = [label.outcome, label.date, extra].filter(Boolean).join(" · ");
+  return el("div", { class: "item-sub" }, side ? sideBadge(side) : null, side && text ? " " : null, text);
+}
+
 function positionItem(p) {
+  const label = labelFor(p.ticker, p.title, p.subtitle);
+  const chance = p.chance == null ? null : Number(p.chance);
+  const meter = el("div", { class: "meter", "aria-hidden": "true" }, el("i"));
+  if (chance != null) meter.firstChild.style.width = `${Math.round(chance * 100)}%`;
+  let when = "";
+  if (p.hours_to_close != null) when = p.hours_to_close <= 0 ? "esperando el resultado" : `se decide en ${fmt.hours(p.hours_to_close)}`;
+  const facts = [
+    `${fmt.qty(p.contracts)} ${Number(p.contracts) === 1 ? "contrato" : "contratos"}`,
+    `pagaste ${fmt.money(p.exposure)}`,
+    `cobras ${fmt.money(p.payout ?? p.contracts)} si aciertas`,
+    when,
+  ];
   return el(
     "div",
-    { class: "item tappable", onclick: () => openMarket(p.ticker) },
+    { class: "item tappable position", onclick: () => openMarket(p.ticker) },
+    avatar(label.kind),
     el(
       "div",
       { class: "item-main" },
-      el("div", { class: "item-title", text: p.ticker }),
-      el("div", { class: "item-sub", text: `Comprometido ${fmt.money(p.exposure)} · comisiones ${fmt.money(p.fees_paid)}` }),
-    ),
-    el(
-      "div",
-      { class: "item-side" },
-      sideBadge(p.side, `${fmt.qty(p.contracts)} ${p.side === "yes" ? "SÍ" : "NO"}`),
-      el("div", { class: "small " + signClass(p.realized_pnl), text: "realizado " + fmt.money(p.realized_pnl, true) }),
+      el(
+        "div",
+        { class: "pos-row" },
+        el("div", { class: "item-title", text: label.title }),
+        el("div", { class: "big", text: chance == null ? "—" : `${Math.round(chance * 100)}%` }),
+      ),
+      el("div", { class: "pos-row" }, betLine(label, p.side), el("div", { class: "tag", text: "probabilidad" })),
+      chance == null ? null : meter,
+      el("div", { class: "item-sub wrap small", text: facts.filter(Boolean).join(" · ") }),
     ),
   );
 }
@@ -521,19 +762,21 @@ function orderItem(o) {
       }
     },
   });
+  const label = labelFor(o.ticker, o.title, o.subtitle);
   return el(
     "div",
-    { class: "item" },
+    { class: "item order" },
+    avatar(label.kind),
     el(
       "div",
       { class: "item-main" },
-      el("div", { class: "item-title", text: o.ticker }),
+      el("div", { class: "item-title", text: label.title }),
+      betLine(label, o.outcome),
       el(
         "div",
         { class: "item-sub" },
-        sideBadge(o.outcome),
-        ` ${fmt.qty(o.remaining)} a ${fmt.cents(o.price)} `,
-        o.source === "bot" ? el("span", { class: "badge bot", text: "bot" }) : null,
+        `Compra ${fmt.qty(o.remaining)} a ${fmt.cents(o.price)} `,
+        el("span", { class: `badge ${o.source === "bot" ? "bot" : ""}`, text: o.source === "bot" ? "bot" : "a mano" }),
       ),
     ),
     cancel,
@@ -600,14 +843,17 @@ async function searchMarkets(event) {
 }
 
 function marketItem(m) {
+  const label = labelFor(m.ticker, m.title, m.subtitle);
+  const sub = [label.outcome ? label.title : "", label.date, `cierra en ${fmt.hours(m.hours_to_close)}`, `vol ${fmt.qty(m.volume_24h)}`];
   return el(
     "div",
     { class: "item tappable", onclick: () => openMarket(m.ticker) },
+    avatar(label.kind),
     el(
       "div",
       { class: "item-main" },
-      el("div", { class: "item-title", text: m.subtitle || m.title || m.ticker }),
-      el("div", { class: "item-sub", text: `cierra en ${fmt.hours(m.hours_to_close)} · vol ${fmt.qty(m.volume_24h)} · ${m.ticker}` }),
+      el("div", { class: "item-title", text: cap(label.outcome || label.title) }),
+      el("div", { class: "item-sub", text: sub.filter(Boolean).join(" · ") }),
     ),
     el(
       "div",
@@ -729,9 +975,10 @@ async function openMarket(ticker) {
     }
   });
 
+  const label = labelFor(m.ticker, m.title, m.subtitle);
   openSheet(
-    el("h2", { text: m.subtitle || m.title || m.ticker }),
-    el("p", { class: "muted small", text: `${m.title || ""} · ${m.ticker} · cierra en ${fmt.hours(m.hours_to_close)}` }),
+    el("div", { class: "sheet-title" }, avatar(label.kind), el("h2", { text: labelText(label) })),
+    el("p", { class: "muted small", text: [label.date, `cierra en ${fmt.hours(m.hours_to_close)}`, m.ticker].filter(Boolean).join(" · ") }),
     el(
       "div",
       { class: "book" },
@@ -802,19 +1049,22 @@ function resultSection(title, help, items) {
 
 function renderScan(r) {
   $("#scan-status").textContent = `${r.markets_scanned} mercados revisados · ${fmt.time(r.generated_at)}`;
-  const favorites = r.favorites.map((f) =>
-    el(
+  const favorites = r.favorites.map((f) => {
+    const label = labelFor(f.ticker, f.title, f.subtitle);
+    const sub = [label.outcome ? label.title : "", label.date, `cierra en ${fmt.hours(f.hours_to_close)}`, `vol ${fmt.qty(f.volume_24h)}`];
+    return el(
       "div",
       { class: "item tappable", onclick: () => openMarket(f.ticker) },
+      avatar(label.kind),
       el(
         "div",
         { class: "item-main" },
-        el("div", { class: "item-title", text: f.subtitle || f.title || f.ticker }),
-        el("div", { class: "item-sub", text: `cierra en ${fmt.hours(f.hours_to_close)} · vol ${fmt.qty(f.volume_24h)} · ${f.ticker}` }),
+        el("div", { class: "item-title", text: cap(label.outcome || label.title) }),
+        el("div", { class: "item-sub", text: sub.filter(Boolean).join(" · ") }),
       ),
       el("div", { class: "item-side" }, sideBadge(f.side, `${f.side === "yes" ? "SÍ" : "NO"} ${fmt.cents(f.bid)}`), el("div", { class: "small muted", text: `gana ${fmt.cents(f.max_profit)}` })),
-    ),
-  );
+    );
+  });
   const arbitrage = r.arbitrage.map((a) =>
     el(
       "div",
@@ -1373,14 +1623,6 @@ async function saveFairValues() {
 
 /* ===================== resultados ===================== */
 
-const SVG_NS = "http://www.w3.org/2000/svg";
-
-function svg(tag, attrs) {
-  const node = document.createElementNS(SVG_NS, tag);
-  for (const [key, value] of Object.entries(attrs || {})) if (value != null) node.setAttribute(key, value);
-  return node;
-}
-
 // Las fechas llegan como "2026-10-07" (día local); al mediodía la zona horaria no cambia el día.
 function dayLabel(iso, options) {
   return new Date(`${iso}T12:00:00`).toLocaleDateString("es-ES", options);
@@ -1586,23 +1828,15 @@ function renderResults(r) {
 
 function resultItem(m) {
   const side = m.side === "ambos" ? null : m.side;
-  const parts = [`${fmt.qty(m.contracts)} contratos`, `pagaste ${fmt.money(m.cost)}`, dayLabel(m.date, { day: "numeric", month: "short" })];
+  const label = labelFor(m.ticker, m.title === m.ticker ? "" : m.title, m.subtitle);
   const outcome = m.sold_early ? "vendido antes" : m.net > 0 ? "ganado" : m.net < 0 ? "perdido" : "sin cambio";
+  const bet = betLine(label, side, `pagaste ${fmt.money(m.cost)}`);
+  bet.classList.add("wrap");
   return el(
     "div",
     { class: "item tappable", onclick: () => openMarket(m.ticker) },
-    el(
-      "div",
-      { class: "item-main" },
-      el("div", { class: "item-title", text: m.title }),
-      el(
-        "div",
-        { class: "item-sub wrap" },
-        side ? sideBadge(side) : null,
-        side ? " " : null,
-        [m.subtitle, ...parts].filter(Boolean).join(" · "),
-      ),
-    ),
+    avatar(label.kind),
+    el("div", { class: "item-main" }, el("div", { class: "item-title", text: label.title }), bet),
     el(
       "div",
       { class: "item-side" },
