@@ -225,7 +225,8 @@ desactivadas):
 Solo tocan posiciones compradas como favorito (a 83¢ o más) en las series que sigue el bot, no lo que
 compres tú a mano a otros precios. Con alguna activada, el bot vigila esas posiciones hasta que el
 mercado cierra, también en los últimos 15 minutos. Las ventas salen en Actividad como **Vendido** y, con
-los avisos activados, llega «Venta del bot».
+los avisos activados, llega «Venta del bot». Kalshi deja operar fracciones de contrato: si al otro lado solo
+compran una parte, quedan restos como 0,85 contratos, y el bot los vende también en las vueltas siguientes.
 
 Con datos reales, **ninguna mejora el resultado por contrato y cortar pérdidas lo empeora**: la mayoría
 de los favoritos que caen se recuperan. Por eso vienen desactivadas; cobrar a 99¢ en el clima es la
@@ -376,3 +377,5 @@ Lo primero: **Ajustes → Probar conexión**. Dice qué paso falla y qué hacer.
 - **No puedo entrar al panel**: comprueba `DASHBOARD_PASSWORD`. Tras 5 fallos, espera un minuto.
 - **No llegan los avisos**: en el iPhone el panel tiene que estar instalado en la pantalla de inicio. Mira que
   la app tenga permiso en **Ajustes del móvil → Notificaciones** y pulsa **Enviar un aviso de prueba**.
+- **La barra de abajo se queda a media pantalla (iPhone)**: es un fallo de iOS 26 con apps instaladas al
+  cerrar el teclado. El panel lo corrige solo; si aun así pasa, desliza hacia arriba o cierra y abre la app.

@@ -352,7 +352,50 @@ function switchView(name) {
   if (name === "markets" && $("#market-card").hidden && $("#event-card").hidden) loadEvents();
 }
 
+// iOS 26 con el panel instalado: al cerrar el teclado, a veces la zona con la que el móvil coloca
+// las barras fijas se queda desplazada (visualViewport.offsetTop no vuelve a 0) y la barra de
+// pestañas flota a media pantalla. Se mide lo que se ve de verdad y se pasa al CSS en --vv-top y
+// --vv-bottom, que normalmente valen 0. Al cerrar el teclado se da además un empujón de 1 px,
+// que suele bastar para que iOS lo recoloque solo.
+function watchViewport() {
+  const vv = window.visualViewport;
+  if (!vv) return;
+  const root = document.documentElement.style;
+  const last = { top: 0, bottom: 0 };
+  const typing = () => {
+    const active = document.activeElement;
+    return Boolean(active && (active.matches("input, textarea, select") || active.isContentEditable));
+  };
+  const update = () => {
+    // Con el teclado abierto o con zoom, el móvil ya coloca bien las cosas: no se toca nada.
+    const skip = typing() || Math.abs(vv.scale - 1) > 0.01;
+    const top = skip ? 0 : Math.round(vv.offsetTop);
+    const bottom = skip ? 0 : Math.round(vv.offsetTop + vv.height - window.innerHeight);
+    const next = { top: Math.abs(top) < 2 ? 0 : top, bottom: Math.abs(bottom) < 2 ? 0 : bottom };
+    if (next.top === last.top && next.bottom === last.bottom) return;
+    Object.assign(last, next);
+    root.setProperty("--vv-top", `${next.top}px`);
+    root.setProperty("--vv-bottom", `${next.bottom}px`);
+  };
+  vv.addEventListener("resize", update);
+  vv.addEventListener("scroll", update);
+  window.addEventListener("scroll", update, { passive: true });
+  window.addEventListener("resize", update);
+  document.addEventListener("focusin", update);
+  document.addEventListener("focusout", () =>
+    setTimeout(() => {
+      if (typing()) return;
+      const y = window.scrollY;
+      window.scrollTo(0, y + 1);
+      window.scrollTo(0, y);
+      update();
+    }, 150),
+  );
+  update();
+}
+
 async function init() {
+  watchViewport();
   for (const tab of $$(".tab")) tab.addEventListener("click", () => switchView(tab.dataset.view));
   $("#login-form").addEventListener("submit", onLogin);
   $("#sheet-backdrop").addEventListener("click", closeSheet);

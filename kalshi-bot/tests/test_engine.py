@@ -455,3 +455,15 @@ def test_weather_take_profit_watches_only_weather_positions(caplog):
     assert [(f["fill_id"], f["closing"]) for f in told] == [("f-exit", True)]
     lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("LLENADO")]
     assert lines == [f"LLENADO (salida) VENDE YES 5.00 @ 0.9900 {weather.ticker} (taker, comisión $0.0100)"]
+
+
+def test_take_profit_sells_fractional_leftovers():
+    # Kalshi deja operar fracciones: una venta a 99¢ llenada a medias deja, p. ej., 0,85 NO.
+    bot, fake, _ = setup(FavoritesStrategy({"take_profit": "0.99"}), series=["KXHIGHMIA"], max_hours_to_close=6)
+    crumb = make_market("KXHIGHMIA-26OCT09-B87.5", close_time=(NOW + timedelta(hours=30)).isoformat())
+    fake.markets[crumb.ticker] = crumb
+    fake.books[crumb.ticker] = make_book(crumb.ticker, asks=[("0.01", 50)])
+    fake.set_position(crumb.ticker, "-0.85", exposure="0.82")
+    bot.tick()
+    sells = [c["intent"] for c in fake.created if c["intent"].ticker == crumb.ticker]
+    assert [(i.side, i.price, i.count, i.time_in_force) for i in sells] == [(BID, D("0.01"), D("0.85"), IOC)]

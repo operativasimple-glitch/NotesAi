@@ -26,7 +26,7 @@ class RiskLimits:
 
 
 def whole_contracts(value: Decimal) -> Decimal:
-    """El bot opera contratos enteros."""
+    """El bot abre posiciones con contratos enteros."""
     return max(ZERO, value.to_integral_value(rounding=ROUND_FLOOR))
 
 
@@ -67,6 +67,9 @@ class RiskManager:
         La parte de una orden que reduce una posición existente no gasta
         presupuesto de exposición ni cuenta para el tamaño máximo por orden, y
         puede tener cualquier precio válido: así el bot siempre puede salir.
+        Esa parte puede ser una fracción de contrato: Kalshi deja operar
+        fracciones y una venta a medias puede dejar, p. ej., 0,85 contratos.
+        Lo que abre posición nueva va siempre en contratos enteros.
         """
         lim = self.limits
         approved: list = []
@@ -78,11 +81,10 @@ class RiskManager:
         budget = lim.max_total_exposure - committed_exposure
 
         for intent in intents:
-            requested = whole_contracts(intent.count)
             closable = closable_by_bid if intent.side == BID else closable_by_ask
             room = bid_room if intent.side == BID else ask_room
-            closing = min(requested, closable)
-            opening = max(ZERO, min(requested - closing, room - closing, lim.max_order_contracts - closing))
+            closing = max(ZERO, min(intent.count, closable))
+            opening = whole_contracts(min(intent.count - closing, room - closing, lim.max_order_contracts - closing))
             if not (lim.min_price <= intent.price <= lim.max_price):
                 if closing <= 0:
                     notes.append(f"rechazada (precio fuera de [{lim.min_price}, {lim.max_price}]): {intent.describe()}")

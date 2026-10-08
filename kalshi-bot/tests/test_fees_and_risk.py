@@ -68,6 +68,18 @@ def test_fractional_counts_are_floored():
     assert [i.count for i in ok] == [D(2)]
 
 
+def test_fractional_leftovers_can_still_be_sold():
+    # Una venta a 99¢ que solo se llenó en parte deja 0,85 NO: se venden tal cual, aunque comprar
+    # SÍ a 1¢ esté fuera de la banda de precios (antes se redondeaba a 0 y no se podía salir).
+    ok, notes = manager().filter_intents(
+        [intent(BID, "0.01", "0.85", IOC)], position=D("-0.85"), committed_exposure=D(0)
+    )
+    assert [i.count for i in ok] == [D("0.85")] and notes == []
+    # Lo que abre posición nueva sigue yendo en contratos enteros.
+    ok, _ = manager().filter_intents([intent(ASK, "0.50", "2.7")], position=D("0.4"), committed_exposure=D(0))
+    assert [i.count for i in ok] == [D("2.4")]  # cierra 0,4 SÍ y abre 2 NO
+
+
 def test_session_loss_breaker():
     rm = manager(max_session_loss=D("20"))
     assert rm.check_loss(D("100")) is None  # sin sesión iniciada

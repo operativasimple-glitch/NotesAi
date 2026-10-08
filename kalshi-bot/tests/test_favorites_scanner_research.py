@@ -130,6 +130,9 @@ def test_take_profit_only_cashes_out_weather_by_default():
     sell = s.on_market(held(won, 5, "4.60", ticker=WEATHER))
     assert summary(sell) == [(ASK, D("0.99"), D("5"), IOC, False)] and sell[0].ticker == WEATHER
     assert s.wants_exits_in(WEATHER) and s.takes_profit_in(WEATHER.lower())
+    # Lo que quede de una venta a medias (Kalshi deja operar fracciones) también se cobra.
+    crumb = s.on_market(held(make_book(T, asks=[("0.01", 50)]), "-0.85", "0.816", exit_only=True, ticker=WEATHER))
+    assert summary(crumb) == [(BID, D("0.01"), D("0.85"), IOC, False)] and crumb[0].closes
     # Partidos: con datos reales cobrar antes salió peor, así que se espera al final.
     assert s.on_market(held(won, 5, "4.60", exit_only=True, ticker=GAME)) == []
     assert s.wants_exits() and not s.wants_exits_in(GAME)

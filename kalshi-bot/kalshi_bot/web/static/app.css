@@ -64,6 +64,18 @@ html, body {
   -webkit-tap-highlight-color: transparent;
 }
 #app { padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 28px); }
+/* Franja del reloj del móvil: con el panel instalado, lo que se desplaza no pasa por debajo de la hora. */
+body::before {
+  content: "";
+  position: fixed;
+  top: var(--vv-top, 0px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  height: env(safe-area-inset-top);
+  background: var(--bg);
+  pointer-events: none;
+}
 ::selection { background: var(--lime-soft); }
 
 h1, h2, h3 { margin: 0; letter-spacing: -0.02em; }
@@ -117,11 +129,13 @@ main { max-width: 560px; margin: 0 auto; padding: 0 20px 16px; }
 .env-pill::before { content: ""; width: 6px; height: 6px; border-radius: 3px; background: currentColor; }
 .env-pill.demo { border-color: var(--off); color: var(--muted); }
 
+/* --vv-top y --vv-bottom (app.js) corrigen un fallo de iOS 26 con el panel instalado: al cerrar el
+   teclado, las barras fijas pueden quedarse a media pantalla. Normalmente valen 0. */
 .tabbar {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: calc(-1 * var(--vv-bottom, 0px));
   z-index: 20;
   height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
   padding: 8px 8px env(safe-area-inset-bottom);
@@ -489,7 +503,7 @@ textarea { font: 13px/1.45 var(--mono); resize: vertical; }
 .stepper b { width: 36px; text-align: center; font: 500 18px var(--mono); }
 .advanced { display: flex; flex-direction: column; gap: 12px; }
 .advanced > .card { gap: 8px; }
-.save-bar { position: sticky; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 12px); z-index: 5; }
+.save-bar { position: sticky; bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom) + 12px - var(--vv-bottom, 0px)); z-index: 5; }
 .save-bar .btn { margin-top: 0; box-shadow: 0 10px 30px -8px rgba(0, 0, 0, 0.9); }
 
 details summary { cursor: pointer; font-weight: 600; color: var(--lime); padding: 8px 0; list-style: none; }
@@ -572,13 +586,13 @@ td.neg { color: var(--red); }
 .results-table td:last-child { font-weight: 500; }
 
 /* --- hoja inferior, entrada y avisos ------------------------------------------------- */
-.sheet-backdrop { position: fixed; inset: 0; z-index: 40; background: rgba(0, 0, 0, 0.6); animation: fade 0.2s ease; }
+.sheet-backdrop { position: fixed; inset: var(--vv-top, 0px) 0 calc(-1 * var(--vv-bottom, 0px)); z-index: 40; background: rgba(0, 0, 0, 0.6); animation: fade 0.2s ease; }
 @keyframes fade { from { opacity: 0; } to { opacity: 1; } }
 .sheet {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: 0;
+  bottom: calc(-1 * var(--vv-bottom, 0px));
   z-index: 50;
   max-width: 560px;
   max-height: 90vh;
@@ -604,7 +618,7 @@ td.neg { color: var(--red); }
 .toast {
   position: fixed;
   left: 50%;
-  top: calc(12px + env(safe-area-inset-top));
+  top: calc(12px + env(safe-area-inset-top) + var(--vv-top, 0px));
   transform: translateX(-50%);
   z-index: 60;
   max-width: calc(100% - 32px);
