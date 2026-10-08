@@ -456,3 +456,24 @@ def test_bot_order_ids_come_from_real_bot_orders_in_the_journal(panel):
     assert panel.controller.bot_order_ids() == {"A", "D"}
     journal.unlink()
     assert panel.controller.bot_order_ids() == set()
+
+
+def test_log_history_survives_a_restart(tmp_path):
+    from kalshi_bot.controller import LogBuffer
+
+    log_file = tmp_path / "bot.log"
+    log_file.write_text(
+        "2026-10-08 13:44:01,250 ERROR   kalshi_bot.engine: Error de la API de Kalshi: HTTP 503\n"
+        "línea rota\n"
+        "2026-10-08 13:44:06,000 ERROR   kalshi_bot.engine: FRENO DE EMERGENCIA: 10 vueltas seguidas con errores\n",
+        encoding="utf-8",
+    )
+    logs = LogBuffer()
+    logs.preload(log_file)
+    lines = logs.since(0)
+    assert [(line["level"], line["message"]) for line in lines] == [
+        ("ERROR", "Error de la API de Kalshi: HTTP 503"),
+        ("ERROR", "FRENO DE EMERGENCIA: 10 vueltas seguidas con errores"),
+    ]
+    assert lines[0]["ts"].startswith("2026-10-08T13:44:01.250") and lines[1]["id"] == 2
+    LogBuffer().preload(tmp_path / "no-existe.log")  # sin archivo no pasa nada

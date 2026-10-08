@@ -167,7 +167,7 @@ Resumen de [INVESTIGACION.md](INVESTIGACION.md):
   - 10 contratos por orden;
   - en los partidos (MLB, NFL, NHL, NBA y universitario) que terminan en las próximas 6 h, uno por
     partido, hasta 15 min antes del final previsto;
-  - y en la temperatura máxima diaria de 7 ciudades (un tramo por ciudad y día). Si tu estado bloquea los
+  - y en la temperatura máxima diaria de 7 ciudades (mira hasta 4 tramos por día y apuesta en uno). Si tu estado bloquea los
     contratos deportivos, quita los partidos en **Ajustes → Mercados**: el clima sigue funcionando.
 - **La ventaja es pequeña** (unos céntimos por contrato) y **un fallo a 95¢ borra 19 aciertos**. Por
   eso importan los límites de riesgo y la diversificación.
@@ -204,10 +204,11 @@ Las otras estrategias:
 | `max_order_contracts` | 10 | Contratos máximos por orden. |
 | `max_position_per_market` | 20 | Contratos máximos por mercado, SÍ o NO. |
 | `max_total_exposure_dollars` | 50 | Dinero máximo comprometido: posiciones de la cuenta más órdenes del bot. Cerrar posiciones siempre se permite. |
-| `max_session_loss_dollars` | 20 | Si tu patrimonio cae esto desde que arrancó el bot, cancela todo y se detiene. |
+| `max_session_loss_dollars` | 20 | Si tu patrimonio cae esto desde que arrancó el bot, cancela todo y se detiene. Cuenta también lo que compres a mano. |
+| `max_positions_per_event` | 1 | Mercados con dinero a la vez en un mismo partido o día de clima: los tramos vecinos son casi la misma apuesta. Cuenta también lo tuyo. |
 | `min_price` / `max_price` | 0.03 / 0.97 | No compra a precios extremos (vender para cerrar una posición sí se permite). |
 | `min_minutes_to_close` | 15 | Cancela y no compra en los últimos minutos antes del cierre (si activas las salidas, sigue vigilando para vender). |
-| `max_consecutive_errors` | 10 | Freno de emergencia si la API falla muchas vueltas seguidas. |
+| `max_consecutive_errors` / `min_error_minutes` | 10 / 3 | Freno de emergencia si la API falla 10 vueltas seguidas durante al menos 3 minutos. Mientras tanto espera cada vez más entre intentos (hasta 1 minuto), así que un corte breve no lo para. |
 | `order_ttl_seconds` | 600 | Las órdenes en reposo caducan solas si el bot se cae. |
 
 El bot solo toca órdenes cuyo `client_order_id` empieza por su prefijo (`kb-`). Las órdenes manuales del

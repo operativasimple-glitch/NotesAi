@@ -48,6 +48,7 @@ class EngineConfig:
     taker_cooldown_seconds: float = 30.0
     requote_tolerance: Decimal = ZERO
     max_consecutive_errors: int = 10
+    min_error_minutes: float = 3.0  # el freno salta si además los fallos duran este tiempo
     paper_cash: Decimal = Decimal("1000")  # saldo virtual si no hay API key
     # Selección de mercados
     tickers: list = field(default_factory=list)
@@ -236,6 +237,11 @@ def reconcile(existing: list, desired: list, tolerance: Decimal = ZERO) -> tuple
     return keep, unmatched, to_place
 
 
+def event_of(ticker: str) -> str:
+    """Evento de un mercado por su ticker (todo menos el último tramo: KXHIGHNY-26OCT08-B66.5)."""
+    return ticker.rsplit("-", 1)[0]
+
+
 def only_reducing(intents: list, position: Decimal) -> list:
     """Deja solo las órdenes que reducen la posición (y como mucho hasta cerrarla)."""
     side = ASK if position > 0 else BID  # vender YES cierra YES; comprar YES cierra NO
@@ -289,6 +295,7 @@ class Bot:
         self._markets_refreshed_at: Optional[float] = None
         self._cooldown_until: dict = {}
         self._consecutive_errors = 0
+        self._errors_since: Optional[float] = None
         self._trading_paused = False
         self._seen_fills: dict = {}  # fill_id -> None, en orden de llegada
         self._fills_since: Optional[int] = None
@@ -319,26 +326,46 @@ class Bot:
                 started = self._monotonic()
                 try:
                     self.tick()
-                    self._consecutive_errors = 0
+                    if self._consecutive_errors:
+                        log.info("La API vuelve a responder tras %d vueltas con errores", self._consecutive_errors)
+                    self._consecutive_errors, self._errors_since = 0, None
                 except KalshiAPIError as exc:
-                    self._consecutive_errors += 1
+                    self._count_error(started)
                     log.error("Error de la API de Kalshi: %s", exc)
                     if exc.is_auth_error:
                         self.halt("Kalshi rechazó las credenciales (revisa KALSHI_API_KEY_ID, la clave y el entorno)")
                 except Exception:
-                    self._consecutive_errors += 1
+                    self._count_error(started)
                     log.exception("Error inesperado en la vuelta del bot")
-                if not self._stop and self._consecutive_errors >= self.cfg.max_consecutive_errors:
-                    self.halt(f"{self._consecutive_errors} vueltas seguidas con errores")
+                if not self._stop and self._should_halt_for_errors():
+                    minutes = (self._monotonic() - (self._errors_since or self._monotonic())) / 60
+                    self.halt(f"{self._consecutive_errors} vueltas seguidas con errores durante {minutes:.0f} min")
                 ticks += 1
                 if max_ticks is not None and ticks >= max_ticks:
                     break
-                self._sleep_until(started + self.cfg.poll_interval)
+                self._sleep_until(started + self._next_delay())
         finally:
             try:
                 self.shutdown()
             finally:
                 self.running = False
+
+    def _count_error(self, started: float) -> None:
+        self._consecutive_errors += 1
+        if self._errors_since is None:
+            self._errors_since = started
+
+    def _should_halt_for_errors(self) -> bool:
+        """Freno por errores: muchas vueltas seguidas y durante un rato (no un corte de segundos)."""
+        if self._consecutive_errors < self.cfg.max_consecutive_errors or self._errors_since is None:
+            return False
+        return self._monotonic() - self._errors_since >= self.cfg.min_error_minutes * 60
+
+    def _next_delay(self) -> float:
+        """Con errores seguidos espera cada vez más (hasta 1 minuto) para no saturar la API."""
+        if not self._consecutive_errors:
+            return self.cfg.poll_interval
+        return min(self.cfg.poll_interval * 2 ** min(self._consecutive_errors - 1, 6), 60.0)
 
     def startup(self) -> None:
         mode = "SIMULACIÓN (no se envía ninguna orden)" if self.executor.dry_run else "EN VIVO (envía órdenes)"
@@ -440,6 +467,10 @@ class Bot:
 
         positions_exposure = sum((p.exposure for p in positions.values()), ZERO)
         resting_collateral = {t: sum((o.collateral() for o in os), ZERO) for t, os in by_ticker.items()}
+        # Mercados de cada evento en los que ya hay dinero (posición u órdenes del bot).
+        busy: dict = {}
+        for t in [t for t, p in positions.items() if p.position != 0] + list(by_ticker):
+            busy.setdefault(event_of(t), set()).add(t)
 
         for ticker, market in list(self.markets.items()) + list(self.exit_markets.items()):
             if self._stop:
@@ -488,6 +519,13 @@ class Bot:
                 intents = [i for i in intents if i.ticker == ticker]
             if exit_only:
                 intents = only_reducing(intents, position)
+            event = market.event_ticker or event_of(ticker)
+            per_event = self.risk.limits.max_positions_per_event
+            if per_event and len(busy.get(event, set()) - {ticker}) >= per_event and intents:
+                kept = only_reducing(intents, position)
+                if len(kept) != len(intents):
+                    log.debug("[%s] ya hay dinero en otro mercado de %s: solo se permite salir", ticker, event)
+                intents = kept
 
             intents = self._apply_cooldown(ticker, intents, now)
             committed = positions_exposure + sum((c for t, c in resting_collateral.items() if t != ticker), ZERO)
@@ -497,6 +535,8 @@ class Bot:
 
             self._execute(ticker, own, approved, now)
             resting_collateral[ticker] = sum((i.count * i.cost_per_contract() for i in approved if i.is_resting), ZERO)
+            if approved:
+                busy.setdefault(event, set()).add(ticker)
 
     def _execute(self, ticker: str, own: list, approved: list, now: datetime) -> None:
         resting_wanted = [i for i in approved if i.is_resting]

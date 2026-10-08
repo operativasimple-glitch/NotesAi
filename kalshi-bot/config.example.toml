@@ -9,7 +9,8 @@ cancel_on_exit = true            # al detener el bot, cancelar sus órdenes
 order_ttl_seconds = 600          # las órdenes en reposo caducan solas tras 10 min (por si el bot se cae); 0 = nunca
 taker_cooldown_seconds = 30      # tras una orden IOC en un mercado, esperar antes de repetir
 requote_tolerance = 0.0          # no mover una orden si el precio deseado cambió menos que esto
-max_consecutive_errors = 10      # freno de emergencia tras N vueltas seguidas con errores
+max_consecutive_errors = 10      # freno de emergencia tras N vueltas seguidas con errores...
+min_error_minutes = 3            # ...que además duren al menos estos minutos (un corte breve no lo para)
 paper_cash = 1000                # saldo virtual para simular sin API key
 order_prefix = "kb"              # el bot solo toca órdenes cuyo client_order_id empieza así (usa otro si corres varios bots)
 log_dir = "logs"                 # aquí van bot.log y journal.jsonl
@@ -37,17 +38,17 @@ events = []
 refresh_minutes = 5              # cada cuánto se vuelve a buscar mercados
 
 # Ajustes propios por serie (por el principio del ticker). El clima abre la víspera y cierra a
-# medianoche (hora local). Usa el max_markets_per_event general (1 tramo por ciudad y día):
-# los tramos de un mismo día son casi la misma apuesta. Para permitir más, añade p. ej.
-# max_markets_per_event = 2 en la regla.
+# medianoche (hora local), con varios tramos por día: se miran hasta 4, porque el favorito no
+# suele ser el más negociado. Dónde apostar lo limita [risk] max_positions_per_event.
 [markets.series_rules]
-KXHIGH = { max_hours_to_close = 40 }
+KXHIGH = { max_hours_to_close = 40, max_markets_per_event = 4 }
 
 [risk]
 max_order_contracts = 10         # contratos por orden (con menos, el redondeo de la comisión pesa)
 max_position_per_market = 20     # contratos por mercado (YES o NO)
 max_total_exposure_dollars = 50  # dinero máximo comprometido: posiciones de la cuenta + órdenes del bot
 max_session_loss_dollars = 20    # si pierdes esto desde que arrancó el bot: cancela todo y se detiene (0 = off)
+max_positions_per_event = 1      # mercados con dinero a la vez en un partido o día de clima (0 = sin límite)
 min_price = 0.03                 # no operar por debajo de 3¢...
 max_price = 0.97                 # ...ni por encima de 97¢
 min_minutes_to_close = 15        # no operar en los últimos 15 min antes del cierre (o del final previsto del partido)

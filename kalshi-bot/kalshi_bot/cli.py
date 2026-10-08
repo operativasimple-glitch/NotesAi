@@ -391,6 +391,7 @@ def cmd_web(settings: Settings, args) -> int:
         )
     port = args.port or int(os.environ.get("PORT") or 8000)
     controller = BotController(args.config)
+    controller.logs.preload(settings.log_dir / "bot.log")  # lo de antes del reinicio
     logging.getLogger().addHandler(controller.logs)
     _add_file_logging(settings.log_dir / "bot.log")
     server = make_server(controller, password, args.host, port)

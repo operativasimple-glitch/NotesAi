@@ -47,11 +47,10 @@ log = logging.getLogger(__name__)
 GAME_SERIES = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
 WEATHER_SERIES = ["KXHIGHLAX", "KXHIGHNY", "KXHIGHCHI", "KXHIGHMIA", "KXHIGHAUS", "KXHIGHDEN", "KXHIGHPHIL"]
 DEFAULT_SERIES = GAME_SERIES + WEATHER_SERIES
-# El clima abre la víspera y cierra a medianoche (hora local): necesita una ventana más
-# larga. Los tramos de un mismo día son casi la misma apuesta (si falla uno, suele fallar
-# el de al lado), así que se queda en un tramo por ciudad y día, como el máximo por evento
-# general; con más dinero se puede subir en el panel (Ajustes → Mercados).
-DEFAULT_SERIES_RULES = {"KXHIGH": {"max_hours_to_close": 40}}
+# El clima abre la víspera y cierra a medianoche (hora local), con varios tramos de
+# temperatura por día: necesita una ventana más larga y mirar varios tramos, porque el
+# favorito casi nunca es el más negociado. Dónde apostar lo limita max_positions_per_event.
+DEFAULT_SERIES_RULES = {"KXHIGH": {"max_hours_to_close": 40, "max_markets_per_event": 4}}
 
 CREDENTIALS_FILE = "credentials.json"
 KEY_FILE = "kalshi-key.pem"
@@ -66,6 +65,7 @@ KNOWN_KEYS = {
         "taker_cooldown_seconds",
         "requote_tolerance",
         "max_consecutive_errors",
+        "min_error_minutes",
         "paper_cash",
         "log_dir",
     },
@@ -88,6 +88,7 @@ KNOWN_KEYS = {
         "max_position_per_market",
         "max_total_exposure_dollars",
         "max_session_loss_dollars",
+        "max_positions_per_event",
         "min_price",
         "max_price",
         "min_minutes_to_close",
@@ -200,6 +201,7 @@ class Settings:
                 "max_position_per_market": r.max_position_per_market,
                 "max_total_exposure_dollars": r.max_total_exposure,
                 "max_session_loss_dollars": r.max_session_loss,
+                "max_positions_per_event": r.max_positions_per_event,
                 "min_price": r.min_price,
                 "max_price": r.max_price,
                 "min_minutes_to_close": r.min_minutes_to_close,
@@ -434,6 +436,7 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
         taker_cooldown_seconds=_num(bot.get("taker_cooldown_seconds", 30), "taker_cooldown_seconds"),
         requote_tolerance=_dec(bot.get("requote_tolerance", 0), "requote_tolerance"),
         max_consecutive_errors=_num(bot.get("max_consecutive_errors", 10), "max_consecutive_errors", int),
+        min_error_minutes=_num(bot.get("min_error_minutes", 3), "min_error_minutes"),
         paper_cash=_dec(bot.get("paper_cash", 1000), "paper_cash"),
         tickers=_list(markets.get("tickers"), "tickers"),
         series=_list(markets.get("series", DEFAULT_SERIES), "series"),
@@ -458,6 +461,7 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
         max_position_per_market=_dec(risk.get("max_position_per_market", 20), "max_position_per_market"),
         max_total_exposure=_dec(risk.get("max_total_exposure_dollars", 50), "max_total_exposure_dollars"),
         max_session_loss=_dec(risk.get("max_session_loss_dollars", 20), "max_session_loss_dollars"),
+        max_positions_per_event=_num(risk.get("max_positions_per_event", 1), "max_positions_per_event", int),
         min_price=_dec(risk.get("min_price", "0.03"), "min_price"),
         max_price=_dec(risk.get("max_price", "0.97"), "max_price"),
         min_minutes_to_close=_num(risk.get("min_minutes_to_close", 15), "min_minutes_to_close"),

@@ -267,13 +267,55 @@ def test_auth_error_halts_the_run_loop():
 
 
 def test_repeated_errors_trip_the_breaker():
-    bot, fake, _ = setup(max_consecutive_errors=3)
+    bot, fake, clock = setup(max_consecutive_errors=3)
     bot.tick()
     assert len(fake.orders) == 2
     fake.failures["get_positions"] = KalshiAPIError(500, "", "caído")
+    # Un corte de menos de 3 minutos no frena el bot: espera cada vez más y sigue.
+    bot.run(max_ticks=4)
+    assert bot.halted_reason is None and bot._consecutive_errors == 4 and clock.t < 180
+    bot._stop = False
     bot.run(max_ticks=10)
-    assert "3 vueltas" in bot.halted_reason
+    assert "vueltas seguidas con errores durante" in bot.halted_reason
     assert fake.orders == {}
+
+
+def test_errors_back_off_and_recover():
+    bot, fake, clock = setup()
+    fake.failures["get_positions"] = KalshiAPIError(500, "", "caído")
+    bot.run(max_ticks=3)
+    poll = bot.cfg.poll_interval
+    assert clock.t == poll + 2 * poll  # entre intentos espera el doble cada vez
+    assert bot._next_delay() == 4 * poll
+    bot._consecutive_errors = 50
+    assert bot._next_delay() == 60  # como mucho un minuto
+    fake.failures.clear()
+    bot._stop = False
+    bot.run(max_ticks=1)
+    assert bot._consecutive_errors == 0 and bot.halted_reason is None
+
+
+def test_one_bet_per_event():
+    # Dos tramos del mismo día con favorito: solo se apuesta en uno.
+    strategy = FavoritesStrategy({})
+    a, b = "KXHIGHNY-26OCT08-B66.5", "KXHIGHNY-26OCT08-B68.5"
+    bot, fake, _ = setup(strategy)
+    for t in (a, b):
+        fake.markets[t] = make_market(t, event_ticker="KXHIGHNY-26OCT08")
+        fake.books[t] = make_book(t, bids=[("0.05", 50)], asks=[("0.08", 50)])  # NO a 92-95¢
+    bot.cfg.tickers = [a, b]
+    bot._markets_refreshed_at = None
+    bot.tick()
+    assert {c["intent"].ticker for c in fake.created} == {a}
+    # Con dinero ya en un tramo, el otro no abre nada; pero el que tiene posición puede salir.
+    fake.orders.clear()
+    fake.set_position(a, -5, exposure="4.65")
+    fake.created.clear()
+    bot.tick()
+    assert all(c["intent"].ticker != b for c in fake.created)
+    bot.risk.limits.max_positions_per_event = 0  # sin límite
+    bot.tick()
+    assert any(c["intent"].ticker == b for c in fake.created)
 
 
 def test_run_cancels_bot_orders_on_exit():

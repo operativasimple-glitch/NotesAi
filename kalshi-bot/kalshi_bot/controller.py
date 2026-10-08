@@ -86,6 +86,30 @@ class LogBuffer(logging.Handler):
         with self._lock:
             return [line for line in self._lines if line["id"] > after][-limit:]
 
+    def preload(self, path: Path, lines: int = 150) -> None:
+        """Carga las últimas líneas del archivo de log, para no perder la historia al reiniciar.
+
+        Formato de las líneas: "2026-10-08 13:45:01,123 ERROR   kalshi_bot.engine: mensaje".
+        """
+        try:
+            with open(path, encoding="utf-8", errors="replace") as fh:
+                tail = collections.deque(fh, maxlen=lines)
+        except OSError:
+            return
+        with self._lock:
+            for raw in tail:
+                parts = raw.rstrip("\n").split(None, 3)
+                if len(parts) < 4 or ": " not in parts[3]:
+                    continue
+                when = f"{parts[0]} {parts[1].replace(',', '.')}"
+                try:
+                    ts = datetime.fromisoformat(when).replace(tzinfo=timezone.utc).isoformat()
+                except ValueError:
+                    continue
+                message = parts[3].split(": ", 1)[1]
+                self._lines.append({"id": self._next_id, "ts": ts, "level": parts[2], "message": message})
+                self._next_id += 1
+
 
 class Job:
     """Trabajo en segundo plano con progreso (escáner o investigación)."""

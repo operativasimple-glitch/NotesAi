@@ -112,9 +112,9 @@ histórica), así que más historia estrecharía los márgenes.
 Cómo funcionan los mercados de clima: el del día D abre la víspera (14:00 UTC) y cierra a medianoche
 hora local; se liquida la tarde siguiente con el informe oficial del Servicio Meteorológico. Cada día
 tiene varios tramos de temperatura. Por eso tienen su propia regla en el bot: los sigue hasta 40 horas
-antes del cierre. Compra un solo tramo por ciudad y día, porque los tramos vecinos son casi la misma
-apuesta: si falla uno, suele fallar el de al lado (se puede subir en Ajustes → Mercados → Máximo por
-evento).
+antes del cierre y mira hasta 4 tramos por día (el favorito no suele ser el más negociado), pero apuesta
+en uno solo por ciudad y día: los tramos vecinos son casi la misma apuesta, y si falla uno suele fallar el
+de al lado (Ajustes → Riesgo → Apuestas por evento).
 
 **El margen de error** se calcula por eventos (un partido, o un día de una ciudad) con el método delta.
 Cuando hay menos de 5 eventos perdidos (o ganados), esa aproximación no vale y se amplía con el

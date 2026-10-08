@@ -17,6 +17,9 @@ class RiskLimits:
     max_position_per_market: Decimal = Decimal("20")
     max_total_exposure: Decimal = Decimal("50")  # dólares comprometidos en total
     max_session_loss: Decimal = Decimal("20")  # dólares; 0 = desactivado
+    # Mercados de un mismo evento con dinero a la vez (un partido, un día de clima). Sus
+    # mercados son casi la misma apuesta: si falla uno, suele fallar el de al lado. 0 = sin límite.
+    max_positions_per_event: int = 1
     min_price: Decimal = Decimal("0.02")
     max_price: Decimal = Decimal("0.98")
     min_minutes_to_close: float = 15.0
