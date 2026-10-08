@@ -377,6 +377,10 @@ Lo primero: **Ajustes → Probar conexión**. Dice qué paso falla y qué hacer.
 - **No puedo entrar al panel**: comprueba `DASHBOARD_PASSWORD`. Tras 5 fallos, espera un minuto.
 - **No llegan los avisos**: en el iPhone el panel tiene que estar instalado en la pantalla de inicio. Mira que
   la app tenga permiso en **Ajustes del móvil → Notificaciones** y pulsa **Enviar un aviso de prueba**.
+- **¿Por qué un mercado salió en pérdidas?**: en **Resultados**, toca el mercado. En **Operaciones** sale cada
+  compra y venta en orden, quién la hizo (el bot o tú), por qué y cuánto ganó o perdió cada venta. Ojo: en Kalshi,
+  comprar SÍ teniendo NO vende primero esos NO (y al revés), y un mercado solo cuenta en Resultados cuando ya no
+  queda nada en él: una pérdida de por la mañana puede aparecer cuando, por la tarde, se cobra el resto a 99¢.
 - **«Cancelada» en Actividad**: el bot retiró una de sus órdenes de compra que esperaban en el libro; no cuesta
   nada. Al lado va el motivo: «la mueve a 92¢» (alguien se puso delante o el precio cambió), «ya no cumple las
   condiciones para comprar» (el precio salió de la banda o el spread se abrió), «cierra en 10 min», «ya hay

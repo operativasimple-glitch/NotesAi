@@ -515,6 +515,27 @@ def test_results_api(panel, pem):
     assert body["bot_history"] is True and D(body["totals"]["net"]) == D("0.39")
 
 
+def test_market_trades_api(panel, pem):
+    panel.login()
+    panel.call("POST", "/api/credentials", {"key_id": "abc12345", "private_key": pem, "env": "demo"})
+    now = datetime.now(timezone.utc)
+    panel.fake.fill_history = [
+        Fill(T, ASK, D("0.10"), D("5"), D("0.02"), now - timedelta(hours=3), "ord-bot"),
+        Fill(T, BID, D("0.95"), D("5"), D("0.01"), now - timedelta(hours=1), "ord-mano"),
+    ]
+    journal = panel.controller.settings().log_dir / "journal.jsonl"
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    entry = {"event": "place", "client_order_id": "kb-1", "reason": "favorito NO", "response": {"order_id": "ord-bot"}}
+    journal.write_text(json.dumps(entry) + "\n", encoding="utf-8")
+    status, body, _ = panel.call("GET", f"/api/results/trades?ticker={T}")
+    assert status == 200 and [(tr["bot"], tr["reason"]) for tr in body["trades"]] == [
+        (True, "favorito NO"),
+        (False, ""),
+    ]
+    assert D(body["trades"][1]["legs"][0]["pnl"]) == D("-4.25")
+    assert panel.call("GET", "/api/results/trades?ticker=../x")[0] == 400
+
+
 def test_bot_order_ids_come_from_real_bot_orders_in_the_journal(panel):
     journal = panel.controller.settings().log_dir / "journal.jsonl"
     journal.parent.mkdir(parents=True, exist_ok=True)

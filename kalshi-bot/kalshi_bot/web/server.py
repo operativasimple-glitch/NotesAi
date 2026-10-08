@@ -159,6 +159,7 @@ class PanelApp:
             ("GET", r"/api/positions", lambda q, b: c.positions()),
             ("GET", r"/api/orders", lambda q, b: c.orders()),
             ("GET", r"/api/labels", lambda q, b: c.labels(q.get("tickers") or "")),
+            ("GET", r"/api/results/trades", lambda q, b: c.market_trades(q.get("ticker"))),
             (
                 "GET",
                 r"/api/results",

@@ -175,10 +175,14 @@ class FakeKalshi:
         self._maybe_fail("get_positions")
         return {t: p for t, p in self.positions.items() if p.position != 0}
 
-    def get_fill_history(self, *, min_ts=None, max_pages=50):
+    def get_fill_history(self, *, min_ts=None, ticker=None, max_pages=50):
         assert self.authenticated, "get_fill_history sin credenciales"
         self._maybe_fail("get_fill_history")
-        return [f for f in self.fill_history if min_ts is None or f.time is None or f.time.timestamp() >= min_ts]
+        return [
+            f
+            for f in self.fill_history
+            if (min_ts is None or f.time is None or f.time.timestamp() >= min_ts) and ticker in (None, f.ticker)
+        ]
 
     def get_settlements(self, *, min_ts=None, max_pages=20):
         assert self.authenticated, "get_settlements sin credenciales"

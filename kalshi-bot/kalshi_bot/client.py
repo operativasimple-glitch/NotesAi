@@ -481,9 +481,14 @@ class KalshiClient:
         params = {"min_ts": min_ts, "ticker": ticker, "limit": limit}
         return self.request("GET", "/portfolio/fills", params=params).get("fills") or []
 
-    def get_fill_history(self, *, min_ts: Optional[int] = None, max_pages: int = 50) -> list:
-        """Todos los llenados desde `min_ts` (lo más reciente primero), ya interpretados."""
-        params = {"min_ts": min_ts, "limit": 100}
+    def get_fill_history(
+        self, *, min_ts: Optional[int] = None, ticker: Optional[str] = None, max_pages: int = 50
+    ) -> list:
+        """Todos los llenados desde `min_ts` (lo más reciente primero), ya interpretados.
+
+        Con `ticker`, solo los de ese mercado.
+        """
+        params = {"min_ts": min_ts, "ticker": ticker, "limit": 100}
         raw = self._paginate("/portfolio/fills", "fills", params, auth=True, max_pages=max_pages)
         return [f for f in (Fill.from_api(d) for d in raw) if f is not None]
 

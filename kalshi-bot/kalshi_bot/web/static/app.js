@@ -2645,8 +2645,56 @@ function openDetail(m, from) {
     fact("Acierto necesario", breakeven == null ? "—" : `más del ${fmt.share(breakeven)}`),
   );
   const rules = el("button", { class: "link", type: "button", text: "Ver el mercado y sus reglas", onclick: () => openMarket(m.ticker) });
-  $("#view-detail").replaceChildren(...[back, head, result, risk, facts, rules].filter(Boolean));
+  const trades = el("div", { class: "group" }, el("div", { class: "eyebrow", text: "Operaciones" }), empty("Cargando…"));
+  $("#view-detail").replaceChildren(...[back, head, result, risk, facts, trades, rules].filter(Boolean));
   switchView("detail");
+  loadTrades(m.ticker, trades);
+}
+
+// Cada compra y venta del mercado, en orden: quién la hizo, por qué y cuánto ganó o perdió cada venta.
+async function loadTrades(ticker, box) {
+  let data;
+  try {
+    data = await api(`/api/results/trades?ticker=${encodeURIComponent(ticker)}`);
+  } catch (err) {
+    box.replaceChildren(el("div", { class: "eyebrow", text: "Operaciones" }), el("p", { class: "card-note", text: err.message }));
+    return;
+  }
+  const lines = data.trades.map(tradeLine);
+  box.replaceChildren(
+    el("div", { class: "eyebrow", text: "Operaciones" }),
+    ...(lines.length ? lines : [empty("No hay operaciones de este mercado.")]),
+    el("p", { class: "help", text: "En Kalshi, comprar SÍ teniendo NO vende primero esos NO (y al revés). Lo de cada venta es frente a lo que costó, sin comisiones." }),
+  );
+}
+
+function tradeLine(t) {
+  const words = t.legs.map((leg) => `${leg.action === "sell" ? "vende" : "compra"} ${fmt.qty(leg.count)} ${leg.outcome === "yes" ? "SÍ" : "NO"} a ${fmt.cents(leg.price)}`);
+  const sold = t.legs.find((leg) => leg.action === "sell");
+  const extra = [t.bot ? "bot" : "a mano"];
+  if (t.reason) extra.push(reasonText(t.reason));
+  if (Number(t.fee) > 0) extra.push(`comisión ${fmt.money(t.fee)}`);
+  return el(
+    "div",
+    { class: `log-line ${sold ? "fill" : "order"}` },
+    el("span", { class: "ld", "aria-hidden": "true" }),
+    el(
+      "div",
+      { class: "lm" },
+      el("b", { text: cap(words.join(" y ")) }),
+      sold ? " " : null,
+      sold ? el("b", { class: `pnl ${valueClass(sold.pnl)}`, text: fmt.money(sold.pnl, true) }) : null,
+      el("span", { class: "lx", text: extra.join(" · ") }),
+    ),
+    el("span", { class: "t", title: fmt.time(t.time), text: fmt.clock(t.time) }),
+  );
+}
+
+// Motivos del diario del bot dichos para personas.
+function reasonText(reason) {
+  const m = /^favorito (YES|NO) \(bid(?: NO)? ([\d.]+), ask(?: NO)? ([\d.]+)\)/.exec(reason);
+  if (m) return `el ${m[1] === "YES" ? "SÍ" : "NO"} era el favorito (${fmt.cents(m[2])}–${fmt.cents(m[3])})`;
+  return reason;
 }
 
 function dayTable(days) {

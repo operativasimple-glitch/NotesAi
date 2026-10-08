@@ -102,6 +102,57 @@ class _Ledger:
         return "yes" if self.bought_yes else "no"
 
 
+def market_trades(fills: list, ticker: str, bot_orders: Optional[dict] = None) -> list:
+    """Las operaciones de un mercado en orden, dichas como compras y ventas de SÍ o de NO.
+
+    En Kalshi, comprar SÍ teniendo NO vende primero esos NO (y al revés): cada llenado se
+    parte en lo que vende de lo que había y lo que compra de nuevo. Cada venta lleva lo que
+    ganó o perdió frente al precio medio de compra (sin comisiones). `bot_orders` da el
+    motivo de cada orden del bot (id → motivo); las demás son tuyas.
+    """
+    bot_orders = bot_orders or {}
+    epoch = datetime.min.replace(tzinfo=timezone.utc)
+    position = ZERO  # vista desde YES: + contratos SÍ, - contratos NO
+    avg = ZERO  # precio medio de lo que se tiene ahora
+    trades = []
+    for fill in sorted((f for f in fills if f.ticker == ticker), key=lambda f: f.time or epoch):
+        buys_yes = fill.side == BID
+        held = max(-position, ZERO) if buys_yes else max(position, ZERO)  # lo que este llenado cierra
+        closing = min(fill.count, held)
+        opening = fill.count - closing
+        legs = []
+        if closing > 0:
+            price = ONE - fill.price if buys_yes else fill.price
+            pnl = closing * (price - avg)
+            legs.append(
+                {
+                    "action": "sell",
+                    "outcome": "no" if buys_yes else "yes",
+                    "count": closing,
+                    "price": price,
+                    "pnl": pnl.quantize(MONEY),
+                }
+            )
+        left = abs(position) - closing
+        if left == 0:
+            avg = ZERO
+        if opening > 0:
+            price = fill.price if buys_yes else ONE - fill.price
+            avg = (avg * left + price * opening) / (left + opening)
+            legs.append({"action": "buy", "outcome": "yes" if buys_yes else "no", "count": opening, "price": price})
+        position += fill.count if buys_yes else -fill.count
+        trades.append(
+            {
+                "time": fill.time.isoformat() if fill.time else None,
+                "legs": legs,
+                "fee": fill.fee,
+                "bot": fill.order_id in bot_orders,
+                "reason": bot_orders.get(fill.order_id, ""),
+            }
+        )
+    return trades
+
+
 def close_markets(fills: list, settlements: list, bot_orders: Optional[set] = None) -> tuple:
     """Devuelve (mercados cerrados, tickers con posición aún abierta).
 

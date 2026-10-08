@@ -41,7 +41,7 @@ from .models import ASK, BID, GTC, IOC, ONE, ZERO, OrderIntent, ceil_to_tick, fl
 from .names import cents, market_name, money, quantity
 from .push import PushService
 from .research import run_research, run_sweep
-from .results import build_results
+from .results import build_results, market_trades
 from .risk import RiskManager
 from .scanner import ScanParams, run_scan
 from .strategies import BUILTIN, build_strategy
@@ -717,9 +717,23 @@ class BotController:
 
     def bot_order_ids(self, settings: Optional[Settings] = None) -> set:
         """Ids de las órdenes reales que ha enviado el bot, sacados de su diario."""
+        return set(self.bot_orders(settings))
+
+    def market_trades(self, ticker: Any) -> dict:
+        """Cada compra y venta de un mercado, con quién la hizo y por qué (para el detalle)."""
+        ticker = str(ticker or "")
+        if not TICKER_RE.fullmatch(ticker):
+            raise ControllerError("Mercado no válido")
+        settings = self.settings()
+        client = self.client(settings, require_auth=True)
+        fills = client.get_fill_history(ticker=ticker)
+        return {"ticker": ticker, "trades": market_trades(fills, ticker, self.bot_orders(settings))}
+
+    def bot_orders(self, settings: Optional[Settings] = None) -> dict:
+        """Órdenes reales que ha enviado el bot (id → motivo), sacadas de su diario."""
         settings = settings or self.settings()
         prefix = settings.engine.order_prefix + "-"
-        ids: set = set()
+        ids: dict = {}
         try:
             with open(settings.log_dir / "journal.jsonl", encoding="utf-8") as fh:
                 for line in fh:
@@ -735,7 +749,7 @@ class BotController:
                         continue
                     order_id = (entry.get("response") or {}).get("order_id")
                     if order_id:
-                        ids.add(order_id)
+                        ids[order_id] = str(entry.get("reason") or "")
         except OSError:
             pass
         return ids

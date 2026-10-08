@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal as D
 
 from kalshi_bot.models import ASK, BID, Fill, Settlement
-from kalshi_bot.results import EXPECTED_RETURN, build_results, category_of, close_markets, summarize
+from kalshi_bot.results import EXPECTED_RETURN, build_results, category_of, close_markets, market_trades, summarize
 
 from .fakes import FakeKalshi, make_market
 
@@ -174,3 +174,33 @@ def test_bot_only_results_leave_out_manual_trades():
     report = build_results(fake, now=NOW, days=7, bot_orders={"ord-bot"}, only_bot=True)
     assert report["open"] == {"markets": 1, "exposure": D("4.60")} and report["bot_history"] is True
     assert build_results(fake, now=NOW, days=7)["open"]["markets"] == 2
+
+
+def test_market_trades_tell_the_story_of_a_flip():
+    # El NO era el favorito y se compró a 90¢; la previsión cambió, el SÍ pasó a favorito y el bot
+    # lo compró: en Kalshi eso vende primero los NO (a 5¢, perdiendo) y luego cobró el SÍ a 99¢.
+    t = "KXHIGHLAX-26OCT08-T82"
+    fills = [
+        fill(t, ASK, "0.10", 5, 6),  # compra 5 NO a 90¢
+        fill(t, BID, "0.95", 7, 3),  # vende esos 5 NO a 5¢ y compra 2 SÍ a 95¢
+        fill(t, BID, "0.97", 3, 2),  # compra 3 SÍ más
+        fill(t, ASK, "0.99", 5, 1),  # cobra los 5 SÍ a 99¢
+        fill("KXOTRO-1", BID, "0.50", 1, 1),  # otro mercado: no sale
+    ]
+    for i, f in enumerate(fills):
+        f.order_id = f"o{i}"
+    reasons = {"o0": "favorito NO (bid NO 0.90, ask NO 0.92)", "o3": "cobrar antes: el SÍ ya se paga a 99¢"}
+    trades = market_trades(fills, t, {**reasons, "o1": "", "o2": ""})
+    legs = [
+        [(leg["action"], leg["outcome"], leg["count"], leg["price"], leg.get("pnl")) for leg in tr["legs"]]
+        for tr in trades
+    ]
+    assert legs == [
+        [("buy", "no", D(5), D("0.90"), None)],
+        [("sell", "no", D(5), D("0.05"), D("-4.25")), ("buy", "yes", D(2), D("0.95"), None)],
+        [("buy", "yes", D(3), D("0.97"), None)],
+        [("sell", "yes", D(5), D("0.99"), D("0.14"))],  # frente a lo que costaron de media (96,2¢)
+    ]
+    assert [tr["reason"] for tr in trades][::3] == list(reasons.values())
+    assert all(tr["bot"] for tr in trades)
+    assert market_trades(fills, t, {})[0]["bot"] is False  # sin diario, son operaciones tuyas
