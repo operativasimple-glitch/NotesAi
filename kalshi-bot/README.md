@@ -197,6 +197,10 @@ Resumen de [INVESTIGACION.md](INVESTIGACION.md):
     partido, hasta 15 min antes del final previsto;
   - y en la temperatura máxima diaria de 7 ciudades (mira hasta 4 tramos por día y apuesta en uno). Si tu estado bloquea los
     contratos deportivos, quita los partidos en **Ajustes → Mercados**: el clima sigue funcionando.
+- **No cambia de bando**: si en un mercado ya tiene NO y el favorito pasa a ser el SÍ (o al revés), no compra el
+  nuevo favorito. En Kalshi eso vendería primero lo que tiene, a lo poco que vale ya, y con una previsión que
+  sube y baja puede perder dos veces en el mismo mercado. Se queda con lo que tenía hasta el final, y así
+  tampoco deshace lo que compres tú a mano.
 - **La ventaja es pequeña** (unos céntimos por contrato) y **un fallo a 95¢ borra 19 aciertos**. Por
   eso importan los límites de riesgo y la diversificación.
 - **Antes de arriesgar dinero**, usa **Investigación** en el panel (o `python -m kalshi_bot research`)

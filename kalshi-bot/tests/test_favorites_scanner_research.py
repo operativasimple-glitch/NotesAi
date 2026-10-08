@@ -75,6 +75,18 @@ def test_respects_max_position_on_each_side():
     assert fav().on_market(ctx_for(no_book, position=-20)) == []
 
 
+def test_never_buys_the_other_side_of_what_it_holds():
+    # Por la mañana compró NO; ahora el favorito es el SÍ. Comprar SÍ vendería esos NO a 5¢:
+    # se queda con lo que tiene hasta el final (y nunca deshace así lo que compres tú a mano).
+    yes_favorite = make_book(T, bids=[("0.94", 50)], asks=[("0.96", 50)])
+    assert fav().on_market(ctx_for(yes_favorite, position=-5)) == []
+    no_favorite = make_book(T, bids=[("0.04", 50)], asks=[("0.06", 50)])
+    assert fav().on_market(ctx_for(no_favorite, position=5)) == []
+    # Del mismo lado sí sigue comprando, como siempre.
+    assert fav().on_market(ctx_for(yes_favorite, position=5))[0].side == BID
+    assert fav().on_market(ctx_for(no_favorite, position=-5))[0].side == ASK
+
+
 def held(book, position, exposure, exit_only=False, ticker=None):
     ctx = ctx_for(book, position=position)
     ctx.exposure, ctx.exit_only = D(exposure), exit_only

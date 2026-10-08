@@ -9,6 +9,12 @@ paga la comisión de taker) en el lado favorito, YES o NO, cuando cotiza entre
 Quien le vende el favorito al bot es, en la práctica, alguien que compra el
 longshot: el grupo que más pierde según los datos.
 
+Si el favorito cambia de lado en un mercado donde ya tiene posición, no compra el
+nuevo: en Kalshi, comprar SÍ teniendo NO vende primero esos NO (y al revés), así
+que sería vender lo que tiene a lo poco que vale ya. Se queda con lo que tenía hasta
+el final, que con datos reales sale mejor que vender cuando un favorito cae, y nunca
+deshace así lo que compres tú a mano.
+
 Salidas antes de tiempo (opcionales, 0 = desactivadas): si el favorito se hunde
 hasta `stop_loss`, o si ya se puede vender a `take_profit` o más, el bot vende
 toda la posición al mejor precio que haya en ese momento. Solo se aplican a
@@ -164,6 +170,8 @@ class FavoritesStrategy(Strategy):
 
         if self.min_price <= bid <= self.max_price:
             # YES es el favorito: comprar YES sin cruzar el spread.
+            if ctx.position < 0:
+                return []  # tiene NO: comprar YES los vendería a lo poco que valen; se espera al final
             room = self.max_position - ctx.position
             if room <= 0:
                 return []
@@ -179,6 +187,8 @@ class FavoritesStrategy(Strategy):
         no_bid = ONE - ask
         if self.min_price <= no_bid <= self.max_price:
             # NO es el favorito: comprar NO = vender YES en el lado ask.
+            if ctx.position > 0:
+                return []  # tiene YES: comprar NO los vendería a lo poco que valen; se espera al final
             room = self.max_position + ctx.position
             if room <= 0:
                 return []
