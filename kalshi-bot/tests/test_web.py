@@ -231,6 +231,17 @@ def test_live_needs_credentials_and_real_money_confirmation(panel, pem):
     assert panel.call("DELETE", "/api/credentials")[1]["configured"] is False
 
 
+def test_cancelling_a_bot_order_from_the_panel_stops_it_buying_there(panel, pem):
+    panel.login()
+    panel.call("POST", "/api/credentials", {"key_id": "abc12345", "private_key": pem, "env": "prod"})
+    assert panel.call("POST", "/api/bot/start", {"mode": "live", "confirm": "REAL"})[0] == 200
+    assert panel.wait(lambda: len(panel.fake.orders) >= 1)
+    orders = panel.call("GET", "/api/orders")[1]
+    bot_order = next(o for o in orders if o["source"] == "bot")
+    status, body, _ = panel.call("POST", "/api/orders/cancel", {"order_id": bot_order["order_id"], "ticker": T})
+    assert status == 200 and body["stops_buying"] and T in panel.controller._bot.no_buy
+
+
 def test_manual_order_portfolio_and_cancel(panel, pem):
     panel.login()
     panel.call("POST", "/api/credentials", {"key_id": "abc12345", "private_key": pem, "env": "demo"})
@@ -247,7 +258,8 @@ def test_manual_order_portfolio_and_cancel(panel, pem):
     assert positions[0]["side"] == "no" and D(positions[0]["contracts"]) == 10
 
     order_id = orders[0]["order_id"]
-    assert panel.call("POST", "/api/orders/cancel", {"order_id": order_id, "ticker": T})[0] == 200
+    status, body, _ = panel.call("POST", "/api/orders/cancel", {"order_id": order_id, "ticker": T})
+    assert status == 200 and body["stops_buying"] is False  # una orden tuya: el bot no tiene nada que cambiar
     assert order_id in panel.fake.cancelled
     assert panel.call("POST", "/api/orders", {"ticker": T, "outcome": "yes", "price": "1.5", "count": 1})[0] == 400
 

@@ -833,16 +833,17 @@ function describeLog(message) {
       extra: [tickerNode(d[6]), ` · ${leaving ? m[4] : status}`],
     };
   }
-  m = /^\[SIMULACIÓN\] cancelar (\S+) (bid|ask) ([\d.]+) @ ([\d.]+)/.exec(message);
-  if (m) return { kind: "cancel", main: [el("b", { text: "Simulación" }), ` · retiraría ${orderWords(m[2], m[3], m[4])}`], extra: [tickerNode(m[1])] };
+  m = /^\[SIMULACIÓN\] cancelar (\S+) (bid|ask) ([\d.]+) @ ([\d.]+)(?: \| (.+))?$/.exec(message);
+  if (m) return { kind: "cancel", main: [el("b", { text: "Simulación" }), ` · retiraría ${orderWords(m[2], m[3], m[4])}`], extra: [tickerNode(m[1]), m[5] ? ` · ${m[5]}` : ""] };
   m = /^\[SIMULACIÓN\] (.+?) \| ?(.*)$/.exec(message);
   d = m && DESCRIBE.exec(m[1]);
   if (d) {
     const book = d[1] === "COMPRA" ? "bid" : "ask";
     return { kind: "order sim", main: [el("b", { text: "Simulación" }), ` · compraría ${orderWords(book, d[2], d[3])}`], extra: [tickerNode(d[6])] };
   }
-  m = /^CANCELADA (\S+) (bid|ask) ([\d.]+) @ ([\d.]+)/.exec(message);
-  if (m) return { kind: "cancel", main: [el("b", { text: "Cancelada" }), ` · ${orderWords(m[2], m[3], m[4])}`], extra: [tickerNode(m[1])] };
+  // El bot retira una de sus órdenes de compra que esperaban (no cuesta nada); el motivo va tras «|».
+  m = /^CANCELADA (\S+) (bid|ask) ([\d.]+) @ ([\d.]+)(?: \| (.+))?$/.exec(message);
+  if (m) return { kind: "cancel", main: [el("b", { text: "Cancelada" }), ` · ${orderWords(m[2], m[3], m[4])}`], extra: [tickerNode(m[1]), ` · ${m[5] || "el bot la quitó del libro"}`] };
   m = /^LLENADO( \(fuera del bot\)| \(salida\))? (COMPRA|VENDE) YES ([\d.]+) @ ([\d.]+) (\S+) \((maker|taker), comisión \$([\d.]+|\?)\)/.exec(message);
   if (m) {
     const fee = m[7] === "?" ? "" : ` · comisión ${fmt.money(m[7])}`;
@@ -972,8 +973,8 @@ function orderItem(o) {
     onclick: async () => {
       cancel.disabled = true;
       try {
-        await api("/api/orders/cancel", { method: "POST", body: { order_id: o.order_id, ticker: o.ticker } });
-        toast("Orden cancelada");
+        const res = await api("/api/orders/cancel", { method: "POST", body: { order_id: o.order_id, ticker: o.ticker } });
+        toast(res && res.stops_buying ? "Orden cancelada: el bot ya no compra en este mercado hasta que lo reinicies" : "Orden cancelada");
         refreshPortfolio();
       } catch (err) {
         toast(err.message, "error");

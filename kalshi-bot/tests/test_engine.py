@@ -1,5 +1,6 @@
 import json
 import logging
+from dataclasses import replace
 from datetime import timedelta
 from decimal import Decimal as D
 
@@ -81,6 +82,10 @@ def test_reconcile():
     assert [(i.side, i.price) for i in place] == [(ASK, D("0.48"))]
     keep, cancel, place = reconcile(existing, desired, tolerance=D("0.01"))
     assert len(keep) == 2 and cancel == [] and place == []
+    # Si alguien le vendió solo una fracción (faltan menos de 1), la orden se queda en la cola.
+    nibbled = [Order("3", "kb-3", T, BID, D("0.43"), D("1.85"))]
+    assert reconcile(nibbled, desired[:1])[0] == nibbled
+    assert reconcile([Order("4", "kb-4", T, BID, D("0.43"), D("0.85"))], desired[:1])[2] == desired[:1]
 
 
 def test_dry_run_never_calls_the_exchange_and_only_logs_changes():
@@ -467,3 +472,63 @@ def test_take_profit_sells_fractional_leftovers():
     bot.tick()
     sells = [c["intent"] for c in fake.created if c["intent"].ticker == crumb.ticker]
     assert [(i.side, i.price, i.count, i.time_in_force) for i in sells] == [(BID, D("0.01"), D("0.85"), IOC)]
+
+
+def cancel_reasons(caplog):
+    return [r.getMessage().split(" | ", 1)[1] for r in caplog.records if r.getMessage().startswith("CANCELADA")]
+
+
+def test_each_cancel_says_why(caplog):
+    # El panel enseña el motivo junto a «Cancelada»: retirar una orden no cuesta nada, pero hay que entenderlo.
+    bot, fake, clock = setup(FavoritesStrategy({}))
+    fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.93", 50)])
+    with caplog.at_level(logging.INFO, logger="kalshi_bot.engine"):
+        bot.tick()  # compra SÍ a 91¢
+        fake.books[T] = make_book(T, bids=[("0.91", 50)], asks=[("0.93", 50)])  # alguien se pone delante
+        clock.sleep(10)
+        bot.tick()
+        fake.books[T] = make_book(T, bids=[("0.60", 50)], asks=[("0.70", 50)])  # ya no es un favorito
+        clock.sleep(10)
+        bot.tick()
+        fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.93", 50)])
+        clock.sleep(10)
+        bot.tick()
+        clock.sleep(6 * 3600 - 10 * 60 - clock.t)  # faltan 10 min para el cierre
+        bot.tick()
+    assert cancel_reasons(caplog) == [
+        "la mueve a 92¢",
+        "ya no cumple las condiciones para comprar",
+        "cierra en 10 min (mínimo 15)",
+    ]
+
+
+def test_a_fractional_fill_keeps_the_order_in_the_queue():
+    bot, fake, clock = setup(FavoritesStrategy({}))
+    fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.93", 50)])
+    bot.tick()
+    ((order_id, order),) = fake.orders.items()
+    # Alguien le vende 0,15 de los 5: rehacerla la mandaría al final de la cola, así que se deja.
+    fake.orders[order_id] = replace(order, remaining=D("4.85"))
+    fake.set_position(T, "0.15", exposure="0.14")
+    clock.sleep(10)
+    bot.tick()
+    assert list(fake.orders) == [order_id] and fake.cancelled == []
+    # Con contratos enteros llenados se rehace al tamaño de siempre, como antes.
+    fake.orders[order_id] = replace(order, remaining=D("2"))
+    fake.set_position(T, "3", exposure="2.73")
+    clock.sleep(10)
+    bot.tick()
+    assert fake.cancelled == [order_id] and [o.remaining for o in fake.orders.values()] == [D("5")]
+
+
+def test_after_you_cancel_a_bot_order_it_stops_buying_there():
+    bot, fake, clock = setup(FavoritesStrategy({}))
+    fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.93", 50)])
+    bot.tick()
+    (order_id,) = fake.orders
+    fake.cancel_order(order_id)  # el botón «Cancelar» del panel
+    bot.stop_buying(T)
+    created = len(fake.created)
+    clock.sleep(10)
+    bot.tick()
+    assert len(fake.created) == created and fake.orders == {}  # no la vuelve a poner

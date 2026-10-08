@@ -413,7 +413,7 @@ class BotController:
         def cancel_open() -> None:
             for order in executor.resting_orders():
                 try:
-                    executor.cancel(order)
+                    executor.cancel(order, "freno de emergencia")
                 except KalshiAPIError as exc:  # p. ej. el bot ya la canceló al pararse
                     log.info("No se pudo cancelar %s: %s", order.order_id, exc)
                 cancelled.add(order.order_id)
@@ -766,8 +766,14 @@ class BotController:
     def cancel_order(self, order_id: str, ticker: Optional[str]) -> dict:
         client = self.client(require_auth=True)
         client.cancel_order(order_id, ticker)
-        log.info("Orden %s cancelada desde el panel", order_id)
-        return {"cancelled": order_id}
+        log.info("[%s] orden cancelada desde el panel", ticker or order_id)
+        # Si era del bot y está en marcha, la volvería a poner en la siguiente vuelta: ahí deja de comprar.
+        with self._lock:
+            bot = self._bot if self.is_running() else None
+        from_bot = bot is not None and bool(ticker) and order_id in getattr(bot.executor, "order_ids", ())
+        if from_bot:
+            bot.stop_buying(ticker)
+        return {"cancelled": order_id, "stops_buying": from_bot}
 
     def place_manual_order(self, ticker: str, outcome: str, price: Any, count: Any, immediate: bool = False) -> dict:
         """Orden manual: comprar SÍ o NO a un precio límite (precio del lado elegido)."""

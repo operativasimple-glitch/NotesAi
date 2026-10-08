@@ -377,5 +377,12 @@ Lo primero: **Ajustes → Probar conexión**. Dice qué paso falla y qué hacer.
 - **No puedo entrar al panel**: comprueba `DASHBOARD_PASSWORD`. Tras 5 fallos, espera un minuto.
 - **No llegan los avisos**: en el iPhone el panel tiene que estar instalado en la pantalla de inicio. Mira que
   la app tenga permiso en **Ajustes del móvil → Notificaciones** y pulsa **Enviar un aviso de prueba**.
+- **«Cancelada» en Actividad**: el bot retiró una de sus órdenes de compra que esperaban en el libro; no cuesta
+  nada. Al lado va el motivo: «la mueve a 92¢» (alguien se puso delante o el precio cambió), «ya no cumple las
+  condiciones para comprar» (el precio salió de la banda o el spread se abrió), «cierra en 10 min», «ya hay
+  dinero en otro mercado del mismo evento», «para vender la posición» o «el bot se detiene». Si alguien le vende
+  solo una fracción de contrato, la orden se queda en la cola en vez de rehacerse.
+- **Cancelar una orden del bot desde el panel**: el bot deja de comprar en ese mercado hasta que lo reinicies (si
+  no, la volvería a poner en la siguiente vuelta). Sigue pudiendo vender lo que tenga ahí.
 - **La barra de abajo se queda a media pantalla (iPhone)**: es un fallo de iOS 26 con apps instaladas al
   cerrar el teclado. El panel lo corrige solo; si aun así pasa, desliza hacia arriba o cierra y abre la app.

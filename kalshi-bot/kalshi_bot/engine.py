@@ -32,7 +32,8 @@ from typing import Callable, Optional
 
 from .client import KalshiAPIError, KalshiClient, new_client_order_id
 from .discovery import MarketFilter, discover
-from .models import ASK, BID, ZERO, Balance, Order, OrderIntent, fmt_count, fmt_price, to_decimal
+from .models import ASK, BID, ONE, ZERO, Balance, Order, OrderIntent, fmt_count, fmt_price, to_decimal
+from .names import cents, quantity
 from .risk import RiskManager
 from .strategies.base import MarketContext, Strategy
 
@@ -123,7 +124,7 @@ class Executor(ABC):
     def place(self, intent: OrderIntent) -> dict: ...
 
     @abstractmethod
-    def cancel(self, order: Order) -> None: ...
+    def cancel(self, order: Order, reason: str = "") -> None: ...
 
 
 class LiveExecutor(Executor):
@@ -168,12 +169,17 @@ class LiveExecutor(Executor):
         self.journal.record("place", client_order_id=client_order_id, response=result, **intent_fields(intent))
         return result
 
-    def cancel(self, order: Order) -> None:
+    def cancel(self, order: Order, reason: str = "") -> None:
         self.client.cancel_order(order.order_id, order.ticker)
         log.info(
-            "CANCELADA %s %s %s @ %s", order.ticker, order.side, fmt_count(order.remaining), fmt_price(order.price)
+            "CANCELADA %s %s %s @ %s%s",
+            order.ticker,
+            order.side,
+            fmt_count(order.remaining),
+            fmt_price(order.price),
+            f" | {reason}" if reason else "",
         )
-        self.journal.record("cancel", order_id=order.order_id, ticker=order.ticker)
+        self.journal.record("cancel", order_id=order.order_id, ticker=order.ticker, reason=reason)
 
 
 class DryRunExecutor(Executor):
@@ -201,16 +207,17 @@ class DryRunExecutor(Executor):
         self.journal.record("place", dry_run=True, client_order_id=client_order_id, **intent_fields(intent))
         return {"order_id": order_id, "client_order_id": client_order_id, "simulated": True}
 
-    def cancel(self, order: Order) -> None:
+    def cancel(self, order: Order, reason: str = "") -> None:
         self._orders.pop(order.order_id, None)
         log.info(
-            "[SIMULACIÓN] cancelar %s %s %s @ %s",
+            "[SIMULACIÓN] cancelar %s %s %s @ %s%s",
             order.ticker,
             order.side,
             fmt_count(order.remaining),
             fmt_price(order.price),
+            f" | {reason}" if reason else "",
         )
-        self.journal.record("cancel", dry_run=True, order_id=order.order_id, ticker=order.ticker)
+        self.journal.record("cancel", dry_run=True, order_id=order.order_id, ticker=order.ticker, reason=reason)
 
 
 def reconcile(existing: list, desired: list, tolerance: Decimal = ZERO) -> tuple:
@@ -218,7 +225,8 @@ def reconcile(existing: list, desired: list, tolerance: Decimal = ZERO) -> tuple
 
     Devuelve (mantener, cancelar, crear). Una orden existente sirve si tiene
     el mismo lado, un precio dentro de `tolerance` y la misma cantidad
-    pendiente.
+    pendiente, o casi: si alguien le vendió solo una fracción de contrato
+    (le falta menos de uno), se deja en la cola en vez de rehacerla al final.
     """
     unmatched = list(existing)
     keep: list = []
@@ -228,7 +236,9 @@ def reconcile(existing: list, desired: list, tolerance: Decimal = ZERO) -> tuple
             (
                 o
                 for o in unmatched
-                if o.side == intent.side and abs(o.price - intent.price) <= tolerance and o.remaining == intent.count
+                if o.side == intent.side
+                and abs(o.price - intent.price) <= tolerance
+                and intent.count - 1 < o.remaining <= intent.count
             ),
             None,
         )
@@ -257,6 +267,19 @@ def only_reducing(intents: list, position: Decimal) -> list:
         left -= count
         kept.append(replace(intent, count=count))
     return kept
+
+
+def cancel_reason(order: Order, to_place: list, takers: list, why: str = "") -> str:
+    """Por qué se retira una orden en reposo; el panel lo enseña en Actividad junto a «Cancelada»."""
+    if any(i.closes for i in takers):
+        return "para vender la posición"
+    new = next((i for i in to_place if i.side == order.side), None)
+    if new is not None:
+        if new.price != order.price:
+            # El panel habla en el precio del lado que se compra: NO = 1 - precio YES.
+            return f"la mueve a {cents(new.price if new.side == BID else ONE - new.price)}"
+        return f"la rehace con {quantity(new.count)} contratos"
+    return why or "ya no cumple las condiciones para comprar"
 
 
 # --------------------------------------------------------------------------
@@ -292,6 +315,7 @@ class Bot:
 
         self.markets: dict = {}
         self.exit_markets: dict = {}  # con posición, fuera de la lista: solo para salir
+        self.no_buy: set = set()  # mercados donde cancelaste a mano una orden del bot: ahí ya no compra
         self.halted_reason: Optional[str] = None
         self._stop = False
         self._signals = 0
@@ -403,7 +427,7 @@ class Bot:
 
     def shutdown(self) -> None:
         if self.cfg.cancel_on_exit:
-            self.cancel_all_bot_orders()
+            self.cancel_all_bot_orders("el bot se detiene")
         log.info("Bot detenido%s", f": {self.halted_reason}" if self.halted_reason else "")
 
     def halt(self, reason: str) -> None:
@@ -412,16 +436,22 @@ class Bot:
         self.halted_reason = reason
         self.journal.record("halt", reason=reason)
         self._stop = True
-        self.cancel_all_bot_orders()
+        self.cancel_all_bot_orders("freno de emergencia")
 
-    def cancel_all_bot_orders(self) -> None:
+    def stop_buying(self, ticker: str) -> None:
+        """Cancelaste a mano una orden del bot: no vuelve a comprar en ese mercado (sí puede vender)."""
+        if ticker not in self.no_buy:
+            self.no_buy.add(ticker)
+            log.info("[%s] cancelaste una orden del bot: ya no compra en este mercado hasta que lo reinicies", ticker)
+
+    def cancel_all_bot_orders(self, reason: str = "") -> None:
         try:
             orders = self.executor.resting_orders()
         except Exception as exc:  # noqa: BLE001 - en apagado, mejor seguir
             log.error("No se pudieron leer las órdenes del bot para cancelarlas: %s", exc)
             return
         for order in orders:
-            self._safe_cancel(order)
+            self._safe_cancel(order, reason)
 
     # --- una vuelta ----------------------------------------------------------
 
@@ -470,9 +500,8 @@ class Bot:
             by_ticker.setdefault(order.ticker, []).append(order)
 
         for ticker in [t for t in by_ticker if t not in self.markets and t not in self.exit_markets]:
-            log.info("Cancelando órdenes del bot en %s (ya no está en la lista de mercados)", ticker)
             for order in by_ticker.pop(ticker):
-                self._safe_cancel(order)
+                self._safe_cancel(order, "ya no está en la lista de mercados")
 
         positions_exposure = sum((p.exposure for p in positions.values()), ZERO)
         resting_collateral = {t: sum((o.collateral() for o in os), ZERO) for t, os in by_ticker.items()}
@@ -488,17 +517,19 @@ class Bot:
             position = positions[ticker].position if ticker in positions else ZERO
 
             block = self.risk.market_block_reason(market, now)
-            exit_only = ticker not in self.markets
-            if block or exit_only:
+            if not block and ticker not in self.markets:
+                block = "ya no está en la lista de mercados"
+            elif not block and ticker in self.no_buy:
+                block = "cancelaste a mano una orden del bot aquí"
+            exit_only = bool(block)
+            if exit_only:
                 # Aunque ya no se pueda comprar, se deja salir de una posición mientras el mercado opere.
                 if not (market.is_active and position != 0 and self.strategy.wants_exits_in(ticker)):
+                    for order in own:
+                        self._safe_cancel(order, block)
                     if own:
-                        log.info("[%s] %s: cancelando %d órdenes", ticker, block or "solo salidas", len(own))
-                        for order in own:
-                            self._safe_cancel(order)
                         resting_collateral[ticker] = ZERO
                     continue
-                exit_only = True
 
             try:
                 book = self.client.get_orderbook(ticker)
@@ -530,10 +561,12 @@ class Bot:
                 intents = only_reducing(intents, position)
             event = market.event_ticker or event_of(ticker)
             per_event = self.risk.limits.max_positions_per_event
+            why = block or ""
             if per_event and len(busy.get(event, set()) - {ticker}) >= per_event and intents:
                 kept = only_reducing(intents, position)
                 if len(kept) != len(intents):
                     log.debug("[%s] ya hay dinero en otro mercado de %s: solo se permite salir", ticker, event)
+                    why = "ya hay dinero en otro mercado del mismo evento"
                 intents = kept
 
             intents = self._apply_cooldown(ticker, intents, now)
@@ -545,21 +578,22 @@ class Bot:
                     log.info("[%s] riesgo: %s", ticker, note)
             if notes:
                 self._risk_notes[ticker] = tuple(notes)
+                why = why or "la frenan los límites de riesgo"
             else:
                 self._risk_notes.pop(ticker, None)
 
-            self._execute(ticker, own, approved, now)
+            self._execute(ticker, own, approved, now, why)
             resting_collateral[ticker] = sum((i.count * i.cost_per_contract() for i in approved if i.is_resting), ZERO)
             if approved:
                 busy.setdefault(event, set()).add(ticker)
 
-    def _execute(self, ticker: str, own: list, approved: list, now: datetime) -> None:
+    def _execute(self, ticker: str, own: list, approved: list, now: datetime, why: str = "") -> None:
         resting_wanted = [i for i in approved if i.is_resting]
         takers = [i for i in approved if not i.is_resting]
         _, to_cancel, to_place = reconcile(own, resting_wanted, self.cfg.requote_tolerance)
         # Primero cancelar (libera saldo y evita cruzarte contigo mismo).
         for order in to_cancel:
-            self._safe_cancel(order)
+            self._safe_cancel(order, cancel_reason(order, to_place, takers, why))
         for intent in to_place + takers:
             self._safe_place(intent)
         if takers and self.cfg.taker_cooldown_seconds > 0:
@@ -583,9 +617,9 @@ class Bot:
             if exc.is_auth_error:
                 raise
 
-    def _safe_cancel(self, order: Order) -> None:
+    def _safe_cancel(self, order: Order, reason: str = "") -> None:
         try:
-            self.executor.cancel(order)
+            self.executor.cancel(order, reason)
         except KalshiAPIError as exc:
             # Lo normal es que ya se haya llenado o cancelado.
             log.info("No se pudo cancelar %s (%s): %s", order.order_id, order.ticker, exc)
