@@ -518,6 +518,7 @@ class OrderIntent:
     time_in_force: str = GTC
     post_only: bool = False
     reason: str = ""
+    closes: bool = False  # la estrategia sale de una posición (cortar pérdidas o cobrar antes)
 
     @property
     def is_resting(self) -> bool:

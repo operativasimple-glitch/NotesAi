@@ -147,7 +147,13 @@ Diferencia de rendimiento frente a esperar a la liquidación (margen de error de
 - **Cobrar a 99¢** cuesta un 1 % en los partidos, porque casi todos los ganadores pasan por 99¢ antes
   de liquidarse y se renuncia al último centavo. En el clima apenas cambia nada.
 - Por eso el bot espera al final por defecto y las dos opciones vienen a 0 (desactivadas) en
-  **Ajustes → Estrategia**.
+  **Ajustes → Avanzado → Estrategia**.
+- **La excepción es el clima con poco saldo.** Los mercados de temperatura cierran a medianoche (hora del
+  Este) y se pagan a la mañana siguiente: una apuesta ya decidida por la tarde deja el dinero parado
+  muchas horas y, con 25 $, eso basta para que el bot no pueda abrir más. Como ahí cobrar a 99¢ apenas
+  cambia el resultado (−0,16 %, dentro del margen de error), el panel tiene el interruptor **Cobrar al
+  máximo en el clima**, que vende a 99¢ solo en las series KXHIGH. La tabla no cuenta lo que se gana
+  volviendo a usar ese dinero antes.
 
 En esta prueba se descargaron también las operaciones de los últimos minutos, para poder simular las
 ventas. Como de cada mercado se bajan como mucho 3.000 operaciones, la muestra de compras no es la misma

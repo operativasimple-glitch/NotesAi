@@ -176,6 +176,15 @@ def test_fill_and_settlement_notifications(tmp_path, monkeypatch):
     message = last_message()
     assert message["title"] == "Nueva operación del bot" and message["tag"] == "fill-o1"
     assert message["body"] == "Compra 10 NO a 94¢ · Máxima en Nueva York · 66° a 67°"
+    # Al cobrar antes, el bot vende: sus 10 NO a 99¢ (comprando SÍ a 1¢) o un SÍ a 99¢.
+    sold_no = {"book_side": "bid", "yes_price_dollars": "0.0100", "count_fp": "10.00", "order_id": "o2"}
+    controller._notify_fill({**fill, **sold_no, "closing": True})
+    message = last_message()
+    assert message["title"] == "Venta del bot" and message["tag"] == "fill-o2"
+    assert message["body"] == "Vende 10 NO a 99¢ · Máxima en Nueva York · 66° a 67°"
+    sold_yes = {"yes_price_dollars": "0.9900", "count_fp": "5.00", "order_id": "o3"}
+    controller._notify_fill({**fill, **sold_yes, "closing": True})
+    assert last_message()["body"] == "Vende 5 SÍ a 99¢ · Máxima en Nueva York · 66° a 67°"
 
     # Sin API key no se miran las liquidaciones.
     assert controller.check_settlements() == 0
@@ -184,12 +193,12 @@ def test_fill_and_settlement_notifications(tmp_path, monkeypatch):
     assert controller.check_settlements() == 0 and len(outbox.sent) == sent  # la primera vez solo apunta la hora
     state = json.loads((tmp_path / "push_state.json").read_text())
 
-    def settled(ticker, result, cost, revenue_cents, hours_ago=0.1):
+    def settled(ticker, result, cost, revenue_cents, hours_ago=0.1, count="5.00"):
         return Settlement.from_api(
             {
                 "ticker": ticker,
                 "market_result": result,
-                "no_count_fp": "5.00",
+                "no_count_fp": count,
                 "no_total_cost_dollars": cost,
                 "revenue": revenue_cents,
                 "fee_cost": "0.02",
@@ -197,7 +206,11 @@ def test_fill_and_settlement_notifications(tmp_path, monkeypatch):
             }
         )
 
-    fake.settlements = [settled(t, "no", "4.70", 500), settled("KXHIGHCHI-OLD", "no", "4.65", 500, hours_ago=30)]
+    fake.settlements = [
+        settled(t, "no", "4.70", 500),
+        settled("KXHIGHCHI-OLD", "no", "4.65", 500, hours_ago=30),
+        settled("KXHIGHMIA-SOLD", "no", "0", 0, count="0.00"),  # vendido antes: ya se avisó la venta
+    ]
     state["since"] -= 600
     (tmp_path / "push_state.json").write_text(json.dumps(state))
     assert controller.check_settlements() == 1  # la de hace 30 h es de antes de activar los avisos

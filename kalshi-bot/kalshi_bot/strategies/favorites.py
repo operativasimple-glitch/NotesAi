@@ -16,6 +16,11 @@ posiciones compradas como favorito (a `min_price` o más, con 5¢ de margen), pa
 no tocar lo que compres tú a mano a otros precios. El motor vigila esas
 posiciones hasta que el mercado cierra, también en los últimos minutos.
 
+El cobro anticipado se limita a las series de `take_profit_series` (por defecto
+KXHIGH, la temperatura máxima): con datos reales, cobrar a 99¢ en el clima cuesta
+casi nada y libera el dinero horas antes (el pago llega a la mañana siguiente),
+mientras que en los partidos salió claramente peor que esperar.
+
 Parámetros ([strategy.params] en config.toml):
   min_price      precio mínimo del favorito (0.88 = 88¢)
   max_price      precio máximo a pagar (0.97); por encima la ganancia es mínima
@@ -26,18 +31,32 @@ Parámetros ([strategy.params] en config.toml):
   improve        true: mejora en un tick la mejor oferta; false: se pone a la cola
   stop_loss      vende si el favorito cae a este precio (0 = nunca)
   take_profit    vende si ya se puede cobrar este precio (0 = espera al final)
+  take_profit_series  series donde se aplica take_profit ("KXHIGH"; vacío = todas)
 """
 
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 from typing import Optional
 
 from ..models import IOC, ONE, ZERO
+from ..names import cents
 from .base import MarketContext, Strategy
 
 # Margen para reconocer una posición del bot por su precio medio de compra.
 ENTRY_TOLERANCE = Decimal("0.05")
+
+
+def series_prefixes(value) -> tuple:
+    """Lista de series escrita a mano o como lista: "KXHIGH, kxhighny" → ("KXHIGH", "KXHIGHNY").
+
+    Vacía → () = todas las series.
+    """
+    if value is not None and not isinstance(value, (str, list, tuple)):
+        raise ValueError('favorites: take_profit_series debe ser una lista de series, p. ej. ["KXHIGH"]')
+    items = value.split(",") if isinstance(value, str) else list(value or [])
+    return tuple(dict.fromkeys(str(item).strip().upper() for item in items if str(item).strip()))
 
 
 class FavoritesStrategy(Strategy):
@@ -65,6 +84,13 @@ class FavoritesStrategy(Strategy):
             "type": "price",
             "help": "Vende un favorito casi ganado para liberar el dinero. 0 = esperar al final.",
         },
+        {
+            "key": "take_profit_series",
+            "label": "Cobrar antes solo en estas series",
+            "default": "KXHIGH",
+            "type": "list",
+            "help": "KXHIGH = temperatura máxima (en partidos, cobrar antes salió peor). Vacío = en todas.",
+        },
     ]
 
     def __init__(self, params: Optional[dict] = None):
@@ -77,6 +103,7 @@ class FavoritesStrategy(Strategy):
         self.improve = str(self.params.get("improve", True)).lower() not in ("false", "0", "no")
         self.stop_loss = self.dec("stop_loss", "0")
         self.take_profit = self.dec("take_profit", "0")
+        self.take_profit_series = series_prefixes(self.params.get("take_profit_series", "KXHIGH"))
         if not (Decimal("0.5") < self.min_price <= self.max_price < ONE):
             raise ValueError("favorites: se requiere 0.5 < min_price <= max_price < 1")
         if self.stop_loss and not (ZERO < self.stop_loss < self.min_price):
@@ -87,10 +114,19 @@ class FavoritesStrategy(Strategy):
     def wants_exits(self) -> bool:
         return bool(self.stop_loss or self.take_profit)
 
+    def takes_profit_in(self, ticker: str) -> bool:
+        """True si en este mercado se cobra antes de tiempo (según `take_profit_series`)."""
+        if not self.take_profit:
+            return False
+        return not self.take_profit_series or ticker.upper().startswith(self.take_profit_series)
+
+    def wants_exits_in(self, ticker: str) -> bool:
+        return bool(self.stop_loss) or self.takes_profit_in(ticker)
+
     def exit_intent(self, ctx: MarketContext):
         """Orden para salir ya de la posición, o None si toca esperar."""
         held = abs(ctx.position)
-        if not self.wants_exits() or held == 0:
+        if not self.wants_exits_in(ctx.ticker) or held == 0:
             return None
         if ctx.exposure / held < self.min_price - ENTRY_TOLERANCE:
             return None  # no la compró esta estrategia (p. ej. un longshot comprado a mano)
@@ -107,12 +143,13 @@ class FavoritesStrategy(Strategy):
             value, sell = ONE - price, ctx.buy_yes
         side = "SÍ" if ctx.position > 0 else "NO"
         if self.stop_loss and value <= self.stop_loss:
-            reason = f"cortar pérdidas: el {side} cae a {value} (corte {self.stop_loss})"
-        elif self.take_profit and value >= self.take_profit:
-            reason = f"cobrar antes: el {side} ya se paga a {value}"
+            reason = f"cortar pérdidas: el {side} cae a {cents(value)} (corte {cents(self.stop_loss)})"
+        elif self.takes_profit_in(ctx.ticker) and value >= self.take_profit:
+            reason = f"cobrar antes: el {side} ya se paga a {cents(value)}"
         else:
             return None
-        return sell(price, held, tif=IOC, reason=reason)
+        intent = sell(price, held, tif=IOC, reason=reason)
+        return replace(intent, closes=True) if intent else None
 
     def on_market(self, ctx: MarketContext) -> list:
         leave = self.exit_intent(ctx)

@@ -363,6 +363,7 @@ async function init() {
   $("#size-more").addEventListener("click", () => changeSize(1));
   $("#row-max-price").addEventListener("click", editMaxPrice);
   $("#row-max-loss").addEventListener("click", editMaxLoss);
+  $("#cashout-toggle").addEventListener("click", toggleCashout);
   for (const toggle of $$("#push-fills, #push-settlements")) toggle.addEventListener("click", () => togglePush(toggle.dataset.kind));
   $("#push-test").addEventListener("click", testPush);
   $("#btn-kill").addEventListener("click", killBot);
@@ -799,12 +800,16 @@ function describeLog(message) {
   }
   m = /^CANCELADA (\S+) (bid|ask) ([\d.]+) @ ([\d.]+)/.exec(message);
   if (m) return { kind: "cancel", main: [el("b", { text: "Cancelada" }), ` · ${orderWords(m[2], m[3], m[4])}`], extra: [tickerNode(m[1])] };
-  m = /^LLENADO( \(fuera del bot\))? (COMPRA|VENDE) YES ([\d.]+) @ ([\d.]+) (\S+) \((maker|taker), comisión \$([\d.]+|\?)\)/.exec(message);
+  m = /^LLENADO( \(fuera del bot\)| \(salida\))? (COMPRA|VENDE) YES ([\d.]+) @ ([\d.]+) (\S+) \((maker|taker), comisión \$([\d.]+|\?)\)/.exec(message);
   if (m) {
     const fee = m[7] === "?" ? "" : ` · comisión ${fmt.money(m[7])}`;
+    const book = m[2] === "COMPRA" ? "bid" : "ask";
+    // Una salida vende lo que había: vender SÍ cierra un SÍ y comprar SÍ cierra un NO.
+    const leaving = m[1] === " (salida)";
+    const label = leaving ? "Vendido" : m[1] ? "Comprado a mano" : "Comprado";
     return {
       kind: "fill",
-      main: [el("b", { text: m[1] ? "Comprado a mano" : "Comprado" }), ` · ${orderWords(m[2] === "COMPRA" ? "bid" : "ask", m[3], m[4])}`],
+      main: [el("b", { text: label }), ` · ${orderWords(leaving ? (book === "bid" ? "ask" : "bid") : book, m[3], m[4])}`],
       extra: [tickerNode(m[5]), fee],
     };
   }
@@ -1475,7 +1480,8 @@ function fieldControl(def, value) {
     read = () => input.value;
   } else if (def.type === "list") {
     input = el("input", { autocapitalize: "characters", autocomplete: "off", spellcheck: "false" });
-    input.value = Array.isArray(value) ? value.join(", ") : value || "";
+    const v = value ?? def.default;
+    input.value = Array.isArray(v) ? v.join(", ") : v || "";
     read = () => input.value.split(",").map((v) => v.trim()).filter(Boolean);
   } else if (def.type === "price") {
     input = el("input", { type: "number", inputmode: "decimal", step: "0.1" });
@@ -1614,6 +1620,59 @@ function renderQuickSettings() {
   $("#limits-help").textContent =
     `Hasta ${maxOrder || "—"} contratos por operación (el tope está en Avanzado → Riesgo). ` +
     "La pérdida máxima cuenta desde que arranca el bot e incluye lo que compres a mano: al llegar, cancela sus órdenes y se para.";
+  renderCashout();
+}
+
+// "Cobrar antes": vender a 99¢ lo que ya está casi ganado. Por defecto solo en el clima (KXHIGH),
+// donde el pago llega a la mañana siguiente; en los partidos esperar al final salió mejor.
+const CASHOUT_PRICE = "0.9900";
+const CASHOUT_SERIES = ["KXHIGH"];
+
+function cashoutState() {
+  const saved = state.settings.values.strategy.params || {};
+  const def = strategyDef();
+  const param = def && def.params.find((x) => x.key === "take_profit_series");
+  // Como en el bot: una lista guardada vacía significa "en todas"; sin guardar, la de por defecto.
+  const raw = "take_profit_series" in saved ? saved.take_profit_series : param ? param.default : "";
+  const series = (Array.isArray(raw) ? raw : String(raw ?? "").split(","))
+    .map((x) => String(x).trim().toUpperCase())
+    .filter(Boolean);
+  return { price: Number(paramValue("take_profit")) || 0, series };
+}
+
+function renderCashout() {
+  const def = strategyDef();
+  const available = Boolean(def && def.params.some((x) => x.key === "take_profit"));
+  $("#group-cashout").hidden = !available;
+  if (!available) return;
+  const { price, series } = cashoutState();
+  const toggle = $("#cashout-toggle");
+  toggle.setAttribute("aria-checked", String(price > 0));
+  toggle.disabled = Boolean(state.cashoutBusy);
+  const standard = price === Number(CASHOUT_PRICE) && series.join() === CASHOUT_SERIES.join();
+  const where = !series.length ? "en todos los mercados" : series.join() === "KXHIGH" ? "en el clima" : `en ${series.join(", ")}`;
+  $("#cashout-help").textContent = !price
+    ? "Apagado: el bot espera al pago final, que en el clima llega a la mañana siguiente. Actívalo para vender a 99¢ las apuestas de temperatura ya casi ganadas y recuperar el dinero horas antes (cuesta 1¢ por contrato)."
+    : standard
+      ? "Vende las apuestas de temperatura en cuanto se pueden cobrar a 99¢, sin esperar al pago de la mañana siguiente: el dinero vuelve horas antes para otras apuestas. Cuesta 1¢ por contrato; los partidos siguen hasta el final."
+      : `Vende lo ya casi ganado en cuanto se puede cobrar a ${fmt.cents(price)} ${where}, sin esperar al pago final (ajustado en Avanzado → Estrategia).`;
+}
+
+async function toggleCashout() {
+  if (!state.settings || state.cashoutBusy) return;
+  const on = cashoutState().price > 0;
+  if (!on && Number(paramValue("max_price")) >= Number(CASHOUT_PRICE)) {
+    toast("Para cobrar a 99¢, el precio máximo de entrada tiene que ser menor de 99¢", "error");
+    return;
+  }
+  state.cashoutBusy = true;
+  renderCashout();
+  try {
+    await saveStrategyParams(on ? { take_profit: "0" } : { take_profit: CASHOUT_PRICE, take_profit_series: CASHOUT_SERIES });
+  } finally {
+    state.cashoutBusy = false;
+    renderCashout();
+  }
 }
 
 let sizeTimer = null;
@@ -1634,10 +1693,12 @@ function changeSize(delta) {
   }, 700);
 }
 
-function saveStrategyParam(key, value) {
+function saveStrategyParams(changes) {
   const strategy = state.settings.values.strategy;
-  return saveQuick({ strategy: { name: strategy.name, params: { ...(strategy.params || {}), [key]: value } } });
+  return saveQuick({ strategy: { name: strategy.name, params: { ...(strategy.params || {}), ...changes } } });
 }
+
+const saveStrategyParam = (key, value) => saveStrategyParams({ [key]: value });
 
 async function saveQuick(values) {
   try {
@@ -1710,6 +1771,11 @@ function editMaxPrice() {
         toast("Pon un precio entre 51 y 99¢", "error");
         return false;
       }
+      const cashout = cashoutState().price;
+      if (cashout && cents / 100 >= cashout) {
+        toast(`Con «Cobrar al máximo» activado, el precio máximo tiene que ser menor de ${fmt.cents(cashout)}`, "error");
+        return false;
+      }
       return saveStrategyParam("max_price", (cents / 100).toFixed(4));
     },
   });
@@ -1775,7 +1841,7 @@ function renderPush() {
       ? "Has bloqueado los avisos de esta app. Actívalos en los ajustes del móvil (Notificaciones) y vuelve aquí."
       : on
         ? "Llegan a este móvil aunque tengas el panel cerrado."
-        : "Te avisa en este móvil cuando el bot compra y cuando se cierra un mercado, con lo ganado o perdido.";
+        : "Te avisa en este móvil cuando el bot compra o vende y cuando se cierra un mercado, con lo ganado o perdido.";
 }
 
 async function togglePush(kind) {

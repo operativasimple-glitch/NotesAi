@@ -141,6 +141,7 @@ class LiveExecutor(Executor):
         self.ttl_seconds = ttl_seconds
         self.clock = clock
         self.order_ids: set = set()  # órdenes creadas o vistas por el bot
+        self.closing_ids: set = set()  # las que salen de una posición (cortar pérdidas o cobrar antes)
 
     def resting_orders(self) -> list:
         mine = [o for o in self.client.get_orders(status="resting") if o.client_order_id.startswith(self.prefix + "-")]
@@ -154,6 +155,8 @@ class LiveExecutor(Executor):
         result = resp.get("order", resp)
         if result.get("order_id"):
             self.order_ids.add(result["order_id"])
+            if intent.closes:
+                self.closing_ids.add(result["order_id"])
         log.info(
             "ORDEN %s | id=%s llenado=%s pendiente=%s | %s",
             intent.describe(),
@@ -488,7 +491,7 @@ class Bot:
             exit_only = ticker not in self.markets
             if block or exit_only:
                 # Aunque ya no se pueda comprar, se deja salir de una posición mientras el mercado opere.
-                if not (market.is_active and position != 0 and self.strategy.wants_exits()):
+                if not (market.is_active and position != 0 and self.strategy.wants_exits_in(ticker)):
                     if own:
                         log.info("[%s] %s: cancelando %d órdenes", ticker, block or "solo salidas", len(own))
                         for order in own:
@@ -624,7 +627,7 @@ class Bot:
         if not self.strategy.wants_exits():
             self.exit_markets = {}
             return
-        wanted = [t for t in positions if t not in self.markets and self.follows(t)]
+        wanted = [t for t in positions if t not in self.markets and self.follows(t) and self.strategy.wants_exits_in(t)]
         current = {} if refreshed else {t: m for t, m in self.exit_markets.items() if t in wanted}
         missing = [t for t in wanted if t not in current]
         try:
@@ -664,19 +667,21 @@ class Bot:
             log.debug("No se pudieron leer los llenados: %s", exc)
             return
         bot_orders = getattr(self.executor, "order_ids", set())
+        closing_orders = getattr(self.executor, "closing_ids", set())
         for fill in reversed(fills):
             fill_id = fill.get("fill_id") or fill.get("trade_id")
             if not fill_id or fill_id in self._seen_fills:
                 continue
             self._seen_fills[fill_id] = None
             from_bot = fill.get("order_id") in bot_orders
+            closing = from_bot and fill.get("order_id") in closing_orders
             side = fill.get("book_side") or ""
             verb = "COMPRA YES" if side == "bid" else "VENDE YES" if side == "ask" else side
             count = to_decimal(fill.get("count_fp"), to_decimal(fill.get("count"), ZERO))
             log.log(
                 logging.INFO if from_bot else logging.DEBUG,
                 "LLENADO%s %s %s @ %s %s (%s, comisión $%s)",
-                "" if from_bot else " (fuera del bot)",
+                " (salida)" if closing else "" if from_bot else " (fuera del bot)",
                 verb,
                 fmt_count(count),
                 fill.get("yes_price_dollars", "?"),
@@ -687,7 +692,7 @@ class Bot:
             self.journal.record("fill", from_bot=from_bot, fill=fill)
             if from_bot and self.on_fill is not None:
                 try:
-                    self.on_fill(fill)
+                    self.on_fill(dict(fill, closing=True) if closing else fill)
                 except Exception:  # noqa: BLE001 - un aviso nunca para al bot
                     log.debug("Falló el aviso del llenado", exc_info=True)
             ts = fill.get("ts")

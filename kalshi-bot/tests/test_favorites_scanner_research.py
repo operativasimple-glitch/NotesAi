@@ -23,6 +23,8 @@ from .fakes import NOW, FakeKalshi, make_book, make_market, market_payload
 from .test_strategies import ctx_for, summary
 
 T = "KXTEST-26OCT08-B50"
+WEATHER = "KXHIGHNY-26OCT08-B66.5"
+GAME = "KXMLBGAME-26OCT081905LADSD-LAD"
 
 
 # --- estrategia favoritos ---------------------------------------------------------
@@ -73,9 +75,11 @@ def test_respects_max_position_on_each_side():
     assert fav().on_market(ctx_for(no_book, position=-20)) == []
 
 
-def held(book, position, exposure, exit_only=False):
+def held(book, position, exposure, exit_only=False, ticker=None):
     ctx = ctx_for(book, position=position)
     ctx.exposure, ctx.exit_only = D(exposure), exit_only
+    if ticker:
+        ctx.market = make_market(ticker)
     return ctx
 
 
@@ -100,7 +104,7 @@ def test_stop_loss_sells_a_collapsing_favorite():
 
 
 def test_take_profit_cashes_out_a_nearly_won_favorite():
-    s = fav(take_profit="0.99")
+    s = fav(take_profit="0.99", take_profit_series="")  # sin lista: en todas las series
     assert summary(s.on_market(held(make_book(T, bids=[("0.99", 50)]), 5, "4.60"))) == [
         (ASK, D("0.99"), D("5"), IOC, False)
     ]
@@ -117,6 +121,29 @@ def test_take_profit_cashes_out_a_nearly_won_favorite():
     with pytest.raises(ValueError):
         fav(take_profit="0.95")  # el cobro, por encima del precio máximo a pagar
     assert fav(stop_loss="0.5", take_profit="0.99").wants_exits()
+
+
+def test_take_profit_only_cashes_out_weather_by_default():
+    s = fav(take_profit="0.99")
+    won = make_book(T, bids=[("0.99", 50)])
+    # Clima: el pago llega a la mañana siguiente; a 99¢ se cobra ya y el dinero vuelve antes.
+    sell = s.on_market(held(won, 5, "4.60", ticker=WEATHER))
+    assert summary(sell) == [(ASK, D("0.99"), D("5"), IOC, False)] and sell[0].ticker == WEATHER
+    assert s.wants_exits_in(WEATHER) and s.takes_profit_in(WEATHER.lower())
+    # Partidos: con datos reales cobrar antes salió peor, así que se espera al final.
+    assert s.on_market(held(won, 5, "4.60", exit_only=True, ticker=GAME)) == []
+    assert s.wants_exits() and not s.wants_exits_in(GAME)
+    # El corte de pérdidas sigue en todos los mercados.
+    assert fav(take_profit="0.99", stop_loss="0.50").wants_exits_in(GAME)
+    # Lista propia, escrita a mano o como lista; vacía = todas.
+    mine = fav(take_profit="0.99", take_profit_series=" kxhigh, KXMLBGAME,, ")
+    assert mine.take_profit_series == ("KXHIGH", "KXMLBGAME") and mine.wants_exits_in(GAME)
+    assert fav(take_profit="0.99", take_profit_series=["KXMLBGAME"]).take_profit_series == ("KXMLBGAME",)
+    assert fav(take_profit="0.99", take_profit_series=[]).wants_exits_in(GAME)
+    with pytest.raises(ValueError):
+        fav(take_profit="0.99", take_profit_series=5)
+    # Sin cobro anticipado no se vigila nada, tampoco el clima.
+    assert not fav().wants_exits_in(WEATHER)
 
 
 def test_invalid_band():

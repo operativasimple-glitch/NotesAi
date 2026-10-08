@@ -411,3 +411,47 @@ def test_positions_outside_the_list_are_watched_only_to_exit():
     clock.sleep(1)
     bot.tick()
     assert bot.exit_markets == {}
+
+
+def test_weather_take_profit_watches_only_weather_positions(caplog):
+    strategy = FavoritesStrategy({"take_profit": "0.99"})  # cobrar a 99¢, por defecto solo en el clima
+    bot, fake, clock = setup(strategy, series=["KXHIGHNY", "KXMLBGAME"], max_hours_to_close=6)
+    tomorrow = (NOW + timedelta(hours=30)).isoformat()
+    weather = make_market("KXHIGHNY-26OCT09-B66.5", close_time=tomorrow)
+    game = make_market("KXMLBGAME-26OCT09LADSD-LAD", close_time=tomorrow)
+    for market in (weather, game):
+        fake.markets[market.ticker] = market
+        fake.books[market.ticker] = make_book(market.ticker, bids=[("0.99", 50)])
+        fake.set_position(market.ticker, 5, exposure="4.60")
+    bot.tick()
+    # Solo se vigila (y se lee el libro de) lo que se puede cobrar: el partido espera al final.
+    assert list(bot.exit_markets) == [weather.ticker]
+    sells = [c["intent"] for c in fake.created if c["intent"].ticker in (weather.ticker, game.ticker)]
+    assert [(i.ticker, i.side, i.price, i.count, i.time_in_force) for i in sells] == [
+        (weather.ticker, ASK, D("0.99"), D("5"), IOC)
+    ]
+    assert sells[0].closes and sells[0].reason == "cobrar antes: el SÍ ya se paga a 99¢"
+    # Su llenado es una venta, no una compra de NO a 1¢: así lo cuentan la actividad y el aviso.
+    (exit_id,) = bot.executor.closing_ids
+    told = []
+    bot.on_fill = told.append
+    fake.fills = [
+        {
+            "ticker": weather.ticker,
+            "book_side": "ask",
+            "count_fp": "5.00",
+            "yes_price_dollars": "0.9900",
+            "is_taker": True,
+            "fee_cost": "0.0100",
+            "ts": 1_800_000_000,
+            "fill_id": "f-exit",
+            "order_id": exit_id,
+        }
+    ]
+    with caplog.at_level(logging.INFO, logger="kalshi_bot.engine"):
+        for _ in range(2):
+            clock.sleep(10)
+            bot.tick()
+    assert [(f["fill_id"], f["closing"]) for f in told] == [("f-exit", True)]
+    lines = [r.getMessage() for r in caplog.records if r.getMessage().startswith("LLENADO")]
+    assert lines == [f"LLENADO (salida) VENDE YES 5.00 @ 0.9900 {weather.ticker} (taker, comisión $0.0100)"]

@@ -129,6 +129,10 @@ class Strategy(ABC):
         """
         return False
 
+    def wants_exits_in(self, ticker: str) -> bool:
+        """Como `wants_exits`, pero para un mercado: así el motor no lee libros donde no se va a salir."""
+        return self.wants_exits()
+
     def suggested_tickers(self) -> list:
         """Mercados que la estrategia quiere operar además de los de la configuración."""
         return []

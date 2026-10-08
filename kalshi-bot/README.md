@@ -144,8 +144,10 @@ Abre `http://IP-DEL-ORDENADOR:8000` desde el móvil (en la misma wifi). Para ent
   - el interruptor del bot y el modo: **Real** (envía órdenes) o **Simulación** (no envía nada);
   - contratos por operación, precio máximo de entrada y pérdida máxima. Con el bot en marcha, los cambios
     se aplican al reiniciarlo: el panel ofrece **Reiniciar ahora**;
-  - **Avisos** al móvil: cuando el bot compra y cuando se cierra un mercado, con lo ganado o perdido (ver
-    abajo);
+  - **Cobrar al máximo en el clima**: vende a 99¢ las apuestas de temperatura ya casi ganadas para
+    recuperar el dinero horas antes (ver [Cobrar antes de tiempo](#cobrar-antes-de-tiempo));
+  - **Avisos** al móvil: cuando el bot compra o vende y cuando se cierra un mercado, con lo ganado o
+    perdido (ver abajo);
   - **Freno de emergencia**: cancela primero y luego para;
   - **Avanzado**: cuenta y entorno (Demo o Real), **Probar conexión** y una orden de prueba de 1¢; estrategia y
     sus parámetros, valores justos, qué mercados seguir y límites de riesgo.
@@ -202,19 +204,32 @@ Resumen de [INVESTIGACION.md](INVESTIGACION.md):
 
 ### Cobrar antes de tiempo
 
-En **Ajustes → Estrategia** hay dos opciones; a 0 están desactivadas:
+**Cobrar al máximo en el clima** (interruptor en **Ajustes**): vende las apuestas de temperatura máxima
+(series `KXHIGH`) en cuanto se pueden cobrar a 99¢, el máximo antes del pago. Esos mercados cierran a
+medianoche (hora del Este) y Kalshi paga a la mañana siguiente, así que una apuesta decidida por la tarde
+deja el dinero parado muchas horas; vendiendo a 99¢ vuelve enseguida y el bot puede usarlo en otras
+apuestas. Cuesta 1¢ por contrato y una comisión de taker de 1–2¢ por venta. Con datos reales, en el clima
+apenas cambia el resultado (−0,16 %); en los partidos costaría un 1 %, así que ahí espera al final. Con el
+bot en marcha, pulsa **Reiniciar ahora** después de activarlo.
+
+Las opciones completas están en **Ajustes → Avanzado → Estrategia** (las dos primeras, a 0, están
+desactivadas):
 
 - **Vender si el favorito cae a**: si el partido o el día se tuercen y el favorito baja hasta ese
   precio, el bot vende enseguida lo que tenga en ese mercado.
 - **Cobrar antes si ya se puede vender a** (98¢ o 99¢): vende un favorito casi ganado para tener el
   dinero antes de la liquidación.
+- **Cobrar antes solo en estas series**: dónde se aplica lo anterior; `KXHIGH` por defecto, vacío = en
+  todas.
 
 Solo tocan posiciones compradas como favorito (a 83¢ o más) en las series que sigue el bot, no lo que
 compres tú a mano a otros precios. Con alguna activada, el bot vigila esas posiciones hasta que el
-mercado cierra, también en los últimos 15 minutos.
+mercado cierra, también en los últimos 15 minutos. Las ventas salen en Actividad como **Vendido** y, con
+los avisos activados, llega «Venta del bot».
 
-Con datos reales, **ninguna mejora el resultado y cortar pérdidas lo empeora**: la mayoría de los
-favoritos que caen se recuperan. Por eso vienen desactivadas. Detalle en
+Con datos reales, **ninguna mejora el resultado por contrato y cortar pérdidas lo empeora**: la mayoría
+de los favoritos que caen se recuperan. Por eso vienen desactivadas; cobrar a 99¢ en el clima es la
+excepción que merece la pena cuando el saldo es poco y lo que falta es dinero libre. Detalle en
 [INVESTIGACION.md](INVESTIGACION.md#cobrar-antes-de-tiempo).
 
 Las otras estrategias:

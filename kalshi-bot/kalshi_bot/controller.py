@@ -447,8 +447,10 @@ class BotController:
             ticker = str(fill.get("ticker") or "")
             price = to_decimal(fill.get("yes_price_dollars"))
             count = to_decimal(fill.get("count_fp"), to_decimal(fill.get("count"), ZERO))
-            yes = fill.get("book_side") == "bid"
-            paid = price if yes or price is None else ONE - price
+            closing = bool(fill.get("closing"))  # el bot vende lo que tenía (cortar pérdidas o cobrar antes)
+            # Comprar YES abre un SÍ o, al salir, cierra un NO; vender YES, al revés.
+            yes = (fill.get("book_side") == "bid") != closing
+            at = price if yes or price is None else ONE - price  # precio del lado que se compra o vende
             # Una orden puede llenarse en varias veces: el aviso lleva lo llenado hasta ahora
             # y la misma etiqueta, así el móvil cambia el aviso anterior en vez de sumar otro.
             key = str(fill.get("order_id") or fill.get("fill_id") or ticker)
@@ -459,8 +461,9 @@ class BotController:
                     self._fill_totals = dict(list(self._fill_totals.items())[-200:])
             info = self.labels([ticker]).get(ticker, {})
             name = market_name(ticker, info.get("title", ""), info.get("subtitle", ""))
-            body = f"Compra {quantity(total)} {'SÍ' if yes else 'NO'} a {cents(paid)} · {name}"
-            self.push.notify("fills", "Nueva operación del bot", body, tag=f"fill-{key}")
+            verb, title = ("Vende", "Venta del bot") if closing else ("Compra", "Nueva operación del bot")
+            body = f"{verb} {quantity(total)} {'SÍ' if yes else 'NO'} a {cents(at)} · {name}"
+            self.push.notify("fills", title, body, tag=f"fill-{key}")
         except Exception as exc:  # noqa: BLE001 - un aviso que falla no importa al bot
             log.warning("No se pudo avisar del llenado: %s", exc)
 
@@ -484,10 +487,14 @@ class BotController:
         seen = [t for t in state.get("seen") or [] if isinstance(t, str)]
         client = self.client(settings, require_auth=True)
         # Una hora de solape por si una liquidación llega con retraso; las repetidas se saltan.
+        # Si el bot lo vendió todo antes (cobrar antes), no queda nada que liquidar: ya avisó la venta.
         fresh = [
             s
             for s in client.get_settlements(min_ts=since - 3600, max_pages=3)
-            if s.ticker not in seen and s.time is not None and s.time.timestamp() >= since - 3600
+            if s.ticker not in seen
+            and s.time is not None
+            and s.time.timestamp() >= since - 3600
+            and (s.yes_count > 0 or s.no_count > 0)
         ]
         names = self.labels([s.ticker for s in fresh], client) if fresh else {}
         for s in sorted(fresh, key=lambda s: s.time):
