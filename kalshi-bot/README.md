@@ -110,12 +110,14 @@ Abre `http://IP-DEL-ORDENADOR:8000` desde el móvil (en la misma wifi). Para ent
 ### Qué hay en el panel
 
 - **Inicio:**
+  - arriba, en grande, el **saldo ahora** (disponible y en juego) y lo **ganado hoy** por el bot (con lo de
+    ayer). El saldo se actualiza en cada vuelta del bot; tócalo para refrescarlo todo;
   - el estado del bot y lo **ganado por el bot** (últimos 90 días), con su curva mercado a mercado;
   - **Acierto**: cuántos mercados acierta frente al umbral que necesita (su precio medio de entrada, con
     comisiones). Si la barra queda por debajo de la marca, está perdiendo;
   - **Muestra**: mercados cerrados de 100; antes de 100 no se sabe si es ventaja o racha;
   - el último mercado cerrado (tócalo para ver el detalle);
-  - tu dinero en Kalshi (total, disponible y en juego) y lo que lleva la sesión;
+  - lo que lleva la sesión, junto al límite del freno;
   - las apuestas abiertas con nombre legible ("Chicago · 78° a 79°") y la probabilidad que les da ahora el
     mercado; las órdenes esperando (con cancelar);
   - la actividad en directo, en frases: qué compró, qué canceló y qué frenó el riesgo.

@@ -51,20 +51,27 @@
           <span id="env-badge-home" class="env-pill">—</span>
         </div>
         <div id="state-banner" class="banner" hidden></div>
+
+        <!-- Lo primero que se ve: el saldo de ahora y lo ganado hoy -->
+        <div class="tiles two">
+          <button class="tile big" id="tile-balance" type="button" aria-label="Saldo ahora; toca para actualizar">
+            <span>Saldo ahora</span>
+            <b id="stat-equity">—</b>
+            <small><i id="stat-cash">—</i><i id="stat-portfolio">—</i></small>
+          </button>
+          <div class="tile big">
+            <span>Ganado hoy</span>
+            <b id="stat-today">—</b>
+            <small><i id="stat-today-sub">—</i><i id="stat-yesterday"></i></small>
+          </div>
+        </div>
+        <p id="balance-note" class="muted small" hidden></p>
+
         <div id="home-results" class="view-part"></div>
 
         <section class="block">
-          <div class="block-head"><span class="eyebrow">Tu dinero en Kalshi</span><button class="link" id="btn-refresh-portfolio" type="button">Actualizar</button></div>
-          <div class="tiles">
-            <div class="tile"><span>Total</span><b id="stat-equity">—</b></div>
-            <div class="tile"><span>Disponible</span><b id="stat-cash">—</b></div>
-            <div class="tile"><span>En juego</span><b id="stat-portfolio">—</b></div>
-          </div>
-          <p id="session-line" class="help" hidden></p>
-          <p id="balance-note" class="muted small" hidden></p>
-        </section>
-        <section class="block">
           <div class="block-head"><span class="eyebrow">Apuestas abiertas</span><span class="eyebrow">Probabilidad</span></div>
+          <p id="session-line" class="help" hidden></p>
           <div id="positions" class="rows"></div>
         </section>
         <section class="block">

@@ -249,6 +249,16 @@ main { max-width: 560px; margin: 0 auto; padding: 0 20px 16px; }
 .tile { background: var(--card); border-radius: 18px; padding: 14px 12px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .tile span { font: 11px var(--mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
 .tile b { font-size: 22px; line-height: 28px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-variant-numeric: tabular-nums; }
+/* Inicio: saldo de ahora y ganado hoy, grandes y arriba */
+.tiles.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tile.big { padding: 16px 14px 14px; gap: 4px; border: 0; color: var(--text); font: inherit; text-align: left; }
+button.tile.big { cursor: pointer; }
+button.tile.big:active { background: var(--card-2); }
+.tile.big b { font-size: clamp(28px, 9vw, 38px); line-height: 1.1; letter-spacing: -0.025em; }
+.tile.big b.zero { color: var(--text); }
+.tile.big small { display: flex; flex-direction: column; font: 12px/1.45 var(--mono); color: var(--muted); }
+.tile.big small i { font-style: normal; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tile.big small i:empty { display: none; }
 
 /* Filas tipo "operación": chip SÍ/NO, nombre y cifra */
 .rows { display: flex; flex-direction: column; }

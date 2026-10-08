@@ -367,7 +367,10 @@ async function init() {
   $("#push-test").addEventListener("click", testPush);
   $("#btn-kill").addEventListener("click", killBot);
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
-  $("#btn-refresh-portfolio").addEventListener("click", refreshPortfolio);
+  $("#tile-balance").addEventListener("click", () => {
+    loadHome();
+    toast("Actualizando…");
+  });
   for (const button of $$("#results-period button")) {
     button.addEventListener("click", () => loadResults(Number(button.dataset.days)));
   }
@@ -391,8 +394,11 @@ async function init() {
   });
   $("#btn-fv-save").addEventListener("click", saveFairValues);
   for (const button of $$("#env-seg button")) button.addEventListener("click", () => setEnv(button.dataset.env));
+  // Al volver a la app, todo al día (saldo, apuestas y lo ganado hoy).
   document.addEventListener("visibilitychange", () => {
-    if (!document.hidden && !$("#app").hidden) refreshStatus().catch(() => {});
+    if (document.hidden || $("#app").hidden) return;
+    if (state.view === "home") loadHome();
+    else refreshStatus().catch(() => {});
   });
 
   try {
@@ -515,8 +521,8 @@ function renderStatus(s) {
 
   const balance = s.balance;
   $("#stat-equity").textContent = balance ? fmt.money(balance.equity) : "—";
-  $("#stat-cash").textContent = balance ? fmt.money(balance.cash) : "—";
-  $("#stat-portfolio").textContent = balance ? fmt.money(balance.portfolio_value) : "—";
+  $("#stat-cash").textContent = balance ? `${fmt.money(balance.cash)} disponible` : "sin saldo";
+  $("#stat-portfolio").textContent = balance ? `${fmt.money(balance.portfolio_value)} en juego` : "";
   // Lo que lleva la sesión, junto al freno que la vigila.
   const session = $("#session-line");
   session.hidden = s.session_pnl == null;
@@ -2213,11 +2219,29 @@ function moreResults(r) {
 
 /* ===================== inicio: lo que lleva ganado el bot ===================== */
 
+function renderToday(r) {
+  const today = $("#stat-today");
+  if (!r) {
+    today.textContent = "—";
+    today.className = "";
+    $("#stat-today-sub").textContent = "sin API key";
+    $("#stat-yesterday").textContent = "";
+    return;
+  }
+  const t = r.today_totals;
+  today.textContent = fmt.money(t.net, true);
+  today.className = valueClass(t.net);
+  $("#stat-today-sub").textContent = t.markets ? `${plural(t.markets, "cierre", "cierres")} del bot` : "ningún cierre aún";
+  const y = r.yesterday_totals;
+  $("#stat-yesterday").textContent = y && y.markets ? `ayer ${fmt.money(y.net, true)}` : "";
+}
+
 async function loadHomeResults() {
   const box = $("#home-results");
   const s = state.status;
   if (s && !s.credentials.configured) {
     box.replaceChildren(resultsNoKey());
+    renderToday(null);
     state.curve = null;
     return;
   }
@@ -2232,6 +2256,7 @@ async function loadHomeResults() {
 }
 
 function renderHomeResults(r) {
+  renderToday(r);
   const t = r.totals;
   for (const m of r.recent) rememberLabel(m.ticker, m.title === m.ticker ? "" : m.title, m.subtitle);
   let sub = `${plural(t.markets, "mercado cerrado", "mercados cerrados")} · ${fmt.money(t.cost)} arriesgados`;
