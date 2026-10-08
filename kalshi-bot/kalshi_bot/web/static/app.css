@@ -328,6 +328,7 @@ button.trade:active { background: rgba(255, 255, 255, 0.025); }
 .log-line .t { font: 11px var(--mono); color: var(--muted); padding-top: 3px; }
 .log-line .lx { display: block; color: var(--muted); font-size: 13px; margin-top: 1px; }
 .log-line .tk { color: var(--text); font-weight: 600; }
+.log-line .times { display: inline-block; margin-left: 6px; padding: 0 6px; border: 1px solid var(--line); border-radius: 6px; font: 11px/18px var(--mono); color: var(--muted); }
 .log-line.fill .ld { background: var(--lime); }
 .log-line.order .ld { background: var(--text); }
 .log-line.WARNING .ld { background: var(--amber); }

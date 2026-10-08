@@ -353,7 +353,11 @@ Lo primero: **Ajustes → Probar conexión**. Dice qué paso falla y qué hacer.
 - **No conecta con Kalshi**: el servidor debe estar en una región de EE. UU.
 - **"No hay mercados que seguir"**: por defecto el bot sigue los partidos que terminan en las próximas
   6 h y la temperatura máxima de 7 ciudades. Revisa **Ajustes → Mercados** (o `[markets]`).
-- **HTTP 429**: demasiadas peticiones. Sube `poll_interval_seconds` o baja `reads_per_second`.
+- **"Kalshi pide ir más despacio" (HTTP 429)**: demasiadas peticiones seguidas. No pasa nada: el bot espera,
+  repite la petición y baja solo su ritmo (a la mitad, sin bajar de 1 por segundo); luego lo va recuperando,
+  un 25 % por cada minuto sin avisos. El bot y el panel comparten ese límite. Con API key, los datos de
+  mercado también van firmados, para que Kalshi los cuente contra tu cuenta y no contra la IP del servidor,
+  que en Railway comparten muchos usuarios. Si aun así pasa a menudo, baja `reads_per_second`.
 - **No puedo entrar al panel**: comprueba `DASHBOARD_PASSWORD`. Tras 5 fallos, espera un minuto.
 - **No llegan los avisos**: en el iPhone el panel tiene que estar instalado en la pantalla de inicio. Mira que
   la app tenga permiso en **Ajustes del móvil → Notificaciones** y pulsa **Enviar un aviso de prueba**.

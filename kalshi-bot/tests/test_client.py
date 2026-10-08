@@ -204,13 +204,59 @@ def test_rate_limiter_spaces_requests():
     assert slept == [0.25, 0.25]
 
 
-def test_public_endpoints_are_never_signed():
+def test_public_data_is_signed_with_a_key_and_unsigned_if_kalshi_rejects_it():
+    # Con API key, Kalshi cuenta las peticiones contra la cuenta y no contra la IP del servidor.
+    book = {"orderbook_fp": {"yes_dollars": [], "no_dollars": []}}
     signer = RecordingSigner()
+    client, session, _ = make_client([FakeResponse(200, book)], signer)
+    client.get_orderbook("KXTEST-1")
+    assert signer.calls == [("GET", "/trade-api/v2/markets/KXTEST-1/orderbook")]
+    assert session.calls[0]["headers"]["KALSHI-ACCESS-KEY"] == "k"
+
+    # Si Kalshi no acepta la firma (key de otro entorno), se piden sin firmar y se queda así.
     client, session, _ = make_client(
-        [FakeResponse(200, {"orderbook_fp": {"yes_dollars": [], "no_dollars": []}})], signer
+        [FakeResponse(401, {"error": {"message": "bad sig"}}), FakeResponse(200, book), FakeResponse(200, book)],
+        RecordingSigner(),
     )
     client.get_orderbook("KXTEST-1")
-    assert signer.calls == [] and "KALSHI-ACCESS-KEY" not in session.calls[0]["headers"]
+    client.get_orderbook("KXTEST-2")
+    assert [("KALSHI-ACCESS-KEY" in c["headers"]) for c in session.calls] == [True, False, False]
+
+
+def test_rate_limiter_slows_down_on_429_and_recovers():
+    now = [0.0]
+    limiter = RateLimiter(8, clock=lambda: now[0], sleep=lambda s: None, recover_after=60)
+    assert limiter.throttle() == 4  # a la mitad
+    assert limiter.throttle() is None  # el mismo aviso: no baja dos veces seguidas
+    now[0] += 3
+    assert limiter.throttle() == 2
+    now[0] += 3
+    assert limiter.throttle() == 1 and limiter.throttle() is None  # nunca por debajo de 1 por segundo
+    assert limiter.interval == 1.0
+    for _ in range(10):  # cada minuto sin 429 sube un 25 %, hasta el máximo
+        now[0] += 61
+        limiter.wait()
+    assert limiter.rate == 8 and limiter.interval == 0.125
+    unlimited = RateLimiter(0, clock=lambda: now[0], sleep=lambda s: None)
+    assert unlimited.throttle() is None and unlimited.interval == 0
+
+
+def test_a_429_is_retried_quietly_and_slows_the_client(caplog):
+    session = FakeSession([FakeResponse(429, {}), FakeResponse(429, {}), FakeResponse(200, {"trading_active": True})])
+    client = KalshiClient(BASE, session=session, sleep=lambda s: None, clock=lambda: 100.0, reads_per_second=8)
+    with caplog.at_level("DEBUG", logger="kalshi_bot.client"):
+        assert client.get_exchange_status()["trading_active"] is True
+    warnings = [r.getMessage() for r in caplog.records if r.levelname == "WARNING"]
+    assert warnings == ["Kalshi pide ir más despacio (HTTP 429): el bot baja a 4.0 peticiones por segundo"]
+    assert client._read_limiter.rate == 4
+
+
+def test_clients_in_one_process_share_the_limit():
+    first = KalshiClient(BASE, reads_per_second=0, writes_per_second=0)
+    second = KalshiClient(BASE, reads_per_second=0, writes_per_second=0)
+    assert first._read_limiter is second._read_limiter and first._write_limiter is second._write_limiter
+    other = KalshiClient("https://external-api.kalshi.com/trade-api/v2", reads_per_second=0)
+    assert other._read_limiter is not first._read_limiter  # cada servidor tiene su límite
 
 
 def test_falls_back_to_the_other_official_host_on_connection_errors():

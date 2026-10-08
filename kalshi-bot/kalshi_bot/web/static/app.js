@@ -713,7 +713,23 @@ async function refreshLogs() {
     const placeholder = box.querySelector(".empty");
     if (placeholder) placeholder.remove();
     for (const line of lines) {
-      box.append(logLine(line));
+      const node = logLine(line);
+      const last = box.lastElementChild;
+      if (last && last.dataset.key === node.dataset.key) {
+        // La misma línea otra vez (p. ej. varios reintentos): se cuenta en vez de repetirla.
+        const times = Number(last.dataset.count || 1) + 1;
+        last.dataset.count = String(times);
+        last.querySelector(".t").textContent = node.querySelector(".t").textContent;
+        let badge = last.querySelector(".times");
+        if (!badge) {
+          badge = el("span", { class: "times" });
+          const lm = last.querySelector(".lm");
+          lm.insertBefore(badge, lm.querySelector(".lx"));
+        }
+        badge.textContent = `×${times}`;
+      } else {
+        box.append(node);
+      }
       state.logsAfter = line.id;
     }
     while (box.childElementCount > 300) box.firstElementChild.remove();
@@ -725,13 +741,16 @@ async function refreshLogs() {
 
 function logLine(line) {
   const { kind, main, extra } = describeLog(line.message);
-  return el(
+  const lm = el("div", { class: "lm" }, main, extra && extra.length ? el("span", { class: "lx" }, extra) : null);
+  const node = el(
     "div",
     { class: `log-line ${kind} ${line.level}` },
     el("span", { class: "ld", "aria-hidden": "true" }),
-    el("div", { class: "lm" }, main, extra && extra.length ? el("span", { class: "lx" }, extra) : null),
+    lm,
     el("span", { class: "t", title: fmt.time(line.ts), text: fmt.clock(line.ts) }),
   );
+  node.dataset.key = `${line.level}|${lm.textContent}`;
+  return node;
 }
 
 // Lo que hace una orden de la API (lado del libro y precio del SÍ) dicho como compra de SÍ o de NO.
@@ -793,6 +812,24 @@ function describeLog(message) {
   if (m) {
     const how = m[2].startsWith("EN VIVO") ? (m[1] === "prod" ? "con dinero real" : "en demo") : "en simulación";
     return { kind: "start", main: [el("b", { text: "Bot en marcha" }), ` · ${how}`], extra: [`Estrategia ${strategyLabel(m[3])}`] };
+  }
+  m = /^HTTP (\d{3}) en \S+ \S+; reintento \d+/.exec(message);
+  if (m) {
+    const slow = m[1] === "429";
+    return {
+      kind: "info",
+      main: [el("b", { text: slow ? "Kalshi pidió ir más despacio" : `Kalshi respondió con un error (${m[1]})` })],
+      extra: ["se reintentó solo"],
+    };
+  }
+  m = /^Kalshi pide ir más despacio \(HTTP 429\): el bot baja a ([\d.]+) peticiones por segundo/.exec(message);
+  if (m) {
+    const rate = Number(m[1]).toLocaleString("es-ES", { maximumFractionDigits: 1 });
+    return {
+      kind: "info",
+      main: [el("b", { text: "Kalshi pide ir más despacio" })],
+      extra: [`el bot baja a ${rate} peticiones por segundo y vuelve a subir solo`],
+    };
   }
   m = /^Bot arrancado desde el panel en modo (.+)$/.exec(message);
   if (m) return { kind: "start", main: [el("b", { text: "Activado desde el panel" })], extra: [m[1] === "EN VIVO" ? "operando" : "en simulación"] };

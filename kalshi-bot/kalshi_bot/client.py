@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import random
+import threading
 import time
 import uuid
 from typing import Any, Callable, Optional, Sequence
@@ -73,25 +74,92 @@ class KalshiAPIError(Exception):
 
 
 class RateLimiter:
-    """Deja pasar como máximo `per_second` peticiones por segundo."""
+    """Deja pasar como mucho `per_second` peticiones por segundo, y menos si Kalshi lo pide.
+
+    Un HTTP 429 ("demasiadas peticiones") baja el ritmo a la mitad (nunca por debajo de
+    `floor`); cada `recover_after` segundos sin otro 429 sube un 25 % hasta volver al máximo.
+    Lo pueden compartir varios hilos (el bot y el panel).
+    """
 
     def __init__(
         self,
         per_second: float,
         clock: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
+        *,
+        floor: float = 1.0,
+        recover_after: float = 60.0,
     ):
-        self.interval = 1.0 / per_second if per_second > 0 else 0.0
+        self.max_rate = per_second
+        self.rate = per_second
+        self.floor = min(floor, per_second)
+        self.recover_after = recover_after
         self._clock = clock
         self._sleep = sleep
         self._next = 0.0
+        self._slowed_at: Optional[float] = None
+        self._warned_at: Optional[float] = None
+        self._lock = threading.Lock()
+
+    @property
+    def interval(self) -> float:
+        return 1.0 / self.rate if self.rate > 0 else 0.0
 
     def wait(self) -> None:
-        now = self._clock()
-        if now < self._next:
-            self._sleep(self._next - now)
-            now = self._next
-        self._next = now + self.interval
+        with self._lock:
+            now = self._clock()
+            self._recover(now)
+            start = max(now, self._next)
+            self._next = start + self.interval
+        if start > now:
+            self._sleep(start - now)
+
+    def throttle(self) -> Optional[float]:
+        """Kalshi respondió 429: baja el ritmo. Devuelve el ritmo nuevo si ha cambiado."""
+        with self._lock:
+            now = self._clock()
+            if self.max_rate <= 0 or self.rate <= self.floor:
+                self._slowed_at = now if self.max_rate > 0 else None
+                return None
+            # Varios 429 seguidos son el mismo aviso: se baja una vez cada 2 segundos como mucho.
+            if self._slowed_at is not None and now - self._slowed_at < 2 and self.rate < self.max_rate:
+                return None
+            self.rate = max(self.floor, self.rate / 2)
+            self._slowed_at = now
+            return self.rate
+
+    def should_warn(self, every: float = 600.0) -> bool:
+        """Para avisar en la actividad una vez cada `every` segundos como mucho (y no en cada 429)."""
+        with self._lock:
+            now = self._clock()
+            if self._warned_at is not None and now - self._warned_at < every:
+                return False
+            self._warned_at = now
+            return True
+
+    def _recover(self, now: float) -> None:
+        if self._slowed_at is None or now - self._slowed_at < self.recover_after:
+            return
+        self.rate = min(self.max_rate, self.rate * 1.25)
+        if self.rate >= self.max_rate:
+            self._slowed_at = None
+            log.info("Kalshi vuelve a aceptar el ritmo normal (%g peticiones por segundo)", self.max_rate)
+        else:
+            self._slowed_at = now
+
+
+# Un limitador por servidor y tipo de petición, compartido por todos los clientes del proceso:
+# el bot y el panel suman sus peticiones contra el mismo límite de Kalshi.
+_limiters: dict = {}
+_limiters_lock = threading.Lock()
+
+
+def _shared_limiter(host: str, kind: str, per_second: float) -> RateLimiter:
+    with _limiters_lock:
+        limiter = _limiters.get((host, kind))
+        if limiter is None or limiter.max_rate != per_second:
+            limiter = _limiters[(host, kind)] = RateLimiter(per_second)
+        return limiter
 
 
 def new_client_order_id(prefix: str) -> str:
@@ -126,8 +194,16 @@ class KalshiClient:
         self.session = session or requests.Session()
         self.session.headers.update({"Accept": "application/json", "User-Agent": f"kalshi-bot/{__version__}"})
         self._sleep = sleep
-        self._read_limiter = RateLimiter(reads_per_second, clock, sleep)
-        self._write_limiter = RateLimiter(writes_per_second, clock, sleep)
+        if clock is time.monotonic and sleep is time.sleep:
+            host = urlparse(self._primary_url).netloc
+            self._read_limiter = _shared_limiter(host, "read", reads_per_second)
+            self._write_limiter = _shared_limiter(host, "write", writes_per_second)
+        else:  # relojes de prueba: limitadores propios
+            self._read_limiter = RateLimiter(reads_per_second, clock, sleep)
+            self._write_limiter = RateLimiter(writes_per_second, clock, sleep)
+        # Con API key también se firman los datos públicos: así Kalshi los cuenta contra tu
+        # cuenta y no contra la IP del servidor, que en Railway comparten muchos usuarios.
+        self._sign_public = True
 
     @property
     def authenticated(self) -> bool:
@@ -166,8 +242,8 @@ class KalshiClient:
     ) -> dict:
         """Hace una petición y devuelve el JSON.
 
-        auth=True firma la petición (exige credenciales). Los datos de mercado
-        son públicos y se piden sin firmar (auth=False).
+        auth=True exige credenciales. Los datos de mercado son públicos (auth=False):
+        se firman si hay API key y, si Kalshi rechaza la firma, se piden sin firmar.
 
         Reintenta errores de red y 5xx en GET/DELETE, y 429 en todos los
         métodos. Un POST que falla por red o 5xx NO se reintenta: la orden
@@ -190,7 +266,8 @@ class KalshiClient:
             limiter.wait()
             url = self.base_url + endpoint
             headers = {}
-            if auth:
+            signed = auth or (self.signer is not None and self._sign_public)
+            if signed:
                 headers.update(self.signer.headers(method, self._base_path + endpoint))
             try:
                 resp = self.session.request(
@@ -211,11 +288,31 @@ class KalshiClient:
                 raise KalshiAPIError(0, "network_error", str(exc), method=method, path=endpoint) from exc
 
             status = resp.status_code
+            if status in (401, 403) and signed and not auth:
+                # La key no vale para estos datos públicos (p. ej. es de otro entorno): sin firmar.
+                self._sign_public = False
+                log.info("Kalshi no acepta la firma en los datos públicos; se piden sin firmar")
+                continue
+            if status == 429:
+                slower = limiter.throttle()
+                if slower is not None and limiter.should_warn():
+                    log.warning(
+                        "Kalshi pide ir más despacio (HTTP 429): el bot baja a %.1f peticiones por segundo", slower
+                    )
             retryable = status == 429 or (status >= 500 and retry_server_errors)
             if retryable and attempt < self.max_retries:
                 attempt += 1
                 delay = self._retry_after(resp) or self._backoff(attempt)
-                log.warning("HTTP %d en %s %s; reintento %d en %.1fs", status, method, endpoint, attempt, delay)
+                # Un 429 suelto no es un problema (se reintenta solo): no llena la actividad.
+                log.log(
+                    logging.DEBUG if status == 429 else logging.WARNING,
+                    "HTTP %d en %s %s; reintento %d en %.1fs",
+                    status,
+                    method,
+                    endpoint,
+                    attempt,
+                    delay,
+                )
                 self._sleep(delay)
                 continue
             if status >= 400:
