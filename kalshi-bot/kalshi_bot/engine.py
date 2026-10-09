@@ -18,6 +18,7 @@ que no cancela órdenes que pongas a mano desde la web.
 
 from __future__ import annotations
 
+import collections
 import json
 import logging
 import signal
@@ -323,6 +324,9 @@ class Bot:
         self.no_buy: set = set()  # mercados donde cancelaste a mano una orden del bot: ahí ya no compra
         # Series que Kalshi tiene en otra parte del exchange (shard) donde no hay saldo tuyo.
         self.other_shard: set = set()
+        # Resumen de la última vuelta para el panel: cuántos mercados tienen apuesta u orden y,
+        # en los demás, por qué no compra (claves cortas que el panel traduce).
+        self.last_scan: Optional[dict] = None
         self.halted_reason: Optional[str] = None
         self._stop = False
         self._signals = 0
@@ -471,6 +475,7 @@ class Bot:
             if not self._trading_paused:
                 log.warning("El exchange no está operando ahora (trading_active=false); esperando...")
                 self._trading_paused = True
+            self.last_scan = {"at": now.isoformat(), "total": 0, "reasons": {"exchange_paused": 1}}
             return
         if self._trading_paused:
             log.info("El exchange volvió a operar")
@@ -517,6 +522,7 @@ class Bot:
         for t in [t for t, p in positions.items() if p.position != 0] + list(by_ticker):
             busy.setdefault(event_of(t), set()).add(t)
 
+        scan: collections.Counter = collections.Counter()
         for ticker, market in list(self.markets.items()) + list(self.exit_markets.items()):
             if self._stop:
                 break
@@ -524,12 +530,13 @@ class Bot:
             position = positions[ticker].position if ticker in positions else ZERO
 
             block = self.risk.market_block_reason(market, now)
+            block_key = ("closing" if market.is_active else "inactive") if block else ""
             if not block and ticker not in self.markets:
-                block = "ya no está en la lista de mercados"
+                block, block_key = "ya no está en la lista de mercados", "unfollowed"
             elif not block and ticker in self.no_buy:
-                block = "cancelaste a mano una orden del bot aquí"
+                block, block_key = "cancelaste a mano una orden del bot aquí", "manual_cancel"
             elif not block and series_of(ticker) in self.other_shard:
-                block = "Kalshi lo tiene en otra parte del exchange, sin saldo tuyo"
+                block, block_key = "Kalshi lo tiene en otra parte del exchange, sin saldo tuyo", "other_shard"
             exit_only = bool(block)
             if exit_only:
                 # Aunque ya no se pueda comprar, se deja salir de una posición mientras el mercado opere.
@@ -538,12 +545,14 @@ class Bot:
                         self._safe_cancel(order, block)
                     if own:
                         resting_collateral[ticker] = ZERO
+                    scan["active" if position != 0 else block_key] += 1
                     continue
 
             try:
                 book = self.client.get_orderbook(ticker)
             except KalshiAPIError as exc:
                 log.warning("[%s] no se pudo leer el libro: %s", ticker, exc)
+                scan["active" if position != 0 or own else "book_error"] += 1
                 continue
 
             ctx = MarketContext(
@@ -561,6 +570,7 @@ class Bot:
                 intents = [i for i in (self.strategy.on_market(ctx) or []) if i is not None]
             except Exception:
                 log.exception("[%s] la estrategia falló; no se tocan órdenes en este mercado", ticker)
+                scan["active" if position != 0 or own else "error"] += 1
                 continue
             foreign = [i for i in intents if i.ticker != ticker]
             if foreign:
@@ -571,13 +581,16 @@ class Bot:
             event = market.event_ticker or event_of(ticker)
             per_event = self.risk.limits.max_positions_per_event
             why = block or ""
+            event_busy = False
             if per_event and len(busy.get(event, set()) - {ticker}) >= per_event and intents:
                 kept = only_reducing(intents, position)
                 if len(kept) != len(intents):
                     log.debug("[%s] ya hay dinero en otro mercado de %s: solo se permite salir", ticker, event)
                     why = "ya hay dinero en otro mercado del mismo evento"
+                    event_busy = True
                 intents = kept
 
+            wanted = len(intents)
             intents = self._apply_cooldown(ticker, intents, now)
             committed = positions_exposure + sum((c for t, c in resting_collateral.items() if t != ticker), ZERO)
             approved, notes = self.risk.filter_intents(intents, position=position, committed_exposure=committed)
@@ -595,6 +608,19 @@ class Bot:
             resting_collateral[ticker] = sum((i.count * i.cost_per_contract() for i in approved if i.is_resting), ZERO)
             if approved:
                 busy.setdefault(event, set()).add(ticker)
+            if position != 0 or approved:
+                scan["active"] += 1
+            elif exit_only:
+                scan[block_key] += 1
+            elif event_busy:
+                scan["event_busy"] += 1
+            elif notes:
+                scan["risk"] += 1
+            elif len(intents) < wanted:
+                scan["cooldown"] += 1
+            else:
+                scan[ctx.why_not or "no_signal"] += 1
+        self.last_scan = {"at": now.isoformat(), "total": sum(scan.values()), "reasons": dict(scan)}
 
     def _execute(self, ticker: str, own: list, approved: list, now: datetime, why: str = "") -> None:
         resting_wanted = [i for i in approved if i.is_resting]

@@ -165,15 +165,24 @@ class FavoritesStrategy(Strategy):
             return []
         book = ctx.book_ex_own
         bid, ask = book.best_bid, book.best_ask
-        if bid is None or ask is None or ask - bid > self.max_spread:
+        if (bid is not None and bid > self.max_price) or (ask is not None and ONE - ask > self.max_price):
+            ctx.why_not = "decided"  # el favorito ya cotiza por encima del precio máximo: queda poco que ganar
+            return []
+        if bid is None or ask is None:
+            ctx.why_not = "empty_book"
+            return []
+        if ask - bid > self.max_spread:
+            ctx.why_not = "wide_spread"
             return []
 
         if self.min_price <= bid <= self.max_price:
             # YES es el favorito: comprar YES sin cruzar el spread.
             if ctx.position < 0:
+                ctx.why_not = "other_side"
                 return []  # tiene NO: comprar YES los vendería a lo poco que valen; se espera al final
             room = self.max_position - ctx.position
             if room <= 0:
+                ctx.why_not = "position_cap"
                 return []
             price = ctx.tick_above(bid) if self.improve else bid
             if price is None or price >= ask:
@@ -188,9 +197,11 @@ class FavoritesStrategy(Strategy):
         if self.min_price <= no_bid <= self.max_price:
             # NO es el favorito: comprar NO = vender YES en el lado ask.
             if ctx.position > 0:
+                ctx.why_not = "other_side"
                 return []  # tiene YES: comprar NO los vendería a lo poco que valen; se espera al final
             room = self.max_position + ctx.position
             if room <= 0:
+                ctx.why_not = "position_cap"
                 return []
             yes_price = ctx.tick_below(ask) if self.improve else ask
             if yes_price is None or yes_price <= bid:
@@ -205,4 +216,5 @@ class FavoritesStrategy(Strategy):
                 reason=f"favorito NO (bid NO {no_bid}, ask NO {ONE - bid})",
             )
             return [intent] if intent else []
+        ctx.why_not = "no_favorite"
         return []

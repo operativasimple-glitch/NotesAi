@@ -519,6 +519,45 @@ function strategyLabel(name) {
   return (known && known.label) || STRATEGY_NAMES[name] || name;
 }
 
+// Lo que vio el bot en su última vuelta: dónde tiene dinero y, en el resto, por qué no compra.
+const SCAN_LABELS = {
+  decided: ["ya casi decidido", "ya casi decididos"],
+  no_favorite: "sin favorito claro",
+  wide_spread: "con poca liquidez",
+  empty_book: "sin ofertas",
+  position_cap: "en el tope de contratos",
+  other_side: "con lo tuyo del otro lado",
+  closing: "a punto de cerrar",
+  inactive: ["cerrado o en pausa", "cerrados o en pausa"],
+  unfollowed: "fuera de la lista",
+  manual_cancel: "donde cancelaste una orden",
+  other_shard: "en otra parte del exchange",
+  event_busy: "con dinero ya en ese partido o día",
+  risk: ["frenado por tus límites", "frenados por tus límites"],
+  cooldown: "esperando tras una venta",
+  book_error: "sin poder leer el libro",
+  error: "con un error",
+  no_signal: "sin señal",
+};
+
+function scanLabel(key, n) {
+  const label = SCAN_LABELS[key] || key;
+  return Array.isArray(label) ? label[n === 1 ? 0 : 1] : label;
+}
+
+function scanText(scan) {
+  const reasons = scan.reasons || {};
+  if (reasons.exchange_paused) return "Kalshi no está operando ahora: el bot espera.";
+  if (!scan.total) return "Ahora no hay mercados que mirar.";
+  const active = reasons.active || 0;
+  if (active === scan.total) return `${active} con apuesta u orden`;
+  const rest = Object.entries(reasons)
+    .filter(([key]) => key !== "active")
+    .sort((a, b) => b[1] - a[1])
+    .map(([key, n]) => `${n} ${scanLabel(key, n)}`);
+  return (active ? `${active} con apuesta u orden · ` : "Ahora no compra: ") + rest.join(" · ");
+}
+
 function renderStatus(s) {
   for (const pill of $$("#env-badge, #env-badge-home")) {
     pill.textContent = s.is_production ? "REAL" : "DEMO";
@@ -547,6 +586,9 @@ function renderStatus(s) {
   }
   $("#state-label").textContent = label;
   $("#state-sub").textContent = sub;
+  const scan = running ? bot.scan : null;
+  $("#scan-line").hidden = !scan;
+  if (scan) $("#scan-line").textContent = scanText(scan);
 
   const banner = $("#state-banner");
   banner.hidden = false;

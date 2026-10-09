@@ -392,6 +392,10 @@ Lo primero: **Ajustes → Probar conexión**. Dice qué paso falla y qué hacer.
   API no, así que una orden en un mercado que está en otra parte falla. El bot lo dice una vez y deja de operar esa
   serie (por ejemplo, la NBA) hasta que se reinicie; el resto sigue igual. Para operarla habría que pasar saldo a
   esa parte desde Kalshi.
+- **El bot está activo pero no compra**: bajo «Bot activo», en Inicio, sale lo que vio en su última vuelta, p. ej.
+  «Ahora no compra: 14 ya casi decididos · 5 sin favorito claro · 2 a punto de cerrar». Es normal por la noche:
+  el clima de hoy ya está decidido (a 98–99¢ no queda nada que ganar), el de mañana aún no tiene un favorito
+  claro y quedan pocos partidos.
 - **«Cancelada» en Actividad**: el bot retiró una de sus órdenes de compra que esperaban en el libro; no cuesta
   nada. Al lado va el motivo: «la mueve a 92¢» (alguien se puso delante o el precio cambió), «ya no cumple las
   condiciones para comprar» (el precio salió de la banda o el spread se abrió), «cierra en 10 min», «ya hay

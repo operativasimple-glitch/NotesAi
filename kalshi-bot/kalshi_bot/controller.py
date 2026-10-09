@@ -594,6 +594,7 @@ class BotController:
                 "halted_reason": bot.halted_reason if bot else self._read_state().get("halted"),
                 "markets": list(bot.markets)[:100] if bot else [],
                 "consecutive_errors": bot._consecutive_errors if bot else 0,
+                "scan": bot.last_scan if running and bot else None,
             },
             "balance": (
                 {"cash": balance.cash, "portfolio_value": balance.portfolio_value, "equity": balance.equity}

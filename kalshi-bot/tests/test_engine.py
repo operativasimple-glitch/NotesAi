@@ -554,3 +554,30 @@ def test_markets_on_another_exchange_shard_are_skipped_after_one_refusal(caplog)
     assert tries == [T] and bot.other_shard == {"KXTEST"}  # una vez, no en cada vuelta
     warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
     assert len(warnings) == 1 and "otra parte del exchange" in warnings[0]
+
+
+def test_each_loop_says_why_it_is_not_buying():
+    # El panel enseña, bajo «Bot activo», dónde tiene dinero el bot y por qué no compra en el resto.
+    bot, fake, clock = setup(FavoritesStrategy({}))
+    decided, unsure, wide, soon = "KXTEST-A", "KXTEST-B", "KXTEST-C", "KXTEST-D"
+    books = {
+        T: make_book(T, bids=[("0.90", 50)], asks=[("0.93", 50)]),  # favorito: compra
+        decided: make_book(decided, bids=[("0.99", 50)]),  # ya casi decidido
+        unsure: make_book(unsure, bids=[("0.45", 50)], asks=[("0.48", 50)]),  # sin favorito
+        wide: make_book(wide, bids=[("0.80", 50)], asks=[("0.95", 50)]),  # poca liquidez
+    }
+    for ticker in (decided, unsure, wide):
+        fake.markets[ticker] = make_market(ticker, event_ticker=ticker)
+    fake.markets[soon] = make_market(soon, event_ticker=soon, close_time=(NOW + timedelta(minutes=5)).isoformat())
+    fake.books.update(books)
+    bot.cfg.tickers = [T, decided, unsure, wide, soon]
+    bot._markets_refreshed_at = None
+    bot.tick()
+    scan = bot.last_scan
+    assert scan["total"] == len(bot.markets)
+    assert scan["reasons"] == {"active": 1, "decided": 1, "no_favorite": 1, "wide_spread": 1, "closing": 1}
+
+    fake.trading_active = False  # Kalshi en pausa
+    clock.sleep(10)
+    bot.tick()
+    assert bot.last_scan["reasons"] == {"exchange_paused": 1}

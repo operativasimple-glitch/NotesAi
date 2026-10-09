@@ -48,6 +48,9 @@ class MarketContext:
     # True cuando solo se puede salir: el mercado está a punto de cerrar o ya no está en
     # la lista; el motor descarta cualquier orden que no reduzca la posición.
     exit_only: bool = False
+    # Si la estrategia no quiere nada, por qué (una clave corta que el panel traduce):
+    # "decided", "no_favorite", "wide_spread", "empty_book", "position_cap", "other_side"...
+    why_not: str = ""
 
     @property
     def ticker(self) -> str:
