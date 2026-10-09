@@ -857,6 +857,16 @@ function describeLog(message) {
       extra: [tickerNode(m[5]), fee],
     };
   }
+  m = /^No se pudo crear (.+?): \S+ \S+ -> HTTP (\d{3})(?: \[(\w+)\])? ?(.*)$/.exec(message);
+  d = m && DESCRIBE.exec(m[1]);
+  if (d) {
+    const book = d[1] === "COMPRA" ? "bid" : "ask";
+    const why =
+      m[3] === "insufficient_shard_balance"
+        ? "Kalshi tiene este mercado en otra parte del exchange, donde tu cuenta no tiene saldo"
+        : m[4] || `Kalshi respondió con un error (${m[2]})`;
+    return { kind: "risk", main: [el("b", { text: "No se pudo enviar" }), ` · comprar ${orderWords(book, d[2], d[3])}`], extra: [tickerNode(d[6]), ` · ${why}`] };
+  }
   m = /^Arrancando bot \| entorno=(\S+) \| modo=(.+?) \| estrategia=(\S+)/.exec(message);
   if (m) {
     const how = m[2].startsWith("EN VIVO") ? (m[1] === "prod" ? "con dinero real" : "en demo") : "en simulación";

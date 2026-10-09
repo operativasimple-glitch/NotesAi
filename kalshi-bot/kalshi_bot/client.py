@@ -72,6 +72,15 @@ class KalshiAPIError(Exception):
     def is_auth_error(self) -> bool:
         return self.status in (401, 403)
 
+    @property
+    def is_shard_error(self) -> bool:
+        """El mercado está en otra parte del exchange (shard) donde tu cuenta no tiene saldo.
+
+        Desde 2026 Kalshi reparte los mercados en varias partes, cada una con su saldo. La
+        app y la web mueven el dinero solas; por la API hay que hacerlo a mano.
+        """
+        return self.code == "insufficient_shard_balance"
+
 
 class RateLimiter:
     """Deja pasar como mucho `per_second` peticiones por segundo, y menos si Kalshi lo pide.

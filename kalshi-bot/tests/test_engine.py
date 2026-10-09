@@ -532,3 +532,25 @@ def test_after_you_cancel_a_bot_order_it_stops_buying_there():
     clock.sleep(10)
     bot.tick()
     assert len(fake.created) == created and fake.orders == {}  # no la vuelve a poner
+
+
+def test_markets_on_another_exchange_shard_are_skipped_after_one_refusal(caplog):
+    # Kalshi reparte los mercados en partes (shards) con saldo propio; por la API no lo mueve solo.
+    bot, fake, clock = setup(FavoritesStrategy({}))
+    fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.93", 50)])
+    tries = []
+
+    def refuse(intent, client_order_id, expiration_ts=None):
+        tries.append(intent.ticker)
+        raise KalshiAPIError(
+            404, "insufficient_shard_balance", "insufficient shard balance", details="Exchange user not found"
+        )
+
+    fake.create_order = refuse
+    with caplog.at_level(logging.INFO, logger="kalshi_bot.engine"):
+        for _ in range(3):
+            bot.tick()
+            clock.sleep(10)
+    assert tries == [T] and bot.other_shard == {"KXTEST"}  # una vez, no en cada vuelta
+    warnings = [r.getMessage() for r in caplog.records if r.levelno == logging.WARNING]
+    assert len(warnings) == 1 and "otra parte del exchange" in warnings[0]

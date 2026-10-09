@@ -387,6 +387,11 @@ Lo primero: **Ajustes → Probar conexión**. Dice qué paso falla y qué hacer.
   tuyos» si una orden del bot cerró contratos que compraste tú). Ojo: en Kalshi,
   comprar SÍ teniendo NO vende primero esos NO (y al revés), y un mercado solo cuenta en Resultados cuando ya no
   queda nada en él: una pérdida de por la mañana puede aparecer cuando, por la tarde, se cobra el resto a 99¢.
+- **«Otra parte del exchange» o `insufficient_shard_balance`**: desde agosto de 2026 Kalshi reparte los mercados en
+  varias partes (shards), cada una con su propio saldo. La app y la web mueven el dinero solas entre ellas; por la
+  API no, así que una orden en un mercado que está en otra parte falla. El bot lo dice una vez y deja de operar esa
+  serie (por ejemplo, la NBA) hasta que se reinicie; el resto sigue igual. Para operarla habría que pasar saldo a
+  esa parte desde Kalshi.
 - **«Cancelada» en Actividad**: el bot retiró una de sus órdenes de compra que esperaban en el libro; no cuesta
   nada. Al lado va el motivo: «la mueve a 92¢» (alguien se puso delante o el precio cambió), «ya no cumple las
   condiciones para comprar» (el precio salió de la banda o el spread se abrió), «cierra en 10 min», «ya hay

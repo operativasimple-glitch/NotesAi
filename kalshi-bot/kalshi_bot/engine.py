@@ -250,6 +250,11 @@ def reconcile(existing: list, desired: list, tolerance: Decimal = ZERO) -> tuple
     return keep, unmatched, to_place
 
 
+def series_of(ticker: str) -> str:
+    """Serie de un mercado por su ticker (lo de antes del primer guion: KXNBAGAME)."""
+    return ticker.split("-", 1)[0].upper()
+
+
 def event_of(ticker: str) -> str:
     """Evento de un mercado por su ticker (todo menos el último tramo: KXHIGHNY-26OCT08-B66.5)."""
     return ticker.rsplit("-", 1)[0]
@@ -316,6 +321,8 @@ class Bot:
         self.markets: dict = {}
         self.exit_markets: dict = {}  # con posición, fuera de la lista: solo para salir
         self.no_buy: set = set()  # mercados donde cancelaste a mano una orden del bot: ahí ya no compra
+        # Series que Kalshi tiene en otra parte del exchange (shard) donde no hay saldo tuyo.
+        self.other_shard: set = set()
         self.halted_reason: Optional[str] = None
         self._stop = False
         self._signals = 0
@@ -521,6 +528,8 @@ class Bot:
                 block = "ya no está en la lista de mercados"
             elif not block and ticker in self.no_buy:
                 block = "cancelaste a mano una orden del bot aquí"
+            elif not block and series_of(ticker) in self.other_shard:
+                block = "Kalshi lo tiene en otra parte del exchange, sin saldo tuyo"
             exit_only = bool(block)
             if exit_only:
                 # Aunque ya no se pueda comprar, se deja salir de una posición mientras el mercado opere.
@@ -612,8 +621,20 @@ class Bot:
         try:
             self.executor.place(intent)
         except KalshiAPIError as exc:
-            log.warning("No se pudo crear %s: %s", intent.describe(), exc)
             self.journal.record("place_error", error=str(exc), **intent_fields(intent))
+            if exc.is_shard_error:
+                # Reintentarlo daría el mismo error en cada vuelta: se deja esa serie y se dice una vez.
+                series = series_of(intent.ticker)
+                if series not in self.other_shard:
+                    self.other_shard.add(series)
+                    log.warning(
+                        "[%s] Kalshi tiene estos mercados (%s) en otra parte del exchange donde tu cuenta no tiene "
+                        "saldo: el bot deja de operarlos",
+                        intent.ticker,
+                        series,
+                    )
+                return
+            log.warning("No se pudo crear %s: %s", intent.describe(), exc)
             if exc.is_auth_error:
                 raise
 
