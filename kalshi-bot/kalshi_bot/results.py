@@ -11,9 +11,9 @@ liquidarse o, si se vendió todo antes, con la última venta. Si los llenados no
 cuadran con la liquidación (el mercado se abrió antes del periodo descargado),
 se usa la liquidación tal cual.
 
-Con `only_bot` solo cuenta lo que compró el bot (lo que el panel enseña por defecto): los
-mercados con algún llenado de una orden suya, que salen del diario del bot. Sin él cuenta
-toda la cuenta, también lo que se compre a mano.
+Con `only_bot` solo cuenta lo que hizo el bot (lo que el panel enseña por defecto): sus
+órdenes salen de su diario, y en cada mercado se separa lo suyo de lo que hicieras tú a
+mano (cada contrato es de quien lo compró). Sin él cuenta toda la cuenta.
 """
 
 from __future__ import annotations
@@ -63,38 +63,25 @@ class ClosedMarket:
         return self.payout - self.cost - self.fees
 
 
-class _Ledger:
-    """El dinero de un mercado, llenado a llenado (posición vista desde YES)."""
+BOT, YOU = "bot", "you"
 
-    def __init__(self) -> None:
-        self.position = ZERO
-        self.cost = ZERO
-        self.payout = ZERO
-        self.fees = ZERO
-        self.bought_yes = ZERO
-        self.bought_no = ZERO
-        self.sold = ZERO
-        self.last_time: Optional[datetime] = None
-        self.bot = False
 
-    def add(self, fill: Fill) -> None:
-        count, price = fill.count, fill.price
-        if fill.side == BID:  # compra YES; si tenías NO, primero los vende a (1 - precio)
-            closing = min(count, max(-self.position, ZERO))
-            self.payout += closing * (ONE - price)
-            self.cost += (count - closing) * price
-            self.bought_yes += count - closing
-            self.position += count
-        else:  # vende YES; si no tenías YES, compra NO a (1 - precio)
-            closing = min(count, max(self.position, ZERO))
-            self.payout += closing * price
-            self.cost += (count - closing) * (ONE - price)
-            self.bought_no += count - closing
-            self.position -= count
-        self.sold += closing
-        self.fees += fill.fee
-        if fill.time is not None and (self.last_time is None or fill.time > self.last_time):
-            self.last_time = fill.time
+@dataclass
+class _Money:
+    """El dinero de un dueño (el bot o tú) en un mercado."""
+
+    cost: Decimal = ZERO  # lo pagado al comprar
+    payout: Decimal = ZERO  # lo cobrado al vender (o al liquidarse)
+    fees: Decimal = ZERO
+    bought_yes: Decimal = ZERO
+    bought_no: Decimal = ZERO
+    sold: Decimal = ZERO
+    position: Decimal = ZERO  # vista desde YES: + contratos SÍ, - contratos NO
+    last_time: Optional[datetime] = None
+
+    def touch(self, when: Optional[datetime]) -> None:
+        if when is not None and (self.last_time is None or when > self.last_time):
+            self.last_time = when
 
     def side(self) -> str:
         if self.bought_yes and self.bought_no:
@@ -102,69 +89,140 @@ class _Ledger:
         return "yes" if self.bought_yes else "no"
 
 
-def market_trades(fills: list, ticker: str, bot_orders: Optional[dict] = None) -> list:
-    """Las operaciones de un mercado en orden, dichas como compras y ventas de SÍ o de NO.
+class _Ledger:
+    """El dinero de un mercado, llenado a llenado, separado por dueño (el bot o tú).
 
-    En Kalshi, comprar SÍ teniendo NO vende primero esos NO (y al revés): cada llenado se
-    parte en lo que vende de lo que había y lo que compra de nuevo. Cada venta lleva lo que
-    ganó o perdió frente al precio medio de compra (sin comisiones). `bot_orders` da el
-    motivo de cada orden del bot (id → motivo); las demás son tuyas.
+    Cada compra abre un lote de quien la hizo. Vender, o comprar el lado contrario (en
+    Kalshi, comprar SÍ teniendo NO vende primero esos NO), cierra lotes por orden de
+    llegada, y lo cobrado es de quien abrió cada lote. Así lo que hagas a mano no cuenta
+    como del bot ni al revés. Las comisiones son de quien puso la orden.
     """
-    bot_orders = bot_orders or {}
-    epoch = datetime.min.replace(tzinfo=timezone.utc)
-    position = ZERO  # vista desde YES: + contratos SÍ, - contratos NO
-    avg = ZERO  # precio medio de lo que se tiene ahora
-    trades = []
-    for fill in sorted((f for f in fills if f.ticker == ticker), key=lambda f: f.time or epoch):
+
+    def __init__(self) -> None:
+        self.lots: list = []  # [dueño, "yes"/"no", contratos, precio]
+        self.owners: dict = {}
+
+    def money(self, owner: str) -> _Money:
+        return self.owners.setdefault(owner, _Money())
+
+    def total(self) -> _Money:
+        out = _Money()
+        for m in self.owners.values():
+            out.cost += m.cost
+            out.payout += m.payout
+            out.fees += m.fees
+            out.bought_yes += m.bought_yes
+            out.bought_no += m.bought_no
+            out.sold += m.sold
+            out.position += m.position
+            out.touch(m.last_time)
+        return out
+
+    def add(self, fill: Fill, owner: str) -> list:
+        """Apunta un llenado y devuelve lo que hizo: lotes cerrados (de quien fueran) y el abierto."""
+        mine = self.money(owner)
+        mine.fees += fill.fee
+        mine.touch(fill.time)
         buys_yes = fill.side == BID
-        held = max(-position, ZERO) if buys_yes else max(position, ZERO)  # lo que este llenado cierra
-        closing = min(fill.count, held)
-        opening = fill.count - closing
+        closes = "no" if buys_yes else "yes"
+        close_price = ONE - fill.price if buys_yes else fill.price
+        left = fill.count
         legs = []
-        if closing > 0:
-            price = ONE - fill.price if buys_yes else fill.price
-            pnl = closing * (price - avg)
+        for lot in self.lots:
+            if left <= 0:
+                break
+            if lot[1] != closes:
+                continue
+            take = min(lot[2], left)
+            theirs = self.money(lot[0])
+            theirs.payout += take * close_price
+            theirs.sold += take
+            theirs.position += take if closes == "no" else -take
+            theirs.touch(fill.time)
+            lot[2] -= take
+            left -= take
             legs.append(
                 {
                     "action": "sell",
-                    "outcome": "no" if buys_yes else "yes",
-                    "count": closing,
-                    "price": price,
-                    "pnl": pnl.quantize(MONEY),
+                    "outcome": closes,
+                    "count": take,
+                    "price": close_price,
+                    "pnl": take * (close_price - lot[3]),
+                    "owner": lot[0],
                 }
             )
-        left = abs(position) - closing
-        if left == 0:
-            avg = ZERO
-        if opening > 0:
+        self.lots = [lot for lot in self.lots if lot[2] > 0]
+        if left > 0:
+            side = "yes" if buys_yes else "no"
             price = fill.price if buys_yes else ONE - fill.price
-            avg = (avg * left + price * opening) / (left + opening)
-            legs.append({"action": "buy", "outcome": "yes" if buys_yes else "no", "count": opening, "price": price})
-        position += fill.count if buys_yes else -fill.count
+            self.lots.append([owner, side, left, price])
+            mine.cost += left * price
+            if buys_yes:
+                mine.bought_yes += left
+                mine.position += left
+            else:
+                mine.bought_no += left
+                mine.position -= left
+            legs.append({"action": "buy", "outcome": side, "count": left, "price": price, "owner": owner})
+        return legs
+
+
+def _by_time(fills: list) -> list:
+    return sorted(fills, key=lambda f: f.time or datetime.min.replace(tzinfo=timezone.utc))
+
+
+def market_trades(fills: list, ticker: str, bot_orders: Optional[dict] = None) -> list:
+    """Las operaciones de un mercado en orden, dichas como compras y ventas de SÍ o de NO.
+
+    Cada llenado se parte en lo que vende de lo que había (de quien fuera: un lote tuyo
+    puede cerrarlo una orden del bot y al revés) y lo que compra de nuevo. Cada venta lleva
+    lo que ganó o perdió frente a lo que costaron esos contratos (sin comisiones).
+    `bot_orders` da el motivo de cada orden del bot (id → motivo); las demás son tuyas.
+    """
+    bot_orders = bot_orders or {}
+    ledger = _Ledger()
+    trades = []
+    for fill in _by_time([f for f in fills if f.ticker == ticker]):
+        owner = BOT if fill.order_id in bot_orders else YOU
+        legs: list = []
+        for leg in ledger.add(fill, owner):
+            same = legs[-1] if legs else None
+            if same and same["action"] == leg["action"] == "sell" and same["owner"] == leg["owner"]:
+                same["count"] += leg["count"]
+                same["pnl"] += leg["pnl"]
+            else:
+                legs.append(dict(leg))
+        for leg in legs:
+            if "pnl" in leg:
+                leg["pnl"] = leg["pnl"].quantize(MONEY)
         trades.append(
             {
                 "time": fill.time.isoformat() if fill.time else None,
                 "legs": legs,
                 "fee": fill.fee,
-                "bot": fill.order_id in bot_orders,
+                "bot": owner == BOT,
                 "reason": bot_orders.get(fill.order_id, ""),
             }
         )
     return trades
 
 
-def close_markets(fills: list, settlements: list, bot_orders: Optional[set] = None) -> tuple:
+def close_markets(fills: list, settlements: list, bot_orders=None, owner: Optional[str] = None) -> tuple:
     """Devuelve (mercados cerrados, tickers con posición aún abierta).
 
     bot_orders: ids de las órdenes del bot; un mercado es "del bot" si alguno de sus
     llenados viene de una de ellas.
+    owner: None = toda la cuenta; "bot" = solo lo que abrió el bot (sus lotes), sin lo
+    que hicieras tú a mano en esos mismos mercados.
     """
     bot_orders = bot_orders or set()
     ledgers: dict = {}
-    for fill in sorted(fills, key=lambda f: f.time or datetime.min.replace(tzinfo=timezone.utc)):
+    for fill in _by_time(fills):
         ledger = ledgers.setdefault(fill.ticker, _Ledger())
-        ledger.add(fill)
-        ledger.bot = ledger.bot or fill.order_id in bot_orders
+        ledger.add(fill, BOT if fill.order_id in bot_orders else YOU)
+
+    def view(ledger: _Ledger) -> _Money:
+        return ledger.money(BOT) if owner == BOT else ledger.total()
 
     closed: list = []
     settled: set = set()
@@ -173,10 +231,12 @@ def close_markets(fills: list, settlements: list, bot_orders: Optional[set] = No
         ledger = ledgers.get(s.ticker)
         if s.time is None:
             continue
-        if ledger is None or ledger.position != s.position:
+        if owner == BOT and (ledger is None or BOT not in ledger.owners):
+            continue  # el bot no operó aquí
+        if ledger is None or ledger.total().position != s.position:
             # Faltan llenados (se abrió antes del periodo): se usa la liquidación tal cual.
-            if s.cost <= 0 and s.payout <= 0:
-                continue
+            if owner == BOT or (s.cost <= 0 and s.payout <= 0):
+                continue  # sin los llenados no se puede separar lo del bot
             side = "ambos" if s.yes_count and s.no_count else "yes" if s.yes_count else "no"
             closed.append(
                 ClosedMarket(
@@ -184,42 +244,44 @@ def close_markets(fills: list, settlements: list, bot_orders: Optional[set] = No
                 )
             )
             continue
+        money = view(ledger)
         value = s.yes_payout()
-        held = ledger.position
-        ledger.payout += held * value if held > 0 else -held * (ONE - value)
+        held = money.position
+        payout = money.payout + (held * value if held > 0 else -held * (ONE - value))
         closed.append(
             ClosedMarket(
                 s.ticker,
                 s.time,
-                ledger.side(),
-                ledger.bought_yes + ledger.bought_no,
-                ledger.cost,
-                ledger.payout,
-                ledger.fees,
-                ledger.sold > 0,
+                money.side(),
+                money.bought_yes + money.bought_no,
+                money.cost,
+                payout,
+                money.fees,
+                money.sold > 0,
                 s.result,
-                ledger.bot,
+                BOT in ledger.owners,
             )
         )
 
     still_open: set = set()
     for ticker, ledger in ledgers.items():
-        if ticker in settled:
+        if ticker in settled or (owner == BOT and BOT not in ledger.owners):
             continue
-        if ledger.position != 0:
+        money = view(ledger)
+        if money.position != 0:
             still_open.add(ticker)
-        elif ledger.sold > 0 and ledger.last_time is not None:
+        elif (money.sold > 0 or owner == BOT) and money.last_time is not None:
             closed.append(
                 ClosedMarket(
                     ticker,
-                    ledger.last_time,
-                    ledger.side(),
-                    ledger.bought_yes + ledger.bought_no,
-                    ledger.cost,
-                    ledger.payout,
-                    ledger.fees,
+                    money.last_time,
+                    money.side(),
+                    money.bought_yes + money.bought_no,
+                    money.cost,
+                    money.payout,
+                    money.fees,
                     True,
-                    bot=ledger.bot,
+                    bot=BOT in ledger.owners,
                 )
             )
     closed.sort(key=lambda m: m.closed_at, reverse=True)
@@ -367,7 +429,7 @@ def build_results(
     since = int((now - timedelta(days=days + 1)).timestamp())
     settlements = client.get_settlements(min_ts=since)
     fills = client.get_fill_history(min_ts=since - LOOKBACK_DAYS * 86400)
-    closed, _ = close_markets(fills, settlements, bot_orders)
+    closed, _ = close_markets(fills, settlements, bot_orders, owner=BOT if only_bot else None)
     positions = client.get_positions()
     if only_bot:
         bot_tickers = {f.ticker for f in fills if f.order_id in (bot_orders or set())}

@@ -2648,11 +2648,11 @@ function openDetail(m, from) {
   const trades = el("div", { class: "group" }, el("div", { class: "eyebrow", text: "Operaciones" }), empty("Cargando…"));
   $("#view-detail").replaceChildren(...[back, head, result, risk, facts, trades, rules].filter(Boolean));
   switchView("detail");
-  loadTrades(m.ticker, trades);
+  loadTrades(m.ticker, trades, from === "home" ? "bot" : state.resultsScope || "bot");
 }
 
 // Cada compra y venta del mercado, en orden: quién la hizo, por qué y cuánto ganó o perdió cada venta.
-async function loadTrades(ticker, box) {
+async function loadTrades(ticker, box, scope) {
   let data;
   try {
     data = await api(`/api/results/trades?ticker=${encodeURIComponent(ticker)}`);
@@ -2661,31 +2661,36 @@ async function loadTrades(ticker, box) {
     return;
   }
   const lines = data.trades.map(tradeLine);
+  const yours = data.trades.some((t) => !t.bot);
   box.replaceChildren(
     el("div", { class: "eyebrow", text: "Operaciones" }),
     ...(lines.length ? lines : [empty("No hay operaciones de este mercado.")]),
-    el("p", { class: "help", text: "En Kalshi, comprar SÍ teniendo NO vende primero esos NO (y al revés). Lo de cada venta es frente a lo que costó, sin comisiones." }),
+    scope === "bot" && yours
+      ? el("p", { class: "help", text: "El resultado de arriba es solo lo del bot: lo que hiciste tú a mano aquí no cuenta como suyo. Lo ves sumado en Resultados → Toda la cuenta." })
+      : null,
+    el("p", { class: "help", text: "En Kalshi, comprar SÍ teniendo NO vende primero esos NO (y al revés). Lo de cada venta es frente a lo que costaron esos contratos, sin comisiones." }),
   );
 }
 
 function tradeLine(t) {
-  const words = t.legs.map((leg) => `${leg.action === "sell" ? "vende" : "compra"} ${fmt.qty(leg.count)} ${leg.outcome === "yes" ? "SÍ" : "NO"} a ${fmt.cents(leg.price)}`);
-  const sold = t.legs.find((leg) => leg.action === "sell");
+  const who = t.bot ? "bot" : "you";
+  const parts = [];
+  t.legs.forEach((leg, i) => {
+    // Una orden puede cerrar contratos de otro: «vende 5 NO tuyos» si la orden fue del bot, y al revés.
+    const owner = leg.owner && leg.owner !== who ? (leg.owner === "you" ? " tuyos" : " del bot") : "";
+    const verb = leg.action === "sell" ? "vende" : "compra";
+    const text = `${i ? " y " : ""}${verb} ${fmt.qty(leg.count)} ${leg.outcome === "yes" ? "SÍ" : "NO"}${owner} a ${fmt.cents(leg.price)}`;
+    parts.push(el("b", { text: i ? text : cap(text) }));
+    if (leg.action === "sell") parts.push(" ", el("b", { class: `pnl ${valueClass(leg.pnl)}`, text: fmt.money(leg.pnl, true) }));
+  });
   const extra = [t.bot ? "bot" : "a mano"];
   if (t.reason) extra.push(reasonText(t.reason));
   if (Number(t.fee) > 0) extra.push(`comisión ${fmt.money(t.fee)}`);
   return el(
     "div",
-    { class: `log-line ${sold ? "fill" : "order"}` },
+    { class: `log-line ${t.legs.some((leg) => leg.action === "sell") ? "fill" : "order"}` },
     el("span", { class: "ld", "aria-hidden": "true" }),
-    el(
-      "div",
-      { class: "lm" },
-      el("b", { text: cap(words.join(" y ")) }),
-      sold ? " " : null,
-      sold ? el("b", { class: `pnl ${valueClass(sold.pnl)}`, text: fmt.money(sold.pnl, true) }) : null,
-      el("span", { class: "lx", text: extra.join(" · ") }),
-    ),
+    el("div", { class: "lm" }, ...parts, el("span", { class: "lx", text: extra.join(" · ") })),
     el("span", { class: "t", title: fmt.time(t.time), text: fmt.clock(t.time) }),
   );
 }

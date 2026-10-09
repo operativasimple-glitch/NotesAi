@@ -128,8 +128,9 @@ Abre `http://IP-DEL-ORDENADOR:8000` desde el móvil (en la misma wifi). Para ent
   - en **Más datos**: rendimiento frente a lo esperado, un gráfico por día (oliva, ganado; rosa, perdido;
     con los mismos datos en una tabla) y el reparto por tipo de mercado;
   - **Solo el bot** (por defecto) cuenta lo que compró el bot; **Toda la cuenta** suma también lo que
-    compres a mano. Las órdenes del bot se reconocen por su diario, que se guarda en `/data`. En simulación
-    no hay resultados.
+    compres a mano. Dentro de un mismo mercado se separan: cada contrato cuenta para quien lo compró, aunque
+    lo cierre una orden del otro (en Kalshi, comprar SÍ teniendo NO vende esos NO). Las órdenes del bot se
+    reconocen por su diario, que se guarda en `/data`. En simulación no hay resultados.
 - **Mercados:**
   - busca por serie o evento;
   - toca un mercado para ver su libro;
@@ -382,7 +383,8 @@ Lo primero: **Ajustes → Probar conexión**. Dice qué paso falla y qué hacer.
 - **No llegan los avisos**: en el iPhone el panel tiene que estar instalado en la pantalla de inicio. Mira que
   la app tenga permiso en **Ajustes del móvil → Notificaciones** y pulsa **Enviar un aviso de prueba**.
 - **¿Por qué un mercado salió en pérdidas?**: en **Resultados**, toca el mercado. En **Operaciones** sale cada
-  compra y venta en orden, quién la hizo (el bot o tú), por qué y cuánto ganó o perdió cada venta. Ojo: en Kalshi,
+  compra y venta en orden, quién la hizo (el bot o tú), por qué y cuánto ganó o perdió cada venta («vende 5 NO
+  tuyos» si una orden del bot cerró contratos que compraste tú). Ojo: en Kalshi,
   comprar SÍ teniendo NO vende primero esos NO (y al revés), y un mercado solo cuenta en Resultados cuando ya no
   queda nada en él: una pérdida de por la mañana puede aparecer cuando, por la tarde, se cobra el resto a 99¢.
 - **«Cancelada» en Actividad**: el bot retiró una de sus órdenes de compra que esperaban en el libro; no cuesta

@@ -176,6 +176,34 @@ def test_bot_only_results_leave_out_manual_trades():
     assert build_results(fake, now=NOW, days=7)["open"]["markets"] == 2
 
 
+def test_in_a_shared_market_each_contract_counts_for_whoever_bought_it():
+    # Como Los Ángeles: tú apostaste a mano y perdiste; el bot compró SÍ a 97¢ y lo cobró a 99¢.
+    t = "KXHIGHLAX-26OCT08-T82"
+    fills = [
+        fill(t, BID, "0.60", 10, 9),  # tú: 10 SÍ a 60¢
+        fill(t, ASK, "0.30", 10, 8),  # tú: los vendes a 30¢ (-3,00)
+        fill(t, ASK, "0.40", 5, 7),  # tú: 5 NO a 60¢
+        fill(t, BID, "0.97", 10, 3),  # bot: compra SÍ; primero cierra tus 5 NO a 3¢ y luego abre 5 SÍ
+        fill(t, ASK, "0.99", 5, 1),  # bot: cobra sus 5 SÍ a 99¢
+    ]
+    for f in fills[3:]:
+        f.order_id = "ord-bot"
+    everything, _ = close_markets(fills, [], {"ord-bot"})
+    only_bot, _ = close_markets(fills, [], {"ord-bot"}, owner="bot")
+    whole, bot = everything[0], only_bot[0]
+    assert (whole.cost, whole.payout, whole.fees) == (D("13.85"), D("8.10"), D("0.05"))  # -5,80 en total
+    assert (bot.cost, bot.payout, bot.fees, bot.sold_early, bot.side) == (D("4.85"), D("4.95"), D("0.02"), True, "yes")
+    assert bot.net == D("0.08")  # lo tuyo (-5,80 + 0,08) no cuenta como del bot
+    # Si la orden del bot cierra tus contratos, la pérdida es tuya, y así lo dice el detalle.
+    legs = market_trades(fills, t, {"ord-bot": ""})[3]["legs"]
+    assert [(leg["action"], leg["count"], leg["pnl"] if "pnl" in leg else None, leg["owner"]) for leg in legs] == [
+        ("sell", D(5), D("-2.85"), "you"),
+        ("buy", D(5), None, "bot"),
+    ]
+    # Un mercado solo tuyo no sale en lo del bot.
+    assert close_markets(fills[:2], [], {"ord-bot"}, owner="bot")[0] == []
+
+
 def test_market_trades_tell_the_story_of_a_flip():
     # El NO era el favorito y se compró a 90¢; la previsión cambió, el SÍ pasó a favorito y el bot
     # lo compró: en Kalshi eso vende primero los NO (a 5¢, perdiendo) y luego cobró el SÍ a 99¢.
