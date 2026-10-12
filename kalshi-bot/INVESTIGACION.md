@@ -156,7 +156,7 @@ perdidos:
   hay ocasión de entrar (unos 110 de 294).
 - Por eso el bot sigue el clima **solo en las últimas 12 horas** (la regla KXHIGH de
   `[markets.series_rules]`). Con poco saldo conviene además subir el **precio mínimo del favorito a
-  0,92** (Ajustes → Estrategia): pierde menos días y gana algo más.
+  0,92** (Ajustes → Avanzado → Estrategia): pierde menos días y gana algo más.
 - **Por ciudad** hay solo 42 días y nada queda confirmado: con la regla de antes, Austin perdió un
   8,3 % (6 días de 42) y Denver un 3,9 %, mientras Miami ganó un 6,6 % sin fallar ninguno. Es poco para
   quitar ciudades.
