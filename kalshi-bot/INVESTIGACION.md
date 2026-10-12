@@ -111,10 +111,10 @@ histórica), así que más historia estrecharía los márgenes.
 
 Cómo funcionan los mercados de clima: el del día D abre la víspera (14:00 UTC) y cierra a medianoche
 hora local; se liquida la tarde siguiente con el informe oficial del Servicio Meteorológico. Cada día
-tiene varios tramos de temperatura. Por eso tienen su propia regla en el bot: los sigue hasta 40 horas
-antes del cierre y mira hasta 4 tramos por día (el favorito no suele ser el más negociado), pero apuesta
-en uno solo por ciudad y día: los tramos vecinos son casi la misma apuesta, y si falla uno suele fallar el
-de al lado (Ajustes → Riesgo → Apuestas por evento).
+tiene varios tramos de temperatura. Por eso tienen su propia regla en el bot: solo entra en las últimas
+12 horas antes del cierre (ver *¿Cuándo entrar en el clima?*) y mira hasta 4 tramos por día (el favorito no
+suele ser el más negociado), pero apuesta en uno solo por ciudad y día: los tramos vecinos son casi la
+misma apuesta, y si falla uno suele fallar el de al lado (Ajustes → Riesgo → Apuestas por evento).
 
 **El margen de error** se calcula por eventos (un partido, o un día de una ciudad) con el método delta.
 Cuando hay menos de 5 eventos perdidos (o ganados), esa aproximación no vale y se amplía con el
@@ -123,6 +123,71 @@ intervalo de Wilson, para no dar por segura una racha sin batacazos.
 Por todo esto, el bot sigue por defecto **los partidos y la temperatura máxima de las 7 ciudades**. Si tu
 estado bloquea los deportes, quita las series de partidos en **Ajustes → Mercados** y el bot seguirá con
 el clima.
+
+### ¿Cuándo entrar en el clima? (octubre de 2026)
+
+Tras un fin de semana con pérdidas se descargaron **todas** las operaciones de las últimas 6 semanas:
+1.764 mercados de clima (294 días de ciudad) y 2.722 de partidos (1.161 partidos). Con ellas se probó
+cuándo y desde qué precio conviene entrar. Como en las demás pruebas, la compra del bot es la primera
+venta del favorito a quien esperaba en el libro, una por ciudad y día (o por partido), con 5 contratos
+y la comisión de maker. En la tabla, el rendimiento tras comisiones y, entre paréntesis, los días
+perdidos:
+
+| Clima: entrar como mucho… | Desde 88¢ | Desde 92¢ | Desde 94¢ |
+| --- | --- | --- | --- |
+| 40 h antes del cierre (lo que hacía el bot) | +0,6 % (17) | +1,1 % (11) | +1,6 % (7) |
+| 30 h antes | +2,5 % (12) | +2,5 % (7) | +2,1 % (6) |
+| 24 h antes | +1,7 % (14) | +0,8 % (12) | +0,4 % (11) |
+| 18 h antes | +1,6 % (14) | +2,0 % (8) | +1,8 % (6) |
+| **12 h antes (lo que hace ahora)** | **+2,0 % (13)** | **+2,8 % (6): gana** | **+2,7 % (4): gana** |
+| 8 h antes | +3,0 % (3) | +2,6 % (2) | +3,1 % (1) |
+
+- **Entrar la víspera apenas ganaba.** Con la regla de antes (hasta 40 h, desde 88¢) el bot acertaba
+  el 94,2 % de los días y necesitaba el 93,6 % para no perder: +0,6 %, que no se distingue de cero. Es
+  menos que el +4,08 % de la tabla de arriba porque aquella medía todas las compras del favorito en la
+  banda (y solo las más recientes de cada mercado), no la primera ocasión de cada día, que es la que
+  se lleva el bot.
+- **En las últimas 12 horas** (desde el mediodía del mismo día, hora local) ya se sabe cómo ha ido la
+  mañana y el favorito falla menos. Desde 92¢: 278 días, 6 perdidos; acierta el 97,8 % y necesita el
+  95,2 % para no perder (margen de error: 95,4–99,0 %).
+- Las filas saltan entre sí porque son pocas pérdidas (30 h sale bien y 24 h, mal), así que lo que
+  decide es el margen de error: las únicas reglas del clima con la ventaja confirmada son 12 h desde
+  92¢ y desde 94¢. Hasta 8 h antes también sale en positivo, pero en más de la mitad de los días ya no
+  hay ocasión de entrar (unos 110 de 294).
+- Por eso el bot sigue el clima **solo en las últimas 12 horas** (la regla KXHIGH de
+  `[markets.series_rules]`). Con poco saldo conviene además subir el **precio mínimo del favorito a
+  0,92** (Ajustes → Estrategia): pierde menos días y gana algo más.
+- **Por ciudad** hay solo 42 días y nada queda confirmado: con la regla de antes, Austin perdió un
+  8,3 % (6 días de 42) y Denver un 3,9 %, mientras Miami ganó un 6,6 % sin fallar ninguno. Es poco para
+  quitar ciudades.
+
+**¿Esperar si el favorito acaba de caer?** También se probó no comprar justo después de una bajada del
+precio, que era la sospecha del fin de semana. Los datos dicen que no: en los partidos, las 125
+compras hechas tras una caída de 3¢ o más en 30 minutos rindieron +6,9 % (6 perdidas), más que el
+resto (+2,7 %). Saltarse esas compras deja el total igual o algo peor (de +3,1 % a +2,9–3,0 %) y en el
+clima no cambia nada, así que el bot no tiene esa regla.
+
+**Partidos por liga** (hasta 6 h antes del final, desde 88¢):
+
+| Liga | Partidos | Perdidos | Rendimiento | Veredicto |
+| --- | --- | --- | --- | --- |
+| Fútbol americano universitario | 607 | 41 | +3,0 % | gana |
+| NFL | 48 | 0 | +10,7 % | gana |
+| Béisbol (MLB) | 364 | 27 | +4,2 % | gana |
+| Hockey (NHL) | 117 | 12 | +0,6 % | sin confirmar |
+| Baloncesto (NBA) | 25 | 5 | −9,6 % | pocos datos |
+| **Todos** | **1.161** | **85** | **+3,1 %** | **gana** |
+
+- **Perder varios partidos universitarios un sábado entra dentro de lo normal:** en 6 semanas fallaron
+  41 de 607 y aun así ganaron un 3 %. Con 5 contratos a unos 92¢, cada fallo cuesta unos 4,60 $ y cada
+  acierto deja unos 0,35–0,40 $, así que un sábado con 3 o 4 fallos se come lo ganado en muchos días.
+  Quitar la liga no habría ayudado.
+- Subir el precio mínimo en los partidos reduce los fallos (de 85 a 51 desde 92¢), pero gana menos
+  (+2,5 % en vez de +3,1 %): sirve para ir más tranquilo, no para ganar más. Entrar más cerca del final
+  (3 h antes: +3,6 %; 1 h antes: +3,4 %) apenas cambia el resultado.
+
+Como el resto de pruebas, es optimista: supone que el bot se lleva la primera venta del favorito. Sirve
+para comparar reglas entre sí, porque todas usan las mismas operaciones.
 
 ### ¿Cobrar antes de tiempo?
 
@@ -431,7 +496,8 @@ Conclusiones:
    - mejora en un tick la mejor oferta sin cruzar el spread;
    - 10 contratos por orden;
    - opera los partidos que terminan en las próximas 6 h, uno por partido, y para 15 min antes del
-     final previsto.
+     final previsto;
+   - el clima, solo en las últimas 12 h antes del cierre y en un tramo por ciudad y día.
 
 ## 7. Riesgos y reglas
 

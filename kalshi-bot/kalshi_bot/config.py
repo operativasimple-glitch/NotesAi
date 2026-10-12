@@ -48,9 +48,10 @@ GAME_SERIES = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"
 WEATHER_SERIES = ["KXHIGHLAX", "KXHIGHNY", "KXHIGHCHI", "KXHIGHMIA", "KXHIGHAUS", "KXHIGHDEN", "KXHIGHPHIL"]
 DEFAULT_SERIES = GAME_SERIES + WEATHER_SERIES
 # El clima abre la víspera y cierra a medianoche (hora local), con varios tramos de
-# temperatura por día: necesita una ventana más larga y mirar varios tramos, porque el
-# favorito casi nunca es el más negociado. Dónde apostar lo limita max_positions_per_event.
-DEFAULT_SERIES_RULES = {"KXHIGH": {"max_hours_to_close": 40, "max_markets_per_event": 4}}
+# temperatura por día: se miran varios tramos, porque el favorito casi nunca es el más
+# negociado (dónde apostar lo limita max_positions_per_event), y solo en las últimas 12 horas:
+# con datos reales, entrar antes (hasta 40 h) salió casi a cero (ver INVESTIGACION.md).
+DEFAULT_SERIES_RULES = {"KXHIGH": {"max_hours_to_close": 12, "max_markets_per_event": 4}}
 
 CREDENTIALS_FILE = "credentials.json"
 KEY_FILE = "kalshi-key.pem"

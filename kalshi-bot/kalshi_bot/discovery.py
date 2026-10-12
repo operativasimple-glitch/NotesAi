@@ -31,7 +31,7 @@ class MarketFilter:
     max_markets_per_event: int = 0  # 0 = sin límite
     exclude_series: list = field(default_factory=list)
     # Ajustes propios por prefijo de serie, p. ej. el clima (abre la víspera y tiene
-    # varios tramos de temperatura por día): {"KXHIGH": {"max_hours_to_close": 40}}.
+    # varios tramos de temperatura por día): {"KXHIGH": {"max_hours_to_close": 12}}.
     series_rules: dict = field(default_factory=dict)
 
     @property

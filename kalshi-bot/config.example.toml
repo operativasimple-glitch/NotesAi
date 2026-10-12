@@ -40,8 +40,10 @@ refresh_minutes = 5              # cada cuánto se vuelve a buscar mercados
 # Ajustes propios por serie (por el principio del ticker). El clima abre la víspera y cierra a
 # medianoche (hora local), con varios tramos por día: se miran hasta 4, porque el favorito no
 # suele ser el más negociado. Dónde apostar lo limita [risk] max_positions_per_event.
+# Solo en las últimas 12 horas (desde el mediodía del mismo día): con todas las operaciones de 6
+# semanas, entrar hasta 40 h antes salió casi a cero y en las 12 últimas, +2-3 % (INVESTIGACION.md).
 [markets.series_rules]
-KXHIGH = { max_hours_to_close = 40, max_markets_per_event = 4 }
+KXHIGH = { max_hours_to_close = 12, max_markets_per_event = 4 }
 
 [risk]
 max_order_contracts = 10         # contratos por orden (con menos, el redondeo de la comisión pesa)
