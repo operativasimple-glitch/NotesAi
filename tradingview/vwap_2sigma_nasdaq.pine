@@ -8,6 +8,10 @@
 //   • Venta cuando el cierre cruza hacia arriba la banda superior 2σ.
 //   • Stop a 20 puntos y objetivo a 40 puntos de la entrada.
 //   • Al ir 20 puntos a favor (1:1) el stop pasa a la entrada (breakeven).
+//   • Momentum: si cierra +20 a favor y el RSI(14) está ≥ 60 (cortos ≤ 40), se quita
+//     el objetivo y el stop sigue al precio a 20 puntos del extremo (trailing).
+//   • Con momentum se añade 1 contrato cada 20 puntos más a favor (máx. 2), solo si
+//     con el stop actual la posición entera no puede cerrar en pérdida.
 //
 // Gráfico de 2 o 5 minutos en MNQ1! (micro, 2 $/punto) o NQ1! (20 $/punto).
 // Alertas: crea una alerta sobre esta estrategia y elige la condición
@@ -15,12 +19,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // margin_* = 0: los futuros se operan con el margen del broker; con el valor por
 // defecto de la v6 (100 %) el probador exigiría el nominal entero y no entraría.
+// pyramiding = 5: entrada inicial + hasta 4 añadidos (el límite real lo pone "Máximo de añadidos").
 strategy("VWAP ±2σ · Reversión Nasdaq", shorttitle = "VWAP 2σ",
      overlay           = true,
      initial_capital   = 2000,
      default_qty_type  = strategy.fixed,
      default_qty_value = 1,
-     pyramiding        = 0,
+     pyramiding        = 5,
      commission_type   = strategy.commission.cash_per_contract,
      commission_value  = 0.5,
      slippage          = 1,
@@ -33,6 +38,7 @@ const string ANCHOR_SESSION = "Sesión (igual que el VWAP nativo)"
 const string ANCHOR_NY      = "Apertura NY 09:30"
 const string G_VWAP         = "VWAP"
 const string G_RISK         = "Gestión de la orden (puntos)"
+const string G_RUN          = "Momentum: dejar correr y añadir"
 const string G_TIME         = "Horario"
 
 anchorMode = input.string(ANCHOR_SESSION, "Anclaje", options = [ANCHOR_SESSION, ANCHOR_NY], group = G_VWAP, tooltip = "En NQ1!/MNQ1! con horario extendido, 'Sesión' reinicia el VWAP a las 18:00 de Nueva York (apertura de Globex), no a las 09:30. Elige 'Apertura NY 09:30' para que se reinicie con la campana del contado.")
@@ -48,6 +54,15 @@ bePts      = input.float(20.0, "Breakeven al ir a favor", minval = 0.25, step = 
 beOffset   = input.float(0.0, "Colchón del breakeven", minval = 0, step = 0.25, group = G_RISK, tooltip = "0 = stop exactamente en la entrada. 1–2 puntos cubren comisiones y deslizamiento.")
 allowLong  = input.bool(true, "Operar largos", group = G_RISK)
 allowShort = input.bool(true, "Operar cortos", group = G_RISK)
+
+useRunner  = input.bool(true, "Dejar correr si hay momentum", group = G_RUN, tooltip = "Si una vela cierra al menos 'Breakeven al ir a favor' puntos a favor y el RSI confirma, se quita el objetivo fijo y el stop pasa a seguir al precio.")
+rsiLen     = input.int(14, "Longitud del RSI", minval = 2, group = G_RUN)
+rsiLevel   = input.float(60.0, "Nivel de RSI con momentum", minval = 50.0, maxval = 100.0, step = 1, group = G_RUN, tooltip = "Largos: RSI ≥ este nivel. Cortos: RSI ≤ 100 − este nivel (60 → 40).")
+trailPts   = input.float(20.0, "Trailing stop (puntos desde el extremo)", minval = 0.25, step = 1, group = G_RUN)
+allowAdds  = input.bool(true, "Añadir contratos con momentum", group = G_RUN, tooltip = "Solo añade si, con el stop actual, la posición entera (incluido el nuevo contrato) no puede cerrar en pérdida.")
+addStepPts = input.float(20.0, "Añadir cada (puntos más a favor)", minval = 0.25, step = 1, group = G_RUN)
+addQty     = input.int(1, "Contratos por añadido", minval = 1, group = G_RUN)
+maxAdds    = input.int(2, "Máximo de añadidos", minval = 1, maxval = 4, group = G_RUN)
 
 useWindow  = input.bool(true, "Operar solo dentro del horario", group = G_TIME)
 windowSess = input.session("0930-1600", "Horario (hora de Nueva York)", group = G_TIME)
@@ -80,6 +95,8 @@ var int barsSinceAnchor = 0
 barsSinceAnchor := anchor ? 0 : barsSinceAnchor + 1
 bandsReady = barsSinceAnchor >= minBars
 
+rsiValue = ta.rsi(close, rsiLen)
+
 // ───────── Horario ─────────
 inWindowRaw   = not na(time(timeframe.period, windowSess, NY))
 endHour       = int(str.tonumber(str.substring(windowSess, 5, 7)))
@@ -97,23 +114,74 @@ longSignal  = allowLong and bandsReady and canEnter and crossDown2
 shortSignal = allowShort and bandsReady and canEnter and crossUp2
 
 // ───────── Posición ─────────
-isLong  = strategy.position_size > 0
-isShort = strategy.position_size < 0
-inTrade = isLong or isShort
-entryPx = strategy.position_avg_price
+// El stop solo se mueve a favor: nunca se aleja del precio.
+ratchet(float current, float candidate, int d) =>
+    na(current) ? candidate : d > 0 ? math.max(current, candidate) : math.min(current, candidate)
 
-var bool beActive = false
+isLong      = strategy.position_size > 0
+isShort     = strategy.position_size < 0
+inTrade     = isLong or isShort
+dir         = isLong ? 1 : isShort ? -1 : 0
+firstPx     = inTrade ? strategy.opentrades.entry_price(0) : na
+avgPx       = strategy.position_avg_price
+posQty      = math.abs(strategy.position_size)
+baseId      = isLong ? "Largo" : "Corto"
+momentumNow = isLong ? rsiValue >= rsiLevel : isShort ? rsiValue <= 100 - rsiLevel : false
+
+// Un único stop (stopPx) para toda la posición, referido al precio de la primera entrada.
+var bool  beActive  = false
+var bool  runActive = false
+var float extreme   = na
+var float stopPx    = na
+var float addRef    = na
+var int   addsDone  = 0
+runStarted = false
+
 if not inTrade
-    beActive := false
-else if useBE and not beActive and (isLong ? high >= entryPx + bePts : low <= entryPx - bePts)
-    beActive := true
-    beStop = isLong ? entryPx + beOffset : entryPx - beOffset
-    alert("BREAKEVEN " + syminfo.ticker + ": +" + str.tostring(bePts) + " pts a favor. Mueve el stop a " + str.tostring(beStop, format.mintick), alert.freq_once_per_bar_close)
+    beActive  := false
+    runActive := false
+    extreme   := na
+    stopPx    := na
+    addRef    := na
+    addsDone  := 0
+else
+    prevStop = stopPx
+    extreme := na(extreme) ? (isLong ? high : low) : isLong ? math.max(extreme, high) : math.min(extreme, low)
+    if na(stopPx)
+        stopPx := firstPx - dir * slPts
+        addRef := firstPx
+
+    if useBE and not beActive and dir * (extreme - firstPx) >= bePts
+        beActive := true
+        stopPx   := ratchet(stopPx, firstPx + dir * beOffset, dir)
+        alert("BREAKEVEN " + syminfo.ticker + ": +" + str.tostring(bePts) + " pts a favor. Mueve el stop a " + str.tostring(stopPx, format.mintick), alert.freq_once_per_bar_close)
+
+    if useRunner and not runActive and momentumNow and dir * (close - firstPx) >= bePts
+        runActive  := true
+        runStarted := true
+    if runActive
+        stopPx := ratchet(stopPx, math.round_to_mintick(extreme - dir * trailPts), dir)
+
+    if runStarted
+        alert("MOMENTUM " + syminfo.ticker + ": deja correr. Quita el objetivo; stop a " + str.tostring(trailPts) + " pts del extremo, ahora en " + str.tostring(stopPx, format.mintick), alert.freq_once_per_bar_close)
+    else if runActive and stopPx != prevStop
+        alert("TRAILING " + syminfo.ticker + ": mueve el stop a " + str.tostring(stopPx, format.mintick), alert.freq_once_per_bar_close)
 
 if useWindow and closeAtEnd and inTrade and (lastWindowBar or not inWindowRaw)
     strategy.close_all(comment = "Fin de horario", immediately = true)
     alert("CIERRA " + syminfo.ticker + ": fin del horario operativo.", alert.freq_once_per_bar_close)
 
+// ───────── Añadir contratos ─────────
+if inTrade and runActive and allowAdds and addsDone < maxAdds and canEnter and momentumNow and dir * (close - addRef) >= addStepPts
+    // Resultado si salta el stop justo después de añadir (sin comisiones ni deslizamiento).
+    worstAtStop = dir * (stopPx - avgPx) * posQty + dir * (stopPx - close) * addQty
+    if worstAtStop >= 0
+        addsDone += 1
+        addRef   := close
+        strategy.entry(baseId + " +" + str.tostring(addsDone), isLong ? strategy.long : strategy.short, qty = addQty)
+        alert("AÑADE " + str.tostring(addQty) + " contrato(s) " + (isLong ? "largo" : "corto") + " en " + syminfo.ticker + " ~" + str.tostring(close, format.mintick) + ". Stop de toda la posición: " + str.tostring(stopPx, format.mintick), alert.freq_once_per_bar_close)
+
+// ───────── Entradas ─────────
 if not inTrade and longSignal
     strategy.entry("Largo", strategy.long)
     alert("COMPRA " + syminfo.ticker + " ~" + str.tostring(close, format.mintick) + " (cierre bajo la banda -2σ) · SL " + str.tostring(close - slPts, format.mintick) + " · TP " + str.tostring(close + tpPts, format.mintick) + " · BE en " + str.tostring(close + bePts, format.mintick), alert.freq_once_per_bar_close)
@@ -122,15 +190,23 @@ if not inTrade and shortSignal
     strategy.entry("Corto", strategy.short)
     alert("VENTA " + syminfo.ticker + " ~" + str.tostring(close, format.mintick) + " (cierre sobre la banda +2σ) · SL " + str.tostring(close + slPts, format.mintick) + " · TP " + str.tostring(close - tpPts, format.mintick) + " · BE en " + str.tostring(close - bePts, format.mintick), alert.freq_once_per_bar_close)
 
-// profit/loss van en ticks desde el precio real de llenado; "stop" (breakeven) tiene prioridad sobre "loss".
+// ───────── Salidas ─────────
 slTicks = math.round(slPts / syminfo.mintick)
 tpTicks = math.round(tpPts / syminfo.mintick)
-beLong  = beActive and isLong ? entryPx + beOffset : na
-beShort = beActive and isShort ? entryPx - beOffset : na
-exitTag = beActive ? "BE" : "SL"
 
-strategy.exit("Salida L", "Largo", profit = tpTicks, loss = slTicks, stop = beLong, comment_profit = "TP", comment_loss = exitTag)
-strategy.exit("Salida C", "Corto", profit = tpTicks, loss = slTicks, stop = beShort, comment_profit = "TP", comment_loss = exitTag)
+if not inTrade
+    // Entrada pendiente: stop y objetivo en ticks desde el precio real de llenado.
+    strategy.exit("Salida Largo", "Largo", profit = tpTicks, loss = slTicks, comment_profit = "TP", comment_loss = "SL")
+    strategy.exit("Salida Corto", "Corto", profit = tpTicks, loss = slTicks, comment_profit = "TP", comment_loss = "SL")
+else
+    // Mismo stop para la entrada y los añadidos; con momentum no hay objetivo fijo.
+    targetPx = runActive ? na : firstPx + dir * tpPts
+    stopTag  = runActive ? "Trailing" : beActive ? "BE" : "SL"
+    strategy.exit("Salida " + baseId, baseId, stop = stopPx, limit = targetPx, comment_profit = "TP", comment_loss = stopTag)
+    if addsDone > 0
+        for i = 1 to addsDone
+            addId = baseId + " +" + str.tostring(i)
+            strategy.exit("Salida " + addId, addId, stop = stopPx, limit = targetPx, comment_profit = "TP", comment_loss = stopTag)
 
 // ───────── Gráfico ─────────
 // Color na en la vela de anclaje para no dibujar el salto entre una sesión y la siguiente.
@@ -149,9 +225,9 @@ fill(pLo1, pLo2, color = color.new(#808000, 94), title = "Fondo banda 2 inferior
 
 plotshape(longSignal, "Señal de compra", style = shape.triangleup, location = location.belowbar, color = #26A69A, size = size.small)
 plotshape(shortSignal, "Señal de venta", style = shape.triangledown, location = location.abovebar, color = #EF5350, size = size.small)
+plotshape(runStarted and isLong, "Momentum en largo", style = shape.diamond, location = location.belowbar, color = #FFB300, size = size.tiny)
+plotshape(runStarted and isShort, "Momentum en corto", style = shape.diamond, location = location.abovebar, color = #FFB300, size = size.tiny)
 
-stopLevel = inTrade ? (beActive ? (isLong ? entryPx + beOffset : entryPx - beOffset) : (isLong ? entryPx - slPts : entryPx + slPts)) : na
-tpLevel   = inTrade ? (isLong ? entryPx + tpPts : entryPx - tpPts) : na
-plot(inTrade ? entryPx : na, "Entrada", color = color.gray, style = plot.style_linebr)
-plot(stopLevel, "Stop", color = #EF5350, style = plot.style_linebr)
-plot(tpLevel, "Objetivo", color = #26A69A, style = plot.style_linebr)
+plot(inTrade ? avgPx : na, "Precio medio", color = color.gray, style = plot.style_linebr)
+plot(inTrade ? stopPx : na, "Stop", color = #EF5350, style = plot.style_linebr)
+plot(inTrade and not runActive ? firstPx + dir * tpPts : na, "Objetivo", color = #26A69A, style = plot.style_linebr)
