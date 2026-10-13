@@ -193,6 +193,22 @@ Es una base en 3D donde cada vecino va a la sala de lo que está haciendo de ver
   de cada apuesta perdida de los últimos 3 días: cuándo y a cuánto compró el bot, cuánto llegó a valer, si
   se dio la vuelta en la última hora y cuántas veces falla algo así a ese precio.
 - **Pruebas (la Probadora):** juega de mentira los partidos de cuatro maneras a la vez para ver cuál gana más.
+- **Incubadora (la Mentora):** un ala nueva, pegada al Mercado, donde se prueban **otras maneras de ganar**,
+  distintas de la de Kali, para que en el futuro puedan operar en paralelo con ella. Cada una juega con
+  **25 $ de mentira** y las mismas reglas de riesgo que el bot (15 % del saldo por mercado, 60 % en juego y
+  pausa si un día pierde un 25 %), con las comisiones de Kalshi:
+  - **Notaria:** compra lo que el termómetro ya ha decidido. La máxima del día solo puede subir: si ya van 81°,
+    el tramo «78° a 79°» no puede ganar y su NO vale 1 $ seguro; si alguien aún lo vende a 98¢ o menos, lo
+    compra. Usa la segunda lectura más alta del día y deja 1° de margen.
+  - **Tendera:** deja órdenes de compra y venta 1¢ mejores que las de los demás en los tramos de mañana y gana
+    la diferencia. Para saber si se las habrían llenado mira las operaciones públicas de Kalshi.
+  - **Contable:** busca dinero gratis: los tramos de un día (o los dos equipos de un partido) que, comprados
+    todos, cuestan menos de lo que se cobra seguro.
+  - La Mentora lleva el marcador y el **veredicto**. Una estrategia solo queda «lista» con al menos 40
+    operaciones y 14 días, ganando con comisiones, con menos de un 5 % de probabilidad de que sea suerte y sin
+    haber caído más de un 30 %. Aun así **no opera sola**: para que use dinero real haría falta tu permiso y
+    un presupuesto. En la sala hay un marcador, una cápsula por estrategia (la planta crece con lo que lleva
+    aprendido) y un holograma con lo que está viendo cada una; también sale en la pestaña Consejo.
 - El resto (Nube con la previsión del clima, Radar, el Consejo, el diario del Cronista) mira mercados y cuenta
   lo que pasa. El Consejo solo apuesta de mentira.
 
@@ -368,6 +384,7 @@ kalshi-bot/
 │   ├── push.py, names.py                        avisos al móvil (Web Push) y nombres legibles
 │   └── config.py, cli.py
 ├── pueblo/                                      el pueblo de bots (/pueblo/): vecinos, mundo y web 3D
+│   └── incubator/                               la Incubadora: cuentas de mentira, estrategias y veredicto
 ├── tests/                                       pruebas sin conexión (pytest), también las del pueblo
 ├── INVESTIGACION.md                             dónde está la ventaja, con fuentes
 ├── Dockerfile, railway.json                     despliegue

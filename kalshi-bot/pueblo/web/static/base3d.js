@@ -1,5 +1,6 @@
-/* La base en 3D: nueve salas flotando en el espacio y los bots caminando a la sala de lo que
+/* La base en 3D: diez salas flotando en el espacio y los bots caminando a la sala de lo que
  * hacen de verdad (Kali al Mercado cuando compra, Radar al Laboratorio cuando busca...).
+ * Nueve forman el cuadrado de siempre; la Incubadora es un ala pegada al Mercado.
  *
  * Se dibuja con Three.js (vendor/three.module.min.js). Cada sala mide 6 × 6 con paredes bajas y
  * puertas; detrás, paredes altas con luz de neón. Los textos (nombres, bocadillos, carteles) son
@@ -26,7 +27,10 @@ export const ROOMS = {
   pruebas: { col: 0, row: 2, name: 'Pruebas', glow: '#5ee7f0', floor: '#d8e2ea' },
   puente: { col: 1, row: 2, name: 'Puente', glow: '#ff6b6b', floor: '#f2dfe4' },
   boveda: { col: 2, row: 2, name: 'Bóveda', glow: '#ffd166', floor: '#f5ead0' },
+  incubadora: { col: 3, row: 1, name: 'Incubadora', glow: '#a3e635', floor: '#e3f2d3' },
 };
+// Las estrategias de la Incubadora, cada una con su cápsula (en este orden, de izquierda a derecha).
+const PODS = [['notaria', '#d946ef'], ['tendera', '#0d9488'], ['contable', '#475569']];
 
 // Dónde se pone cada uno en una sala: [x, z, mira hacia x, mira hacia z] (relativo al centro).
 const SPOTS = {
@@ -39,6 +43,8 @@ const SPOTS = {
   pruebas: [[0.0, 0.5, -0.4, -0.4], [1.2, 1.0, 0, 0], [-1.1, 1.2, 0, 0]],
   puente: [[0.0, -1.3, 0.0, -2.2], [2.0, -1.4, 2.0, -2.3], [-1.4, -0.8, -2.3, -2.3], [-0.8, 1.0, 0, -2.2], [0.8, 1.2, 0, -2.2], [1.8, 0.5, 2.0, -2.3]],
   boveda: [[-1.1, -1.1, -2.1, -2.1], [0.8, -1.4, 0.8, -2.3], [0.2, 0.6, -2.1, -2.1], [1.6, 1.0, 0.8, -2.3], [-1.0, 1.4, -2.1, -2.1], [-1.9, 0.0, -2.1, -2.1]],
+  // La Mentora delante de su pantalla y cada estrategia delante de su cápsula.
+  incubadora: [[-1.45, -0.7, -2.25, -2.25], [-0.6, -0.95, -0.3, -2.35], [0.7, -0.95, 1.0, -2.35], [2.0, -0.95, 2.3, -2.35], [0.6, 1.1, 0.6, -2.35], [1.9, 0.5, 1.9, -2.35]],
 };
 // Los asientos del Consejo, alrededor de la mesa redonda.
 for (let i = 0; i < 9; i++) {
@@ -46,7 +52,7 @@ for (let i = 0; i < 9; i++) {
   SPOTS.consejo.push([Math.cos(a) * 1.85, Math.sin(a) * 1.85, 0, 0]);
 }
 // Quién tiene sitio fijo (su "mesa") cuando está en su sala.
-const DESK = { kali: 0, nube: 0, radar: 0, cronista: 0, vigia: 0, investigadora: 0, probadora: 0, herrera: 0 };
+const DESK = { kali: 0, nube: 0, radar: 0, cronista: 0, vigia: 0, investigadora: 0, probadora: 0, herrera: 0, mentora: 0, notaria: 1, tendera: 2, contable: 3 };
 const MAIL_SPOT = 1; // en el Puente, la terminal con tus mensajes
 const BOARD_SPOT = 2; // en el Archivo, el tablón del diario
 // Para no atravesar muebles: círculos que se rodean al caminar.
@@ -57,6 +63,7 @@ const OBSTACLES = {
   boveda: [[-2.1, -2.1, 1.0]],
   mercado: [[-2.3, -2.3, 0.8]],
   puente: [[-2.3, -2.3, 0.8]],
+  incubadora: [[-1.2, 1.35, 0.75]],
 };
 
 export function supportsWebGL() {
@@ -82,9 +89,26 @@ function center(room) {
   return new THREE.Vector3(-SIZE + SIZE * r.col, 0, -SIZE + SIZE * r.row);
 }
 function roomAt(x, z) {
-  const col = clamp(Math.floor((x + EDGE) / SIZE), 0, 2);
-  const row = clamp(Math.floor((z + EDGE) / SIZE), 0, 2);
+  const col = Math.floor((x + EDGE) / SIZE);
+  const row = Math.floor((z + EDGE) / SIZE);
+  const exact = Object.keys(ROOMS).find((k) => ROOMS[k].col === col && ROOMS[k].row === row);
+  if (exact) return exact;
+  // Justo en un borde, fuera de las salas: la más cercana.
+  let best = null;
+  for (const k of Object.keys(ROOMS)) {
+    const c = center(k);
+    const d = (c.x - x) ** 2 + (c.z - z) ** 2;
+    if (!best || d < best.d) best = { k, d };
+  }
+  return best.k;
+}
+function roomIn(col, row) {
   return Object.keys(ROOMS).find((k) => ROOMS[k].col === col && ROOMS[k].row === row);
+}
+// Las salas que quedan fuera del cuadrado de siempre (llevan su propia plataforma).
+function annex(room) {
+  const r = ROOMS[room];
+  return r.col < 0 || r.col > 2 || r.row < 0 || r.row > 2;
 }
 function neighbors(room) {
   const r = ROOMS[room];
@@ -332,6 +356,45 @@ function accessory(id, head, color) {
       spike.position.set(Math.cos(a) * 0.13, top + 0.11, Math.sin(a) * 0.13);
       g.add(spike);
     }
+  } else if (id === 'mentora') {
+    // Birrete con su borla.
+    g.add(cyl(0.15, 0.17, 0.08, mat('#1f2937'), 0, top, 0, 20));
+    const board = box(0.4, 0.025, 0.4, mat('#111827'), 0, top + 0.08, 0);
+    board.rotation.y = Math.PI / 4;
+    g.add(board);
+    g.add(box(0.02, 0.14, 0.02, gold, 0.17, top - 0.04, 0.0));
+    const knot = mesh(new THREE.SphereGeometry(0.03, 10, 8), gold);
+    knot.position.set(0, top + 0.11, 0);
+    g.add(knot);
+  } else if (id === 'notaria') {
+    // Termómetro en un lado: lee lo que ya se ha medido.
+    g.add(cyl(0.022, 0.022, 0.26, mat('#f8fafc', { roughness: 0.3 }), 0.27, -0.12, 0.02, 10));
+    g.add(cyl(0.01, 0.01, 0.17, glowMat('#ef4444', 0.8), 0.27, -0.1, 0.035, 8));
+    const bulb = mesh(new THREE.SphereGeometry(0.04, 12, 10), glowMat('#ef4444', 0.9));
+    bulb.position.set(0.27, -0.13, 0.02);
+    g.add(bulb);
+    const seal = cyl(0.07, 0.07, 0.02, mat('#a21caf'), 0, top, 0, 18);
+    g.add(seal);
+  } else if (id === 'tendera') {
+    // Visera de tendera.
+    const visor = mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.02, 24, 1, false, -Math.PI / 2, Math.PI), mat('#22c55e', { transparent: true, opacity: 0.75 }));
+    visor.position.set(0, top - 0.04, 0.12);
+    g.add(visor);
+    g.add(cyl(0.235, 0.235, 0.05, mat('#166534'), 0, top - 0.07, 0, 24));
+  } else if (id === 'contable') {
+    // Gafas redondas y un lápiz detrás de la oreja.
+    const rim = mat('#cbd5e1', { metalness: 0.5, roughness: 0.4 });
+    for (const x of [-0.085, 0.085]) {
+      const ring = mesh(new THREE.TorusGeometry(0.06, 0.012, 8, 20), rim, false);
+      ring.position.set(x, -0.005, 0.2);
+      g.add(ring);
+    }
+    const pencil = new THREE.Group();
+    pencil.add(box(0.03, 0.22, 0.03, mat('#facc15'), 0, 0, 0));
+    pencil.add(box(0.032, 0.04, 0.032, mat('#f472b6'), 0, 0.22, 0));
+    pencil.position.set(0.25, -0.02, -0.05);
+    pencil.rotation.z = -0.9;
+    g.add(pencil);
   } else if (id === 'claude') {
     const spark = glowMat('#ffd9c7', 0.9);
     const holder = new THREE.Group();
@@ -674,10 +737,10 @@ export class Base {
     sun.castShadow = true;
     sun.shadow.mapSize.set(1024, 1024);
     const sc = sun.shadow.camera;
-    sc.left = -13;
-    sc.right = 13;
-    sc.top = 13;
-    sc.bottom = -13;
+    sc.left = -16;
+    sc.right = 16;
+    sc.top = 16;
+    sc.bottom = -16;
     sc.near = 1;
     sc.far = 40;
     sun.shadow.bias = -0.0008;
@@ -685,18 +748,37 @@ export class Base {
     scene.add(sun);
     this.sun = sun;
 
-    // La plataforma y su borde de neón.
-    const slab = box(EDGE * 2 + 0.6, 0.9, EDGE * 2 + 0.6, mat('#6a55c8', { roughness: 0.6 }), 0, -0.95, 0);
-    slab.castShadow = false;
-    scene.add(slab);
-    const under = box(EDGE * 2 - 1, 0.5, EDGE * 2 - 1, mat('#4a3a9a'), 0, -1.4, 0);
-    under.castShadow = false;
-    scene.add(under);
+    // La plataforma y su borde de neón (un ala fuera del cuadrado lleva su propio trozo).
+    const flat = (o) => {
+      o.castShadow = false;
+      scene.add(o);
+      return o;
+    };
+    const slabMat = mat('#6a55c8', { roughness: 0.6 });
+    const underMat = mat('#4a3a9a');
+    flat(box(EDGE * 2 + 0.6, 0.9, EDGE * 2 + 0.6, slabMat, 0, -0.95, 0));
+    flat(box(EDGE * 2 - 1, 0.5, EDGE * 2 - 1, underMat, 0, -1.4, 0));
+    for (const id of Object.keys(ROOMS).filter(annex)) {
+      const r = ROOMS[id];
+      const c = center(id);
+      const h = SIZE / 2;
+      // Hasta donde llega la plataforma vecina (sobresale 0,3) o 0,3 más allá si no hay vecina.
+      const x0 = c.x - h + (roomIn(r.col - 1, r.row) ? 0.3 : -0.3);
+      const x1 = c.x + h + (roomIn(r.col + 1, r.row) ? -0.3 : 0.3);
+      const z0 = c.z - h + (roomIn(r.col, r.row - 1) ? 0.3 : -0.3);
+      const z1 = c.z + h + (roomIn(r.col, r.row + 1) ? -0.3 : 0.3);
+      flat(box(x1 - x0, 0.9, z1 - z0, slabMat, (x0 + x1) / 2, -0.95, (z0 + z1) / 2));
+      flat(box(x1 - x0 - 1.6, 0.5, z1 - z0 - 1.6, underMat, (x0 + x1) / 2, -1.4, (z0 + z1) / 2));
+    }
     const neon = glowMat('#62f2ff', 2.2);
-    for (const [w, d, x, z] of [[EDGE * 2 + 0.6, 0.08, 0, EDGE + 0.3], [0.08, EDGE * 2 + 0.6, EDGE + 0.3, 0], [EDGE * 2 + 0.6, 0.08, 0, -EDGE - 0.3], [0.08, EDGE * 2 + 0.6, -EDGE - 0.3, 0]]) {
-      const strip = box(w, 0.06, d, neon, x, -0.08, z);
-      strip.castShadow = false;
-      scene.add(strip);
+    // El neón va por cada lado de sala que da al vacío.
+    for (const [id, r] of Object.entries(ROOMS)) {
+      const c = center(id);
+      const out = SIZE / 2 + 0.3;
+      if (!roomIn(r.col, r.row - 1)) flat(box(SIZE + 0.6, 0.06, 0.08, neon, c.x, -0.08, c.z - out));
+      if (!roomIn(r.col, r.row + 1)) flat(box(SIZE + 0.6, 0.06, 0.08, neon, c.x, -0.08, c.z + out));
+      if (!roomIn(r.col - 1, r.row)) flat(box(0.08, 0.06, SIZE + 0.6, neon, c.x - out, -0.08, c.z));
+      if (!roomIn(r.col + 1, r.row)) flat(box(0.08, 0.06, SIZE + 0.6, neon, c.x + out, -0.08, c.z));
     }
     const glowUnder = halo('#9b6bff', 34, 0.35);
     glowUnder.position.set(0, -3, 0);
@@ -747,23 +829,30 @@ export class Base {
       top.castShadow = false;
       scene.add(top);
     };
-    addWall(-EDGE, -EDGE, EDGE, -EDGE, BACK_H, true);
-    addWall(-EDGE, -EDGE, -EDGE, EDGE, BACK_H, true);
-    // Paredes interiores con hueco de puerta en el centro de cada lado de sala.
-    for (const line of [-SIZE / 2, SIZE / 2]) {
-      for (let k = 0; k < 3; k++) {
-        const a = -EDGE + k * SIZE;
-        const mid = a + SIZE / 2;
-        addWall(line, a, line, mid - DOOR / 2, WALL_H);
-        addWall(line, mid + DOOR / 2, line, a + SIZE, WALL_H);
-        addWall(a, line, mid - DOOR / 2, line, WALL_H);
-        addWall(mid + DOOR / 2, line, a + SIZE, line, WALL_H);
+    // Detrás de cada sala que da al vacío, pared alta con luz; delante, un bordillo; entre dos
+    // salas, pared baja con la puerta en el centro (cada una se hace una vez, hacia +x y +z).
+    const curb = mat('#e7e1f7');
+    for (const [id, r] of Object.entries(ROOMS)) {
+      const c = center(id);
+      const x0 = c.x - SIZE / 2;
+      const x1 = c.x + SIZE / 2;
+      const z0 = c.z - SIZE / 2;
+      const z1 = c.z + SIZE / 2;
+      if (!roomIn(r.col, r.row - 1)) addWall(x0, z0, x1, z0, BACK_H, true);
+      if (!roomIn(r.col - 1, r.row)) addWall(x0, z0, x0, z1, BACK_H, true);
+      if (roomIn(r.col + 1, r.row)) {
+        addWall(x1, z0, x1, c.z - DOOR / 2, WALL_H);
+        addWall(x1, c.z + DOOR / 2, x1, z1, WALL_H);
+      } else {
+        scene.add(box(0.16, 0.22, SIZE, curb, x1, 0, c.z));
+      }
+      if (roomIn(r.col, r.row + 1)) {
+        addWall(x0, z1, c.x - DOOR / 2, z1, WALL_H);
+        addWall(c.x + DOOR / 2, z1, x1, z1, WALL_H);
+      } else {
+        scene.add(box(SIZE, 0.22, 0.16, curb, c.x, 0, z1));
       }
     }
-    // Bordillo delante.
-    const curb = mat('#e7e1f7');
-    scene.add(box(EDGE * 2, 0.22, 0.16, curb, 0, 0, EDGE));
-    scene.add(box(0.16, 0.22, EDGE * 2, curb, EDGE, 0, 0));
 
     // Muebles de cada sala.
     this.animated = [];
@@ -1012,6 +1101,91 @@ export class Base {
       for (const z of [-1.6, -0.6]) add(box(0.6, 1.5, 0.6, mat('#e9eef5'), -2.3, 0, z));
       // El marcador de las pruebas de mentira en los partidos.
       this.screens.tests = standing(2.1, 1.3, 384, drawTests, 0.9, -2.3, 1.45);
+    } else if (id === 'incubadora') {
+      // El marcador de las estrategias de mentira.
+      this.screens.incubator = standing(1.9, 1.3, 384, drawIncubator, -2.25, -2.25, 1.45);
+      // Una cápsula por estrategia: su planta crece con lo que lleva aprendido y su aro cambia de
+      // color con el veredicto (verde si ya está lista, gris si queda descartada).
+      this.pods = {};
+      const glass = new THREE.MeshStandardMaterial({
+        color: '#e8fbff', emissive: '#bdf2ff', emissiveIntensity: 0.18, transparent: true, opacity: 0.42,
+        roughness: 0.05, metalness: 0.1, depthWrite: false,
+      });
+      PODS.forEach(([bot, color], i) => {
+        const x = -0.3 + i * 1.3;
+        const z = -2.35;
+        add(cyl(0.38, 0.43, 0.28, mat('#3a3360'), x, 0, z, 28));
+        const ringMat = new THREE.MeshStandardMaterial({ color: '#a3e635', emissive: '#a3e635', emissiveIntensity: 1.6 });
+        const ring = mesh(new THREE.TorusGeometry(0.37, 0.025, 8, 44), ringMat, false);
+        ring.rotation.x = Math.PI / 2;
+        ring.position.set(x, 0.29, z);
+        add(ring);
+        const dome = new THREE.Mesh(new THREE.SphereGeometry(0.36, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2), glass);
+        dome.scale.y = 1.7;
+        dome.position.set(x, 0.28, z);
+        dome.renderOrder = 2;
+        add(dome);
+        const cap = mesh(new THREE.TorusGeometry(0.1, 0.018, 8, 24), glowMat(color, 1.2), false);
+        cap.rotation.x = Math.PI / 2;
+        cap.position.set(x, 0.28 + 0.36 * 1.7, z);
+        add(cap);
+        const plant = new THREE.Group();
+        plant.position.set(x, 0.28, z);
+        const leaf = glowMat(color, 0.55);
+        plant.add(cyl(0.022, 0.028, 0.42, mat('#4d7c0f'), 0, 0, 0, 8));
+        for (const [side, y] of [[-1, 0.2], [1, 0.3]]) {
+          const l = mesh(new THREE.SphereGeometry(0.09, 12, 8), leaf);
+          l.scale.set(1.5, 0.32, 0.8);
+          l.position.set(side * 0.11, y, 0);
+          l.rotation.z = side * 0.55;
+          plant.add(l);
+        }
+        const bud = mesh(new THREE.SphereGeometry(0.065, 12, 10), leaf);
+        bud.position.y = 0.45;
+        plant.add(bud);
+        plant.scale.setScalar(0.5);
+        add(plant);
+        const light = halo('#a3e635', 1.2, 0.22);
+        light.position.set(x, 0.8, z);
+        add(light);
+        // Luz de cultivo encima, en la pared.
+        const bar = box(0.85, 0.05, 0.08, glowMat('#d9f99d', 1.8), x, 1.3, -2.86);
+        bar.castShadow = false;
+        add(bar);
+        this.pods[bot] = { plant, ringMat, light, grow: 0.5, target: 0.5 };
+      });
+      this.animated.push((dt, t) => {
+        Object.values(this.pods).forEach((pod, i) => {
+          pod.grow += (pod.target - pod.grow) * Math.min(1, dt * 1.5);
+          pod.plant.scale.setScalar(pod.grow);
+          pod.plant.rotation.y = Math.sin(t * 0.6 + i * 1.7) * 0.3;
+        });
+      });
+      // La mesa del centro: un holograma va contando lo que está viendo cada estrategia.
+      add(cyl(0.42, 0.36, 0.45, mat('#2f2a5a', { roughness: 0.5 }), -1.2, 0, 1.35, 32));
+      const tableRing = mesh(new THREE.TorusGeometry(0.42, 0.03, 8, 48), glowMat('#a3e635', 2), false);
+      tableRing.rotation.x = Math.PI / 2;
+      tableRing.position.set(-1.2, 0.46, 1.35);
+      add(tableRing);
+      const beamUp = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.9, 24, 1, true), new THREE.MeshBasicMaterial({ color: '#a3e635', transparent: true, opacity: 0.1, side: THREE.DoubleSide, depthWrite: false }));
+      beamUp.position.set(-1.2, 0.92, 1.35);
+      add(beamUp);
+      const research = screen(1.9, 1.05, 448, drawResearch);
+      research.mesh.material.transparent = true;
+      research.mesh.material.opacity = 0.94;
+      research.mesh.position.set(-1.2, 1.6, 1.35);
+      research.mesh.rotation.y = facing;
+      add(research.mesh);
+      this.animated.push((dt, t) => { research.mesh.position.y = 1.6 + Math.sin(t * 1.1) * 0.05; });
+      this.screens.research = research;
+      // Macetas con brotes en la esquina de delante.
+      for (const [x, z, k] of [[2.45, 1.1, 1], [2.45, 1.85, 0.8], [1.65, 2.5, 0.9]]) {
+        add(cyl(0.16, 0.12, 0.26, mat('#c07a4a'), x, 0, z, 16));
+        const sprout = mesh(new THREE.SphereGeometry(0.17 * k, 12, 10), mat('#65a30d', { roughness: 0.6 }));
+        sprout.position.set(x, 0.36 * k + 0.18, z);
+        sprout.scale.y = 1.2;
+        add(sprout);
+      }
     }
   }
 
@@ -1122,6 +1296,9 @@ export class Base {
     const tests = d('probadora');
     const smith = d('herrera');
     const vigia = d('vigia');
+    const incubator = d('mentora');
+    const board = incubator.board || [];
+    const ready = board.filter((r) => r.state === 'lista').length;
     const counts = {
       mercado: kali.connected ? `${(kali.positions || []).length} abiertas` : 'sin panel',
       laboratorio: radar.scanned !== undefined ? `${radar.scanned} mercados` : '',
@@ -1132,14 +1309,15 @@ export class Base {
       archivo: 'diario',
       pruebas: (tests.variants || []).length ? `${tests.variants.length} maneras` : '',
       forja: smith.totals ? `30 días ${money(smith.totals.net, true)}` : smith.connected === false ? 'sin panel' : '',
+      incubadora: ready ? `${ready} lista${ready > 1 ? 's' : ''}` : board.length ? `${board.length} estrategias` : '',
     };
     for (const [id, text] of Object.entries(counts)) {
       if (this.labels[id] && this.labels[id].count.textContent !== text) this.labels[id].count.textContent = text;
     }
-    const sig = JSON.stringify([kali.positions, kali.today, council.board, (council.topics || []).length, nube.cities, radar.scanned, radar.by_series, tests.variants, smith.totals, smith.groups, (smith.curve || []).length]);
+    const sig = JSON.stringify([kali.positions, kali.today, council.board, (council.topics || []).length, nube.cities, radar.scanned, radar.by_series, tests.variants, smith.totals, smith.groups, (smith.curve || []).length, board]);
     if (sig === this.dataSig) return;
     this.dataSig = sig;
-    this.data = { kali, council, nube, radar, tests, smith, names: Object.fromEntries(Object.values(by).map((b) => [b.id, b])) };
+    this.data = { kali, council, nube, radar, tests, smith, incubator, names: Object.fromEntries(Object.values(by).map((b) => [b.id, b])) };
     this.screens.weather.redraw(this.data);
     this.screens.board.redraw(this.data);
     this.screens.ticker.redraw(this.data);
@@ -1148,8 +1326,26 @@ export class Base {
     this.screens.code.forEach((s, i) => s.redraw({ ...this.data, part: i }));
     this.screens.curve.redraw(this.data);
     if (this.screens.forge) this.screens.forge.redraw(this.data);
+    if (this.screens.incubator) this.screens.incubator.redraw(this.data);
+    this.growPods(board);
+    this.nextResearchAt = 0;
     this.topicIndex = 0;
     this.nextTopicAt = 0;
+  }
+
+  // Cada cápsula crece con lo que lleva aprendido su estrategia y se tiñe con su veredicto.
+  growPods(board) {
+    if (!this.pods) return;
+    const tint = { lista: '#4ade80', descartada: '#8a8fa3', dudosa: '#fbbf24', arriesgada: '#fb923c' };
+    for (const [bot, pod] of Object.entries(this.pods)) {
+      const row = board.find((r) => r.id === bot);
+      pod.target = 0.5 + 0.6 * clamp(Number(row && row.progress) || 0, 0, 1);
+      const color = tint[row && row.state] || '#a3e635';
+      pod.ringMat.color.set(color);
+      pod.ringMat.emissive.set(color);
+      pod.light.material.color.set(color);
+      pod.light.material.opacity = row && row.state === 'lista' ? 0.5 : row && row.state === 'descartada' ? 0.08 : 0.22;
+    }
   }
 
   setMail(n) {
@@ -1271,9 +1467,12 @@ export class Base {
   overviewHalf() {
     // Lo que mide la base vista desde la cámara, con un margen.
     const corners = [];
-    for (const x of [-EDGE - 0.4, EDGE + 0.4]) {
-      for (const z of [-EDGE - 0.4, EDGE + 0.4]) {
-        corners.push(new THREE.Vector3(x, -1.0, z), new THREE.Vector3(x, BACK_H + 0.8, z));
+    for (const id of Object.keys(ROOMS)) {
+      const c = center(id);
+      for (const x of [c.x - SIZE / 2 - 0.4, c.x + SIZE / 2 + 0.4]) {
+        for (const z of [c.z - SIZE / 2 - 0.4, c.z + SIZE / 2 + 0.4]) {
+          corners.push(new THREE.Vector3(x, -1.0, z), new THREE.Vector3(x, BACK_H + 0.8, z));
+        }
       }
     }
     const right = new THREE.Vector3(Math.cos(AZIMUTH), 0, -Math.sin(AZIMUTH));
@@ -1393,6 +1592,15 @@ export class Base {
     if (this.screens.radar && (!this.radarAt || t - this.radarAt > 0.12 || this.reduced)) {
       this.radarAt = t;
       this.screens.radar.redraw({ t, kali: this.data.kali });
+    }
+    if (this.screens.research && this.t >= (this.nextResearchAt || 0)) {
+      this.nextResearchAt = this.t + 7;
+      const names = this.data.names || {};
+      const shown = PODS.map(([id]) => names[id]).filter((b) => b && b.detail && (b.detail.research || []).length);
+      if (shown.length) {
+        this.researchIndex = ((this.researchIndex || 0) + 1) % shown.length;
+        this.screens.research.redraw({ bot: shown[this.researchIndex] });
+      }
     }
     const topics = (this.data.council && this.data.council.topics) || [];
     if (topics.length && this.t >= (this.nextTopicAt || 0)) {
@@ -1582,7 +1790,7 @@ export class Base {
 
 function DESK_RESERVED(room) {
   // El sitio de la mesa de cada sala se lo guarda su dueño.
-  return { puente: 0, mercado: 0, observatorio: 0, laboratorio: 0, archivo: 0 }[room];
+  return { puente: 0, mercado: 0, observatorio: 0, laboratorio: 0, archivo: 0, incubadora: 0 }[room];
 }
 function hashCode(s) {
   let h = 0;
@@ -1968,6 +2176,87 @@ function drawTests(ctx, w, h, data) {
   if (!rows.length) {
     ctx.fillStyle = '#9fb7bd';
     ctx.fillText('Esperando partidos', w * 0.06, h * 0.5);
+  }
+}
+
+function wrapLines(ctx, text, max, limit) {
+  const words = String(text || '').split(/\s+/);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (ctx.measureText(next).width > max && line) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  if (lines.length > limit) {
+    lines.length = limit;
+    lines[limit - 1] = `${lines[limit - 1].replace(/\s+\S*$/, '')}…`;
+  }
+  return lines;
+}
+
+function drawResearch(ctx, w, h, data) {
+  // Lo que está viendo ahora una estrategia de la Incubadora (va cambiando de una a otra).
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = 'rgba(10, 30, 8, 0.82)';
+  ctx.fillRect(0, 0, w, h);
+  ctx.strokeStyle = 'rgba(190, 242, 100, 0.85)';
+  ctx.lineWidth = Math.max(3, w / 110);
+  ctx.strokeRect(ctx.lineWidth / 2, ctx.lineWidth / 2, w - ctx.lineWidth, h - ctx.lineWidth);
+  const bot = data && data.bot;
+  if (!bot) {
+    ctx.fillStyle = '#d9f99d';
+    ctx.font = `700 ${h * 0.13}px ${FONT}`;
+    ctx.fillText('INVESTIGANDO…', w * 0.06, h * 0.55);
+    return;
+  }
+  ctx.fillStyle = bot.color || '#a3e635';
+  ctx.font = `700 ${h * 0.15}px ${FONT}`;
+  ctx.fillText(String(bot.name || '').toUpperCase(), w * 0.06, h * 0.21);
+  ctx.fillStyle = '#ecfccb';
+  ctx.font = `700 ${h * 0.125}px ${TEXT}`;
+  const research = (bot.detail && bot.detail.research) || [];
+  wrapLines(ctx, research.join(' '), w * 0.88, 4).forEach((line, i) => ctx.fillText(line, w * 0.06, h * (0.42 + i * 0.16)));
+}
+
+function drawIncubator(ctx, w, h, data) {
+  // La Incubadora: cómo va cada estrategia de mentira y cuánto le falta para poder juzgarla.
+  panelBg(ctx, w, h, '#17320c', '#071404');
+  ctx.fillStyle = '#d9f99d';
+  ctx.font = `700 ${h * 0.11}px ${FONT}`;
+  ctx.fillText('INCUBADORA · DE MENTIRA', w * 0.05, h * 0.15);
+  const rows = ((data && data.incubator && data.incubator.board) || []).slice(0, 3);
+  const tint = { lista: '#4ade80', descartada: '#8a8fa3', dudosa: '#fbbf24', arriesgada: '#fb923c' };
+  rows.forEach((r, i) => {
+    const y = h * (0.35 + i * 0.22);
+    ctx.fillStyle = r.color || '#a3e635';
+    ctx.beginPath();
+    ctx.arc(w * 0.075, y - h * 0.035, h * 0.03, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#f0fdf4';
+    ctx.font = `700 ${h * 0.095}px ${TEXT}`;
+    ctx.fillText(fitText(ctx, r.name, w * 0.42), w * 0.12, y);
+    ctx.textAlign = 'right';
+    const pnl = Number(r.pnl);
+    ctx.fillStyle = !r.ops ? '#a7b8a0' : pnl > 0 ? '#7dffb2' : pnl < 0 ? '#ff9b94' : '#ffffff';
+    ctx.fillText(r.ops ? money(pnl, true) : '—', w * 0.95, y);
+    ctx.textAlign = 'left';
+    // Barra: cuánto le falta para que se pueda juzgar (operaciones y días).
+    const bw = w * 0.83;
+    ctx.fillStyle = 'rgba(255,255,255,0.12)';
+    ctx.fillRect(w * 0.12, y + h * 0.035, bw, h * 0.04);
+    ctx.fillStyle = tint[r.state] || '#a3e635';
+    ctx.fillRect(w * 0.12, y + h * 0.035, bw * clamp(Number(r.progress) || 0, 0, 1), h * 0.04);
+  });
+  if (!rows.length) {
+    ctx.fillStyle = '#a7b8a0';
+    ctx.font = `700 ${h * 0.1}px ${TEXT}`;
+    ctx.fillText('Empezando las pruebas', w * 0.05, h * 0.5);
   }
 }
 

@@ -85,6 +85,7 @@ def test_forecast_highs_and_what_was_measured_today():
     assert nws.observed_max(ny, now) == {
         "day": "2026-10-10",
         "max_f": 74,
+        "second_f": 73,
         "last_f": 70,
         "last_at": "2026-10-10T20:51:00+00:00",
     }

@@ -11,7 +11,18 @@ from ..world import EVERYONE, World
 log = logging.getLogger(__name__)
 
 # Las salas de la base. Cada bot va a la sala de lo que está haciendo de verdad.
-ROOMS = ("mercado", "laboratorio", "observatorio", "consejo", "boveda", "puente", "archivo", "pruebas", "forja")
+ROOMS = (
+    "mercado",
+    "laboratorio",
+    "observatorio",
+    "consejo",
+    "boveda",
+    "puente",
+    "archivo",
+    "pruebas",
+    "forja",
+    "incubadora",
+)
 
 
 class Agent:

@@ -92,6 +92,9 @@ def test_pueblo_api_uses_the_panel_session(site):
     assert panel.call("POST", "/pueblo/api/login", {"password": PASSWORD})[0] == 200
     status, world, _ = panel.call("GET", "/pueblo/api/world")
     assert status == 200 and "kali" in {b["id"] for b in world["bots"]} and "messages" in world
+    # La Incubadora y sus estrategias de mentira también viven aquí.
+    homes = {b["id"]: b.get("home") for b in world["bots"]}
+    assert {homes[b] for b in ("mentora", "notaria", "tendera", "contable")} == {"incubadora"}
     # Entrar en el pueblo es entrar en el panel (y al revés): una sola contraseña.
     assert panel.call("GET", "/api/status")[0] == 200
     assert panel.call("POST", "/pueblo/api/talk", {"bot": "kali"}, csrf=False)[0] == 403

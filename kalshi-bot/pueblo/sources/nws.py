@@ -103,9 +103,12 @@ class NWSClient:
         if not readings:
             return None
         readings.sort()
+        highest = sorted((t for _, t in readings), reverse=True)
         return {
             "day": day.isoformat(),
-            "max_f": round(max(t for _, t in readings)),
+            "max_f": round(highest[0]),
+            # La segunda lectura más alta: si solo una marca tanto, puede ser un error del sensor.
+            "second_f": round(highest[1]) if len(highest) > 1 else None,
             "last_f": round(readings[-1][1]),
             "last_at": readings[-1][0].isoformat(),
         }

@@ -69,6 +69,7 @@ class Nube(Agent):
                     "today": (forecasts.get(key) or {}).get(today),
                     "tomorrow": (forecasts.get(key) or {}).get(tomorrow),
                     "max_so_far": obs.get("max_f"),
+                    "confirmed": obs.get("second_f"),  # la segunda más alta: sin lecturas raras sueltas
                     "now": obs.get("last_f"),
                     "at": obs.get("last_at"),
                 }

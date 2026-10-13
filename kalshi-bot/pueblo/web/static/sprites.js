@@ -227,6 +227,41 @@
       paint(g, dish, { o: OUT, w: '#eef3f7', h: METAL_D }, 0, 0);
       P(g, a ? 12 : 11, 1, a ? '#4dff9a' : '#2a8f5a');
     },
+    mentora(g, view) {
+      // Birrete con su borla.
+      paint(g, ['....kkkkkkkk....', '..kkkkkkkkkkkk..', '.....kkkkkk.....'], { k: '#1f2937' }, 0, 1);
+      if (view !== 'back') {
+        P(g, 12, 3, '#facc15');
+        P(g, 12, 4, '#facc15');
+      }
+    },
+    notaria(g, view) {
+      // Termómetro en la cabeza.
+      const x = view === 'side' ? 8 : 11;
+      R(g, x - 1, 0, 3, 5, OUT);
+      R(g, x, 1, 1, 3, '#f8fafc');
+      P(g, x, 3, '#ef4444');
+      R(g, x - 1, 4, 3, 1, '#ef4444');
+    },
+    tendera(g, view) {
+      // Visera verde.
+      if (view === 'back') {
+        R(g, 3, 4, 10, 1, '#166534');
+        return;
+      }
+      paint(g, ['...gggggggggg...', '..vvvvvvvvvvvv..'], { g: '#166534', v: '#4ade80' }, view === 'side' ? 1 : 0, 3);
+    },
+    contable(g, view) {
+      // Gafas y un lápiz detrás de la oreja.
+      R(g, 12, 0, 1, 4, '#facc15');
+      P(g, 12, 0, '#f472b6');
+      if (view === 'front') {
+        const rim = '#cbd5e1';
+        [[4, 7], [7, 7], [4, 8], [7, 8], [8, 7], [11, 7], [8, 8], [11, 8]].forEach(([x, y]) => P(g, x, y, rim));
+        R(g, 5, 6, 2, 1, rim);
+        R(g, 9, 6, 2, 1, rim);
+      }
+    },
     cronista(g, view) {
       paint(g, ['......p.........', '....pppppp......', '...pppppppp.....'], { p: '#5d3591' }, 0, 1);
       P(g, 5, 2, '#7d55b5');
@@ -439,6 +474,47 @@
         return [{ x: 16, y: 27, r: 14, color: 'rgba(255,214,140,0.45)', night: true }];
       },
       lit: [[11, 23, 10, 8]],
+    };
+  }
+
+  function greenhouse() {
+    // La Incubadora: un invernadero de cristal con tres plantas, una por estrategia.
+    const [c, g] = makeCanvas(32, 56);
+    // Tejado a dos aguas de cristal.
+    for (let j = 0; j < 11; j++) {
+      R(g, 15 - j, 6 + j, 2 + j * 2, 1, GLASS);
+      P(g, 15 - j, 6 + j, LINE);
+      P(g, 16 + j, 6 + j, LINE);
+    }
+    R(g, 15, 5, 2, 1, LINE);
+    for (let j = 2; j < 10; j += 3) P(g, 16 - j + 1, 6 + j, GLASS_HI);
+    R(g, 1, 17, 30, 2, LINE);
+    // Paredes de cristal con sus marcos.
+    R(g, 2, 19, 28, 24, LINE);
+    R(g, 3, 20, 26, 22, GLASS);
+    for (const x of [9, 16, 23]) R(g, x, 20, 1, 22, '#3b5d78');
+    R(g, 3, 30, 26, 1, '#3b5d78');
+    for (let i = 0; i < 5; i++) P(g, 5 + i, 21 + i, GLASS_HI);
+    for (let i = 0; i < 4; i++) P(g, 18 + i, 32 + i, GLASS_HI);
+    // Las plantas: de los colores de la Notaria, la Tendera y la Contable.
+    for (const [x, leaf] of [[5, '#d946ef'], [12, '#2dd4bf'], [19, '#94a3b8']]) {
+      R(g, x + 1, 33, 1, 6, '#3f7a20');
+      R(g, x - 1, 33, 3, 2, leaf);
+      R(g, x + 2, 35, 3, 2, leaf);
+      R(g, x, 38, 4, 3, '#b5714b');
+    }
+    // Zócalo de ladrillo y puerta.
+    R(g, 1, 42, 30, 14, LINE);
+    R(g, 2, 43, 28, 13, '#c07a4a');
+    bricks(g, 2, 43, 28, 13, '#94593a', 4, 7);
+    door(g, 5, 45, 6, 11, '#3f6b2a');
+    return {
+      canvas: c, ox: 0, oy: -8, windows: [], lights: [],
+      // De noche, las luces de cultivo encienden el cristal de verde.
+      glow() {
+        return [{ x: 16, y: 30, r: 22, color: 'rgba(163,230,53,0.45)', night: true }];
+      },
+      lit: [[3, 20, 6, 10], [10, 20, 6, 10], [17, 20, 6, 10], [24, 20, 5, 10]],
     };
   }
 
@@ -889,14 +965,14 @@
   const WORLD_H = 26;
   const CORE_X = 8;
   const CORE_Y = 6;
-  // Letras: casas (O V F B K L A H), fuente f, tablón n, buzón m, farolas l, árbol t,
+  // Letras: casas (O V F B K L A H G), fuente f, tablón n, buzón m, farolas l, árbol t,
   // camino =, plaza #, flores ",", agua ~, arena s.
   const CORE = [
     '..t...,....~~~',
-    '.OOO..VV..FF~~',
-    '.OOO..VV..FF~~',
-    '.OOO..VV..FFs~',
-    '..=...=...=.s~',
+    '.OOO..VVGGFF~~',
+    '.OOO..VVGGFF~~',
+    '.OOO..VVGGFFs~',
+    '..=...=.=.=.s~',
     '============s~',
     '.BBB=#n##=KKKK',
     '.BBB=#ff#=KKKK',
@@ -907,12 +983,13 @@
     '.LLL=.HH.=AAA.',
     '==============',
   ];
-  const BLOCKED = 'OVFBKLAHfnmlt~c';
+  const BLOCKED = 'OVFBKLAHGfnmlt~c';
   const COST = { '=': 1, '#': 1, '.': 3, ',': 4, s: 3 };
 
   // Dónde se pone cada uno (en casillas del pueblo).
   const SPOTS = {
     nube: [2, 4], vigia: [6, 4], radar: [10, 4], cronista: [2, 9], kali: [11, 9],
+    mentora: [8, 4], notaria: [7, 4], tendera: [9, 4], contable: [11, 4],
     mailbox: [8, 12], plaza: [6, 9], board: [7, 6], home: [6, 13], lab: [2, 13], arena: [11, 13],
   };
 
@@ -920,6 +997,7 @@
     { id: 'observatorio', owner: 'nube', at: [1, 1], size: [3, 3], make: observatory },
     { id: 'torre', owner: 'vigia', at: [6, 1], size: [2, 3], make: tower },
     { id: 'faro', owner: 'radar', at: [10, 1], size: [2, 3], make: lighthouse },
+    { id: 'invernadero', owner: 'mentora', at: [8, 1], size: [2, 3], make: greenhouse },
     { id: 'biblioteca', owner: 'cronista', at: [1, 6], size: [3, 3], make: library },
     { id: 'mercado', owner: 'kali', at: [10, 6], size: [4, 3], make: market },
     { id: 'casa', owner: 'tu', at: [6, 11], size: [2, 2], make: home },
@@ -1025,7 +1103,7 @@
           for (const [dx, dy] of sides) {
             const n = kind(x + dx, y + dy);
             if (soft(n) || n === 'O' || n === 'V' || n === 'F' || n === 'B' || n === 'K' || n === 'H' ||
-                n === 'L' || n === 'A' || n === 'm') continue;
+                n === 'L' || n === 'A' || n === 'G' || n === 'm') continue;
             for (let i = 0; i < T; i++) {
               const ex = dx === 0 ? px + i : dx < 0 ? px : px + T - 1;
               const ey = dy === 0 ? py + i : dy < 0 ? py : py + T - 1;

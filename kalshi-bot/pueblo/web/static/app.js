@@ -20,8 +20,8 @@
     return node;
   }
 
-  const ORDER = ['kali', 'herrera', 'nube', 'vigia', 'radar', 'cronista', 'probadora', 'investigadora', 'tormenta', 'claude', 'piloto',
-    'dinero', 'codicia', 'miedo'];
+  const ORDER = ['kali', 'herrera', 'nube', 'vigia', 'radar', 'cronista', 'probadora', 'mentora', 'notaria', 'tendera', 'contable',
+    'investigadora', 'tormenta', 'claude', 'piloto', 'dinero', 'codicia', 'miedo'];
   const DEFAULT_BOTS = [
     { id: 'kali', name: 'Kali', color: '#f2c94c', home: 'mercado' },
     { id: 'herrera', name: 'Herrera', color: '#ff8a3d', home: 'forja' },
@@ -30,6 +30,10 @@
     { id: 'radar', name: 'Radar', color: '#6ee7a8', home: 'laboratorio' },
     { id: 'cronista', name: 'Cronista', color: '#c792ea', home: 'archivo' },
     { id: 'probadora', name: 'Probadora', color: '#5ee7f0', home: 'pruebas' },
+    { id: 'mentora', name: 'Mentora', color: '#a3e635', home: 'incubadora' },
+    { id: 'notaria', name: 'Notaria', color: '#d946ef', home: 'incubadora' },
+    { id: 'tendera', name: 'Tendera', color: '#0d9488', home: 'incubadora' },
+    { id: 'contable', name: 'Contable', color: '#475569', home: 'incubadora' },
     { id: 'investigadora', name: 'Investigadora', color: '#dcd8ee', home: 'consejo' },
     { id: 'tormenta', name: 'Cazatormentas', color: '#2a78d6', home: 'consejo' },
     { id: 'piloto', name: 'Piloto', color: '#e87ba4', home: 'consejo' },
@@ -49,10 +53,11 @@
     archivo: ['Archivo', 'Cronista escribe el diario del pueblo y cuelga las noticias en el tablón.'],
     forja: ['Forja', 'La Herrera repasa el dinero real de Kali: qué liga, ciudad y precio gana o pierde, y qué ajuste del panel lo cambiaría.'],
     pruebas: ['Pruebas', 'La Probadora juega de mentira los partidos como Kali, pero de cuatro maneras a la vez, para ver cuál gana más.'],
+    incubadora: ['Incubadora', 'Aquí se prueban otras maneras de ganar, distintas de la de Kali, con 25 $ de mentira cada una. Cuando una demuestre durante semanas que gana (y no por suerte), te lo dirá: solo entonces podría operar en paralelo con Kali, si tú quieres.'],
   };
   const ROOM_OWNER = {
     mercado: 'kali', boveda: 'kali', forja: 'herrera', observatorio: 'nube', laboratorio: 'radar', archivo: 'cronista',
-    pruebas: 'probadora', puente: 'vigia',
+    pruebas: 'probadora', puente: 'vigia', incubadora: 'mentora',
   };
   const MEMBER_ABOUT = {
     tormenta: 'Para cada tramo de temperatura calcula la probabilidad con la máxima prevista por el Servicio Meteorológico de EE. UU. y lo ya medido hoy.',
@@ -436,6 +441,79 @@
     return bots;
   }
 
+  // La Incubadora inventada: cada estrategia con su veredicto (las cifras no son reales).
+  function demoChecks(ops, days, pnl, luck, drawdown) {
+    return [
+      { label: 'Al menos 40 operaciones decididas', ok: ops >= 40, value: `${ops} de 40` },
+      { label: 'Al menos 14 días probándose', ok: days >= 14, value: `${days} de 14` },
+      { label: 'Gana dinero (con comisiones)', ok: pnl > 0, value: money(pnl, true) },
+      { label: 'Menos de un 5 % de que sea suerte', ok: pnl > 0 && luck < 0.05, value: `${Math.round(luck * 100)} %` },
+      { label: 'Nunca ha perdido más de un 30 % desde su mejor momento', ok: drawdown <= 0.3, value: `${Math.round(drawdown * 100)} %` },
+    ];
+  }
+  function demoIncubator(bots) {
+    const now = new Date().toISOString();
+    const act = (text) => ({ room: 'incubadora', text, at: now });
+    const rows = [
+      { id: 'notaria', name: 'Notaria', color: '#d946ef', ops: 12, wins: 12, losses: 0, pnl: 0.31, days: 5, luck: 0.71, drawdown: 0, worst_day: 0, equity: 25.31, open: 2, state: 'aprendiendo', label: 'Aprendiendo',
+        text: 'Aún no se puede juzgar: le faltan 28 operaciones y 9 días. De momento va +$0,31.', rule: 'Tramos de hoy ya decididos por lo medido (con 1° de margen) · compra si cuesta 98¢ o menos' },
+      { id: 'tendera', name: 'Tendera', color: '#0d9488', ops: 9, wins: 5, losses: 4, pnl: -0.42, days: 5, luck: 0.83, drawdown: 0.04, worst_day: -0.61, equity: 24.58, open: 4, state: 'aprendiendo', label: 'Aprendiendo',
+        text: 'Aún no se puede juzgar: le faltan 31 operaciones y 9 días. De momento va −$0,42.', rule: 'Tramos de mañana (y de hoy antes de las 10) con 4¢ o más de hueco · 2 contratos a cada lado' },
+      { id: 'contable', name: 'Contable', color: '#475569', ops: 0, wins: 0, losses: 0, pnl: 0, days: 5, luck: null, drawdown: 0, worst_day: 0, equity: 25, open: 0, state: 'aprendiendo', label: 'Aprendiendo',
+        text: 'Aún no se puede juzgar: le faltan 40 operaciones y 9 días. Todavía no se ha decidido ninguna.', rule: 'Todos los tramos de un evento a la vez · solo si sale ganando 1¢ o más seguro, con comisiones' },
+    ].map((r) => ({ ...r, start: 25, in_play: 0, paused: false, roi: 0, progress: Math.round((Math.min(1, r.ops / 40) * 0.5 + Math.min(1, r.days / 14) * 0.5) * 1000) / 1000,
+      checks: demoChecks(r.ops, r.days, r.pnl, r.luck === null ? 1 : r.luck, r.drawdown) }));
+    const about = {
+      notaria: 'La máxima del día solo puede subir. Cuando lo ya medido decide un tramo de temperatura, su NO vale 1 $ seguro. Si alguien aún lo vende a 98¢ o menos, lo compra de mentira.',
+      tendera: 'En los tramos de temperatura de mañana deja una orden de compra y otra de venta 1¢ mejores que las de los demás, y gana la diferencia cuando le compran y le venden.',
+      contable: 'Si comprar el SÍ de todos los tramos de un día cuesta menos de 1 $ con comisiones, eso es dinero gratis y lo compra de mentira. Lo normal es no encontrar nada.',
+    };
+    const extra = {
+      notaria: {
+        research: ['Hoy el termómetro ya ha decidido 9 tramos: 2 se podían comprar a 98¢ o menos.'],
+        open: [{ key: 'D-AUS', name: 'Máxima en Austin · 85° a 86°', held: [{ ticker: 'D-AUS', side: 'NO', count: 3, price: 0.96 }], note: 'ya van 90° en Austin: ya no puede quedar entre 85° y 86°' }],
+        last: [{ key: 'D-MIA', name: 'Máxima en Miami · 84° a 85°', result: 'ganada', pnl: 0.05 }],
+        activity: 'compra NO a 96¢ · Austin · 85° a 86°', status: 'Aprendiendo · +$0,31 en 12 operaciones', mood: 'happy',
+      },
+      tendera: {
+        research: ['Ahora tiene órdenes en 3 tramos: «Chicago · 70° a 71°» compra a 41¢ y vende a 45¢; «Denver · 66° a 67°» compra a 33¢ y vende a 38¢.', 'Hoy le habrían llenado 6 órdenes.'],
+        open: [{ key: 'D-CHI', name: 'Máxima en Chicago · 70° a 71°', held: [{ ticker: 'D-CHI', side: 'SÍ', count: 1, price: 0.41 }], note: 'órdenes 1¢ mejores que las de los demás' }],
+        last: [{ key: 'D-DEN', name: 'Máxima en Denver · 64° a 65°', result: 'perdida', pnl: -0.37 }],
+        activity: 'tiene órdenes en 3 tramos de mañana', status: 'Aprendiendo · −$0,42 en 9 operaciones', mood: 'sad',
+      },
+      contable: {
+        research: ['Hoy ha sumado los tramos de 112 eventos a la vez.', 'Ningún atajo: lo más cerca fue «Máxima en Miami (14 oct)» (el SÍ de todos), donde faltaban 2¢.'],
+        open: [], last: [],
+        activity: 'suma tramos · lo más cerca: faltan 2¢', status: 'Aprendiendo · todavía sin operaciones', mood: 'ok',
+      },
+    };
+    bots.push({
+      id: 'mentora', name: 'Mentora', role: 'Dirige la Incubadora: prueba otras estrategias de mentira', home: 'incubadora',
+      color: '#a3e635', mood: 'ok', updated_at: now,
+      about: 'En la Incubadora, tres estrategias distintas a la de Kali juegan cada una con 25 $ de mentira y las mismas reglas de riesgo que el bot. La Mentora dice, con números, si alguna gana de verdad o solo ha tenido suerte.',
+      status: 'Incubadora · 3 estrategias aprendiendo de mentira',
+      activity: act('lleva el marcador · va mejor Notaria (+$0,31)'),
+      detail: {
+        board: rows,
+        benchmarks: [
+          { id: 'kali', name: 'Kali con dinero real (30 días)', ops: 71, wins: 66, pnl: 2.49 },
+          { id: 'probadora', name: 'Kali tal cual, de mentira (Pruebas)', ops: 31, wins: 29, pnl: 1.4 },
+        ],
+        criteria: { ops: 40, days: 14, luck: 0.05 },
+      },
+    });
+    for (const r of rows) {
+      const x = extra[r.id];
+      bots.push({
+        id: r.id, name: r.name, color: r.color, home: 'incubadora', updated_at: now, mood: x.mood, about: about[r.id],
+        role: { notaria: 'Compra lo que el termómetro ya ha decidido', tendera: 'Compra barato y vende caro en los tramos de mañana', contable: 'Busca dinero gratis: tramos que no suman 1 $' }[r.id],
+        status: x.status, activity: act(x.activity),
+        detail: { strategy: true, summary: r, rule: r.rule, research: x.research, open: x.open, last: x.last },
+      });
+    }
+    return bots;
+  }
+
   const DEMO_SCRIPT = [
     (w) => w.say('nube', 'En Chicago la máxima prevista para hoy sube de 66° a 68°.', 'kali'),
     (w) => {
@@ -482,6 +560,10 @@
       w.say('probadora', 'Partido perdido de mentira: «Gana Texas» (SÍ a 89¢), −$4,46. Solo desde 92¢ no habría entrado.',
         'todos', 'trade', { net: '-4.46', paper: true });
     },
+    (w) => w.say('notaria', 'Apunta: compro 3 NO de «Máxima en Austin · 85° a 86°» a 96¢: ya van 90° en Austin: ya no puede quedar entre 85° y 86°. De mentira.',
+      'mentora', 'info', { paper: true }),
+    (w) => w.say('tendera', 'Me habrían llenado órdenes: 2 SÍ a 41¢ en «Chicago · 70° a 71°»; 1 NO a 55¢ en «Chicago · 70° a 71°». De mentira.',
+      'mentora', 'info', { paper: true }),
     (w) => {
       w.say('tormenta', '¡Acerté con «Máxima en Miami · 88° a 89°»! +$0,61 de mentira.', 'todos', 'trade', { net: '0.61', paper: true });
       w.say('investigadora', 'Se han decidido 3 apuestas del Consejo: 2 aciertos. Va ganando Cazatormentas (+$3,45).', 'todos');
@@ -513,6 +595,13 @@
         `Kali tiene ${plural(k.positions.length, 'apuesta abierta', 'apuestas abiertas')}.`;
     }
     if (id === 'radar') return 'De 412 mercados, 7 favoritos están fuera de lo que mira Kali: NFL (3), tenis ATP (2), MLS (2).';
+    const strategy = (w.bot(id) || {}).detail || {};
+    if (strategy.summary) return `${strategy.summary.text} ${(strategy.research || [])[0] || ''}`.trim();
+    if (id === 'mentora') {
+      const rows = w.bot('mentora').detail.board;
+      return `Así van las pruebas de mentira: ${rows.map((r) => `${r.name} ${money(r.pnl, true)} (${r.label.toLowerCase()})`).join('; ')}. ` +
+        'Para que una opere de verdad tiene que ganar durante semanas, no por suerte, y tú tienes que aprobarlo y darle un presupuesto.';
+    }
     return `Hoy Kali va ${money(k.today.net, true)} en ${plural(k.today.markets, 'mercado', 'mercados')}. Esta noche lo cuento todo en el diario.`;
   }
 
@@ -522,7 +611,7 @@
       this.every = 2500;
       this.nextId = 1;
       this.messages = [];
-      this.bots = demoCouncil(demoBots());
+      this.bots = demoIncubator(demoCouncil(demoBots()));
       this.turn = 0;
       this.rotateAt = Date.now() + 6000;
       this.step = 0;
@@ -1141,7 +1230,7 @@
     }
 
     addLabels() {
-      const names = { laboratorio: 'Pruebas', arena: 'Forja', casa: 'Tu casa' };
+      const names = { laboratorio: 'Pruebas', arena: 'Forja', casa: 'Tu casa', invernadero: 'Incubadora' };
       for (const th of this.map.things) {
         if (!names[th.id]) continue;
         const node = el('div', 'place-label', names[th.id]);
@@ -1866,7 +1955,8 @@
     const claude = ((state.byId.get('claude') || {}).detail || {}).opinions;
     const held = (((state.byId.get('kali') || {}).detail || {}).positions || []).map((x) => [x.ticker, x.side]);
     const tests = ((state.byId.get('probadora') || {}).detail || {}).variants || [];
-    const sig = JSON.stringify([d.topics, d.board, claude, held, tests]);
+    const incubator = ((state.byId.get('mentora') || {}).detail || {}).board || [];
+    const sig = JSON.stringify([d.topics, d.board, claude, held, tests, incubator]);
     if (!force && sig === state.councilSig) return;
     state.councilSig = sig;
     const topics = d.topics || [];
@@ -1889,6 +1979,123 @@
     $('#topics').replaceChildren(...topics.map(topicItem));
     $('#tests-title').hidden = !tests.length;
     $('#tests').replaceChildren(...(tests.length ? [testsTable(tests)] : []));
+    $('#incubator-title').hidden = !incubator.length;
+    $('#incubator').replaceChildren(...(incubator.length ? [incubatorTable(incubator)] : []));
+  }
+
+  // --- la Incubadora: otras estrategias, de mentira ---
+
+  function incubatorTable(rows) {
+    const ul = el('ul', 'rows');
+    for (const r of rows) {
+      const li = el('li');
+      const btn = el('button', 'row strategy-row');
+      btn.type = 'button';
+      const top = el('div', 'row-top');
+      const name = el('span', 'row-name');
+      const dot = el('i', 'dot-color');
+      dot.style.background = r.color || '#a3e635';
+      name.append(dot, document.createTextNode(r.name));
+      const n = num(r.pnl) || 0;
+      top.append(name, el('b', `test-pnl ${r.ops ? (n > 0 ? 'up' : n < 0 ? 'down' : '') : ''}`, r.ops ? money(n, true) : '—'));
+      const bits = [plural(r.ops || 0, 'operación', 'operaciones')];
+      if (r.open) bits.push(plural(r.open, 'abierta', 'abiertas'));
+      bits.push(plural(r.days || 1, 'día', 'días'));
+      if (r.ops && r.luck !== null && r.luck !== undefined) bits.push(`${Math.round(r.luck * 100)} % de que sea suerte`);
+      const sub = el('div', 'row-sub');
+      sub.append(el('span', `verdict-chip v-${r.state}`, r.label), document.createTextNode(` ${bits.join(' · ')}`));
+      const bar = el('div', 'progress');
+      bar.setAttribute('role', 'img');
+      bar.setAttribute('aria-label', `Lleva un ${Math.round((num(r.progress) || 0) * 100)} % de lo que hace falta para juzgarla`);
+      const fill = el('i', `v-${r.state}`);
+      fill.style.width = `${Math.round((num(r.progress) || 0) * 100)}%`;
+      bar.append(fill);
+      btn.append(top, sub, bar);
+      btn.addEventListener('click', () => openSheet(r.id));
+      li.append(btn);
+      ul.append(li);
+    }
+    return ul;
+  }
+
+  function heldText(held) {
+    const list = held || [];
+    if (!list.length) return 'SÍ y NO compensados';
+    if (list.length > 2) return `${list.length} tramos · ${list[0].count} ${list[0].side} de cada uno`;
+    return list.map((h) => `${h.count} ${h.side} a ${cents(h.price)}`).join(' + ');
+  }
+
+  // La ficha de cada estrategia: su veredicto, sus cuentas y lo que le falta para operar de verdad.
+  function strategyDetail(b) {
+    const d = b.detail || {};
+    const r = d.summary;
+    const box = el('div', 'detail');
+    if (!r) {
+      box.append(el('p', 'note', 'Acabo de llegar a la Incubadora: en unos minutos empiezo a probar.'));
+      return box;
+    }
+    const verdict = el('div', `strategy-verdict v-${r.state}`);
+    verdict.append(el('b', null, r.label), el('p', null, r.text));
+    box.append(verdict);
+    const stats = el('dl', 'stats');
+    // Lo que ya se ha cobrado de lo que sigue abierto (las parejas SÍ + NO de la Tendera, por ejemplo).
+    const pending = (num(r.equity) || 0) - (num(r.start) || 0) - (num(r.pnl) || 0);
+    const decided = plural(r.ops || 0, 'operación decidida', 'operaciones decididas');
+    const worst = num(r.worst_day) || 0;
+    stats.append(
+      stat('Saldo de mentira', money(r.equity), `empezó con ${money(r.start)}`, (num(r.equity) || 0) - (num(r.start) || 0)),
+      stat('Ganado', r.ops ? money(r.pnl, true) : '—',
+        Math.abs(pending) >= 0.01 ? `${decided} · ${money(pending, true)} en lo que sigue abierto` : decided, num(r.pnl)),
+      stat('¿Suerte?', r.luck === null || r.luck === undefined ? '—' : `${Math.round(r.luck * 100)} %`, 'de que lo ganado sea suerte'),
+      worst < 0
+        ? stat('Peor día', money(worst, true), `peor caída ${Math.round((num(r.drawdown) || 0) * 100)} %`, worst)
+        : stat('Peor día', 'Ninguno', 'todavía ningún día en pérdidas'),
+    );
+    box.append(stats);
+    box.append(el('h3', null, 'Para poder operar de verdad'));
+    const checks = el('ul', 'checks');
+    for (const c of r.checks || []) {
+      const li = el('li', c.ok ? 'ok' : 'no');
+      li.append(el('span', 'mark', c.ok ? '✓' : '·'), el('span', null, c.label), el('b', null, c.value));
+      checks.append(li);
+    }
+    box.append(checks);
+    const research = d.research || [];
+    if (research.length) {
+      box.append(el('h3', null, 'Lo que está viendo'));
+      for (const line of research) box.append(el('p', 'research', line));
+    }
+    const open = d.open || [];
+    if (open.length) {
+      box.append(el('h3', null, `Abiertas de mentira (${open.length})`));
+      const ul = el('ul', 'rows');
+      for (const p of open.slice(0, 6)) {
+        const li = el('li', 'row');
+        const top = el('div', 'row-top');
+        top.append(el('span', 'row-name', p.name), el('span', 'row-sub', heldText(p.held)));
+        li.append(top);
+        if (p.note) li.append(el('div', 'row-sub', p.note));
+        ul.append(li);
+      }
+      box.append(ul);
+    }
+    const last = d.last || [];
+    if (last.length) {
+      box.append(el('h3', null, 'Últimas decididas'));
+      const ul = el('ul', 'rows');
+      for (const op of last.slice(0, 6)) {
+        const li = el('li', 'row');
+        const top = el('div', 'row-top');
+        const n = num(op.pnl) || 0;
+        top.append(el('span', 'row-name', op.name),
+          el('span', `row-sub ${n > 0 ? 'up' : n < 0 ? 'down' : ''}`, `${op.result} · ${money(n, true)}`));
+        li.append(top);
+        ul.append(li);
+      }
+      box.append(ul);
+    }
+    if (d.rule) box.append(el('p', 'note', `Su regla: ${d.rule}. Todo es de mentira: no compra nada.`));
+    return box;
   }
 
   // --- la ficha de cada vecino ---
@@ -2230,6 +2437,50 @@
       box.append(el('p', 'note', 'Todo es de mentira: no compra nada. Supone que se habría llevado el precio que había en ese momento.'));
       return box;
     },
+    mentora(b) {
+      const d = b.detail || {};
+      const box = el('div', 'detail');
+      const rows = d.board || [];
+      if (!rows.length) {
+        box.append(el('p', 'note', 'Acabo de abrir la Incubadora: en unos minutos empiezan las pruebas de mentira.'));
+        return box;
+      }
+      box.append(incubatorTable(rows));
+      const bench = d.benchmarks || [];
+      if (bench.length) {
+        box.append(el('h3', null, 'Para comparar'));
+        const ul = el('ul', 'rows');
+        for (const r of bench) {
+          const li = el('li', 'row');
+          const top = el('div', 'row-top');
+          const n = num(r.pnl) || 0;
+          top.append(el('span', 'row-name', r.name), el('b', `test-pnl ${n > 0 ? 'up' : n < 0 ? 'down' : ''}`, money(n, true)));
+          const lost = (r.ops || 0) - (r.wins || 0);
+          li.append(top, el('div', 'row-sub', `${plural(r.ops || 0, 'operación', 'operaciones')} · ${plural(lost, 'perdida', 'perdidas')}`));
+          ul.append(li);
+        }
+        box.append(ul);
+      }
+      const c = d.criteria || {};
+      box.append(el('h3', null, 'Cuándo estaría lista para operar'));
+      const ul = el('ul', 'checks plain');
+      for (const text of [
+        `Al menos ${c.ops || 40} operaciones decididas y ${c.days || 14} días probándose (dos fines de semana).`,
+        'Gana dinero de mentira, con las comisiones de Kalshi pagadas.',
+        `Menos de un ${Math.round((c.luck || 0.05) * 100)} % de que lo ganado sea suerte.`,
+        'Nunca ha perdido más de un 30 % desde su mejor momento.',
+      ]) {
+        const li = el('li');
+        li.append(el('span', 'mark', '·'), el('span', null, text));
+        ul.append(li);
+      }
+      box.append(ul);
+      box.append(el('p', 'note', 'Cada estrategia empieza con 25 $ de mentira y las mismas reglas de riesgo que Kali: como mucho un 15 % del saldo en un mercado, un 60 % en juego y, si un día pierde un 25 %, para hasta el día siguiente. Ninguna toca tu dinero: para operar en paralelo con Kali haría falta tu permiso y un presupuesto.'));
+      return box;
+    },
+    notaria: strategyDetail,
+    tendera: strategyDetail,
+    contable: strategyDetail,
     claude(b) {
       const d = b.detail || {};
       const box = el('div', 'detail');
@@ -2423,7 +2674,7 @@
   // El dibujo de una sala en la cabecera de su ficha.
   function roomPicture(room) {
     if (view === 'pixel' && town && town.map) {
-      const owner = { pruebas: 'lab', forja: 'arena' }[room] || room;
+      const owner = { pruebas: 'lab', forja: 'arena', incubadora: 'mentora' }[room] || room;
       const place = town.map.things.find((th) => th.owner === owner || th.id === room);
       const img = el('img', 'ava');
       img.alt = '';
