@@ -8,7 +8,7 @@ from __future__ import annotations
 import requests
 
 CSRF = {"X-Requested-With": "kalshi-bot"}
-READ_ONLY = ("/api/status", "/api/positions", "/api/results", "/api/logs", "/api/labels")
+READ_ONLY = ("/api/status", "/api/positions", "/api/results", "/api/logs", "/api/labels", "/api/settings")
 
 
 class PanelError(Exception):
@@ -74,3 +74,10 @@ class PanelClient:
         if not tickers:
             return {}
         return self.get("/api/labels", tickers=",".join(tickers))
+
+    def settings(self) -> dict:
+        return self.get("/api/settings")
+
+    def trades(self, ticker: str) -> list:
+        """Las compras y ventas de la cuenta en un mercado (con cuáles hizo el bot)."""
+        return (self.get("/api/results/trades", ticker=ticker) or {}).get("trades") or []

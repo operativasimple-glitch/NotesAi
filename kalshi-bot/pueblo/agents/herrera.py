@@ -14,6 +14,7 @@ qué ajuste del panel lo cambiaría. Ella no cambia nada: los ajustes los decide
 
 from __future__ import annotations
 
+import logging
 import math
 import time
 from datetime import datetime, timezone
@@ -21,13 +22,18 @@ from decimal import Decimal
 from typing import Callable, Optional
 from zoneinfo import ZoneInfo
 
+from ..autopsy import autopsy, entry_of, market_end
 from ..names import CITIES, market_name, money, plural
-from ..sources.panel import PanelClient
+from ..sources.panel import PanelClient, PanelError
 from .base import Agent
 from .kali import dec
 
+log = logging.getLogger(__name__)
+
 DAYS = 30
 MIN_SAMPLE = 6  # con menos mercados no se dice si un grupo gana o pierde
+AUTOPSY_DAYS = 3  # las apuestas perdidas de estos últimos días tienen autopsia
+AUTOPSY_PER_TURN = 4  # como mucho, para no gastar el límite de peticiones de Kalshi
 LEAGUES = {
     "KXNCAAFGAME": "Fútbol americano universitario",
     "KXNFLGAME": "NFL",
@@ -140,11 +146,13 @@ class Herrera(Agent):
         tz_minutes: Callable[[], int] = lambda: 0,
         tz: str = "America/Chicago",
         clock=time.time,
+        kalshi=None,
     ):
         super().__init__(world, clock)
         self.panel = panel
         self.tz_minutes = tz_minutes
         self.tz = ZoneInfo(tz)
+        self.kalshi = kalshi  # datos públicos de Kalshi, para la autopsia de cada apuesta perdida
 
     # --- la vuelta ---------------------------------------------------------------------
 
@@ -165,6 +173,7 @@ class Herrera(Agent):
         totals = stats(markets)
         advice = self._advice(groups, totals, markets)
         losses = sorted((m for m in markets if m["net"] < 0), key=lambda m: m["closed_at"], reverse=True)
+        autopsies = self._autopsies(losses, now)
         curve = [
             {"date": p.get("date"), "total": float(dec(p.get("total"), Decimal(0)))}
             for p in (report.get("curve") or [])
@@ -185,6 +194,7 @@ class Herrera(Agent):
             groups=groups,
             advice=advice,
             losses=[self._loss_row(m) for m in losses[:12]],
+            autopsies=autopsies,
             curve=curve,
             days=DAYS,
             at=when.isoformat(),
@@ -319,6 +329,54 @@ class Herrera(Agent):
                 self.say(f"Kali, {a['text'].split('. Puedes')[0]}.", to="kali", kind="info")
         for key in [k for k, d in told.items() if d < day and not any(a["key"] == k for a in advice)]:
             del told[key]
+
+    def _autopsies(self, losses: list, now: float) -> list:
+        """Autopsia de las apuestas perdidas de los últimos días (unas pocas por vuelta) y te la cuenta."""
+        done = self.memory.setdefault("autopsies", {})
+        if self.kalshi is None or not hasattr(self.panel, "trades"):
+            return []
+        cutoff = datetime.fromtimestamp(now - AUTOPSY_DAYS * 86400, tz=timezone.utc).isoformat()
+        recent = [m for m in losses if m["closed_at"] >= cutoff]
+        tried = 0
+        for loss in recent:
+            entry = done.get(loss["ticker"])
+            if entry and (entry.get("text") or entry.get("tries", 0) >= 3):
+                continue
+            if tried >= AUTOPSY_PER_TURN:
+                break
+            tried += 1
+            result = self._autopsy(loss)
+            if result:
+                done[loss["ticker"]] = result
+                self.say(f"Autopsia: {result['text']}", to="tu", kind="info", ticker=loss["ticker"])
+            else:
+                done[loss["ticker"]] = {"tries": (entry or {}).get("tries", 0) + 1}
+        keep = {m["ticker"] for m in losses}
+        for ticker in [t for t in done if t not in keep]:
+            del done[ticker]  # ya no sale en los 30 días
+        found = [done[m["ticker"]] for m in losses if (done.get(m["ticker"]) or {}).get("text")]
+        return found[:12]
+
+    def _autopsy(self, loss: dict) -> Optional[dict]:
+        side = "yes" if loss["side"] == "SÍ" else "no"
+        try:
+            trades = self.panel.trades(loss["ticker"])
+            entry = entry_of(trades, side)
+            markets = self.kalshi.markets_by_ticker([loss["ticker"]])
+            market = next((m for m in markets if m.get("ticker") == loss["ticker"]), None)
+            end = market_end(market) if market else None
+            if entry is None or end is None:
+                return None
+            public = self.kalshi.trades(
+                loss["ticker"], min_ts=int(entry[0].timestamp()) - 60, max_ts=int(end.timestamp()) + 60
+            )
+        except (PanelError, OSError, ValueError) as exc:  # Kalshi o el bot no contestan: se reintenta luego
+            log.info("Autopsia de %s pendiente: %s", loss["ticker"], exc)
+            return None
+        except Exception as exc:  # noqa: BLE001 - p. ej. un error HTTP de Kalshi
+            log.info("Autopsia de %s pendiente: %s", loss["ticker"], exc)
+            return None
+        return autopsy(loss, trades, market, public)
 
     @staticmethod
     def _loss_row(m: dict) -> dict:

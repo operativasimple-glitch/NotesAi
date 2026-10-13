@@ -27,6 +27,11 @@ class FakePanel:
         self.log_lines = []
         self.labels_map = {}
         self.calls = []
+        self.daily_pause = None
+        self.day = None
+        self.risk = {"max_session_loss_dollars": "10"}
+        self.settings_values = {}
+        self.trade_rows = {}  # ticker -> operaciones de la cuenta en ese mercado
 
     def status(self):
         self.calls.append("status")
@@ -38,11 +43,22 @@ class FakePanel:
                 "halted_reason": None,
                 "consecutive_errors": 0,
                 "scan": None,
+                "daily_pause": self.daily_pause,
+                "day": self.day,
             },
             "balance": self.balance,
             "session_pnl": "-0.20",
-            "risk": {"max_session_loss_dollars": "10"},
+            "risk": self.risk,
+            "is_production": True,
         }
+
+    def settings(self):
+        self.calls.append("settings")
+        return {"values": self.settings_values}
+
+    def trades(self, ticker):
+        self.calls.append(f"trades:{ticker}")
+        return self.trade_rows.get(ticker, [])
 
     def positions(self):
         self.calls.append("positions")
@@ -118,6 +134,10 @@ class FakeKalshiPublic:
     def markets_by_ticker(self, tickers):
         self.asked.append(list(tickers))
         return [self.by_ticker[t] for t in tickers if t in self.by_ticker]
+
+    def trades(self, ticker, min_ts=None, max_ts=None, max_pages=5):
+        self.asked.append(("trades", ticker))
+        return list(getattr(self, "public_trades", {}).get(ticker, []))
 
 
 def market(ticker, bid, ask, title="", sub="", volume="500"):

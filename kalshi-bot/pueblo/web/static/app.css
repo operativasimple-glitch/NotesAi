@@ -801,3 +801,13 @@ tr:last-child td { border-bottom: 0; }
   .msg.new, .sheet[open] { animation: none; }
   .bubble { transition: none; }
 }
+
+/* El Puente: la sala de mando */
+.bridge-state { margin: 0; font: 600 var(--step-1) / 1.2 var(--pixel); }
+.bridge-state.ok { color: var(--good); }
+.bridge-state.warn { color: var(--alert); }
+.bridge-controls { display: flex; flex-wrap: wrap; gap: 8px; }
+.bridge-controls .btn { flex: 1 1 140px; }
+.btn.danger { background: var(--alert); border-color: var(--alert); color: #fff; }
+.row.proposal { display: grid; gap: 6px; }
+.row.proposal .btn { justify-self: start; min-height: 40px; }

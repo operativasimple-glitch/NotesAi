@@ -37,9 +37,9 @@ def build_agents(world: World, config: Config, panel=None) -> list:
         panel = PanelClient(config.panel_url, config.panel_password)
     agents = [
         Kali(world, panel, tz_minutes(config.tz)),
-        Herrera(world, panel, tz_minutes(config.tz), config.tz),
+        Herrera(world, panel, tz_minutes(config.tz), config.tz, kalshi=KalshiPublic(config.kalshi_api)),
         Nube(world, NWSClient(config.contact)),
-        Vigia(world),
+        Vigia(world, panel),
         Radar(world, KalshiPublic(config.kalshi_api)),
         Cronista(world, config.tz),
         Investigadora(world, KalshiPublic(config.kalshi_api)),

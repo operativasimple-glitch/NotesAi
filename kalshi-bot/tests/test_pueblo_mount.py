@@ -47,6 +47,7 @@ def site(tmp_path, monkeypatch):
         authenticated=False,
     )
     write_overrides(tmp_path, {"markets": {"series": ["KXTEST"]}})
+
     def factory(settings, signer):
         fake.authenticated = signer is not None
         return fake
@@ -155,3 +156,62 @@ def test_the_pueblo_can_be_turned_off(tmp_path, monkeypatch, caplog):
     with caplog.at_level(logging.ERROR):
         assert cli._start_pueblo(object(), object()) is None  # si falla, el panel sigue sin pueblo
     assert "No se pudo abrir el pueblo" in caplog.text
+
+
+def test_bridge_actions_control_the_real_bot(site, pem):
+    panel, pueblo = site
+    with_key(panel, pem)
+    act = lambda **body: panel.call("POST", "/pueblo/api/act", body)  # noqa: E731
+    assert panel.call("POST", "/pueblo/api/act", {"action": "parar"}, csrf=False)[0] == 403
+    assert act(action="borrar")[0] == 400
+    # Arrancar en simulación y parar.
+    status, body, _ = act(action="arrancar", mode="sim")
+    assert status == 200 and body["status"]["bot"]["state"] == "running"
+    status, body, _ = act(action="parar")
+    assert status == 200 and body["status"]["bot"]["state"] == "stopped"
+    # Cerrar todo pide escribir CERRAR. (Kalshi contesta cuánto se llenó de cada venta inmediata.)
+    create = panel.fake.create_order
+
+    def filled_now(intent, client_order_id, expiration_ts=None):
+        return {**create(intent, client_order_id, expiration_ts), "fill_count": str(intent.count)}
+
+    panel.fake.create_order = filled_now
+    panel.fake.set_position(T, 5, exposure="4.50")
+    status, body, _ = act(action="cerrar_todo")
+    assert status == 400 and "CERRAR" in body["error"]
+    status, body, _ = act(action="cerrar_todo", confirm="CERRAR")
+    assert status == 200 and body["result"]["closed"][0]["ok"] and "1 de 1 apuestas vendidas" in body["text"]
+    # Aplicar un ajuste propuesto: solo los permitidos, con margen y confirmados.
+    change = {"section": "strategy", "key": "min_price", "value": "0.92"}
+    assert act(action="aplicar", change=change)[0] == 400  # sin confirmar
+    assert act(action="aplicar", change={**change, "value": "0.5"}, confirm=True)[0] == 400
+    assert act(action="aplicar", change={"section": "bot", "key": "order_prefix", "value": "x"}, confirm=True)[0] == 400
+    status, body, _ = act(action="aplicar", change=change, confirm=True)
+    assert status == 200 and panel.controller.settings().strategy_params["min_price"] == "0.92"
+    status, body, _ = act(
+        action="aplicar", change={"section": "risk", "key": "max_daily_loss_pct", "value": "0.2"}, confirm=True
+    )
+    assert status == 200 and str(panel.controller.settings().risk.max_daily_loss_pct) == "0.2"
+    status, body, _ = act(action="freno")
+    assert status == 200
+    said = [m["text"] for m in pueblo.world.since() if m["from"] == "vigia" and m["to"] == "tu"]
+    assert any("Cerrar todo desde el Puente" in t for t in said) and any("min_price = 0.92" in t for t in said)
+
+
+def test_close_summary_tells_partial_and_failed_sales():
+    from decimal import Decimal as D
+
+    from kalshi_bot.web.pueblo import close_summary
+
+    rows = [
+        {"ticker": "A", "ok": True, "contracts": D(5), "filled": D(5)},
+        {"ticker": "B", "ok": True, "contracts": D(5), "filled": D(2)},
+        {"ticker": "C", "ok": True, "contracts": D(3), "filled": D(0)},
+        {"ticker": "D", "ok": False, "contracts": D(2), "error": "ahora nadie compra en este mercado"},
+    ]
+    assert close_summary(rows) == (
+        "1 de 4 apuestas vendidas, 1 vendidas a medias (el resto sigue abierto), 1 sin comprador en ese momento, "
+        "no se pudieron vender: D (ahora nadie compra en este mercado). "
+        "Mira las que quedan en el Puente o en la app de Kalshi."
+    )
+    assert close_summary([]) == "No había apuestas abiertas."

@@ -172,6 +172,34 @@ Seguridad del panel:
 - Operar con dinero real exige escribir `REAL`.
 - La clave privada nunca se devuelve al navegador.
 
+## El pueblo de bots (`/pueblo/`)
+
+El pueblo vive dentro del panel: abre la misma dirección acabada en **`/pueblo/`** y entra con la misma
+contraseña. No hay que crear otro servicio ni poner variables. En el móvil puedes añadirlo a la pantalla de
+inicio como una app más.
+
+Es una base en 3D donde cada vecino va a la sala de lo que está haciendo de verdad. Lo que sirve para el bot:
+
+- **Puente (la Vigía): la sala de mando.**
+  - Muestra el saldo, lo que hay en juego, cómo va el día y a qué saldo deja de comprar, y los límites.
+  - Botones: parar o arrancar el bot y freno de emergencia.
+  - **Cerrar todas las apuestas**: para el bot, cancela sus órdenes y vende cada posición abierta al mejor
+    precio que haya en ese momento. Pide escribir `CERRAR` y paga la comisión de vender ya.
+  - Propone ajustes con datos (por ejemplo, comprar el favorito solo desde 92¢, o no sumar más contratos de
+    los de una orden en el mismo partido). Cada propuesta tiene un botón **Aplicar** que pide confirmación;
+    si el bot está en marcha se reinicia unos segundos para usarlo ya.
+  - Te avisa cuando una apuesta se tuerce, cuando el bot se frena y cuando entra en pausa por el día.
+- **Forja (la Herrera):** repasa el dinero real de 30 días por liga, ciudad y precio. Hace la **autopsia**
+  de cada apuesta perdida de los últimos 3 días: cuándo y a cuánto compró el bot, cuánto llegó a valer, si
+  se dio la vuelta en la última hora y cuántas veces falla algo así a ese precio.
+- **Pruebas (la Probadora):** juega de mentira los partidos de cuatro maneras a la vez para ver cuál gana más.
+- El resto (Nube con la previsión del clima, Radar, el Consejo, el diario del Cronista) mira mercados y cuenta
+  lo que pasa. El Consejo solo apuesta de mentira.
+
+Opcional, en las variables del servicio: `PUEBLO_ENABLED=0` lo apaga (el panel y el bot siguen igual), y con
+`ANTHROPIC_API_KEY` Claude se sienta en el Consejo (`PUEBLO_AI_MAX_CALLS` preguntas al día, 12 si no pones
+nada). Su memoria se guarda en `/data/pueblo`.
+
 ## Crear la API key de Kalshi
 
 1. En [kalshi.com](https://kalshi.com) (o en [demo.kalshi.co](https://demo.kalshi.co) para dinero
@@ -339,7 +367,8 @@ kalshi-bot/
 │   ├── controller.py, web/                      panel web (servidor + PWA)
 │   ├── push.py, names.py                        avisos al móvil (Web Push) y nombres legibles
 │   └── config.py, cli.py
-├── tests/                                       pruebas sin conexión (pytest)
+├── pueblo/                                      el pueblo de bots (/pueblo/): vecinos, mundo y web 3D
+├── tests/                                       pruebas sin conexión (pytest), también las del pueblo
 ├── INVESTIGACION.md                             dónde está la ventaja, con fuentes
 ├── Dockerfile, railway.json                     despliegue
 └── config.example.toml, .env.example

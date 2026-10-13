@@ -71,6 +71,26 @@ class KalshiPublic:
         """Los mercados abiertos de una serie (por ejemplo, KXHIGHNY: la máxima de hoy y la de mañana)."""
         return self._pages({"series_ticker": series, "status": "open", "limit": 200}, max_pages)
 
+    def trades(
+        self, ticker: str, min_ts: Optional[int] = None, max_ts: Optional[int] = None, max_pages: int = 5
+    ) -> list:
+        """Las operaciones públicas de un mercado (de la más nueva a la más vieja): su precio en el tiempo."""
+        params = {"ticker": ticker, "min_ts": min_ts, "max_ts": max_ts, "limit": 1000}
+        params = {k: v for k, v in params.items() if v is not None}
+        found: list = []
+        for page in range(max_pages):
+            resp = self.session.get(f"{self.base_url}/markets/trades", params=params, timeout=self.timeout)
+            resp.raise_for_status()
+            data = resp.json()
+            found.extend(data.get("trades") or [])
+            cursor = data.get("cursor")
+            if not cursor:
+                break
+            params["cursor"] = cursor
+            if page + 1 < max_pages and self.pause:
+                time.sleep(self.pause)
+        return found
+
     def markets_by_ticker(self, tickers: list) -> list:
         """Mercados concretos, estén como estén (abiertos, cerrados o ya liquidados)."""
         found: list = []

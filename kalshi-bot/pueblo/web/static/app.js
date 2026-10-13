@@ -45,14 +45,14 @@
     observatorio: ['Observatorio', 'Nube mira la previsión y lo ya medido en las 7 ciudades del clima.'],
     consejo: ['Consejo', 'Cada personaje da su precio justo para cada mercado y apuesta de mentira. Aquí se lleva el marcador.'],
     boveda: ['Bóveda', 'Donde se cuentan las ganancias y las pérdidas. Kali viene cuando se decide un mercado o mira el saldo.'],
-    puente: ['Puente', 'Vigía vigila el riesgo. Aquí está tu terminal: lo que los bots te dejan llega aquí.'],
+    puente: ['Puente', 'La sala de mando: la Vigía vigila el riesgo y desde aquí puedes parar el bot, cerrar todas las apuestas o aplicar los ajustes que propone.'],
     archivo: ['Archivo', 'Cronista escribe el diario del pueblo y cuelga las noticias en el tablón.'],
     forja: ['Forja', 'La Herrera repasa el dinero real de Kali: qué liga, ciudad y precio gana o pierde, y qué ajuste del panel lo cambiaría.'],
     pruebas: ['Pruebas', 'La Probadora juega de mentira los partidos como Kali, pero de cuatro maneras a la vez, para ver cuál gana más.'],
   };
   const ROOM_OWNER = {
     mercado: 'kali', boveda: 'kali', forja: 'herrera', observatorio: 'nube', laboratorio: 'radar', archivo: 'cronista',
-    pruebas: 'probadora',
+    pruebas: 'probadora', puente: 'vigia',
   };
   const MEMBER_ABOUT = {
     tormenta: 'Para cada tramo de temperatura calcula la probabilidad con la máxima prevista por el Servicio Meteorológico de EE. UU. y lo ya medido hoy.',
@@ -191,6 +191,7 @@
     // Rutas relativas: dentro del panel son /pueblo/api/...
     world: (after) => request('GET', `api/world?after=${after || 0}`),
     talk: (bot) => request('POST', 'api/talk', { bot }),
+    act: (body) => request('POST', 'api/act', body),
     login: (password) => request('POST', 'api/login', { password }),
     logout: () => request('POST', 'api/logout', {}),
   };
@@ -1938,6 +1939,53 @@
     return ul;
   }
 
+  // ---------------------------------------------------------------- el Puente: acciones de verdad
+
+  function bridgeControls(br) {
+    const wrap = el('div', 'bridge-controls');
+    const add = (label, cls, body, question, typed) => {
+      const btn = el('button', cls, label);
+      btn.type = 'button';
+      btn.addEventListener('click', () => runAction(btn, body, question, typed));
+      wrap.append(btn);
+    };
+    if (br.state === 'running') {
+      add('Parar el bot', 'btn', { action: 'parar' }, '¿Parar el bot? Deja de comprar; lo ya apostado sigue hasta el final.');
+    } else {
+      add('Arrancar con dinero real', 'btn primary', { action: 'arrancar', mode: 'live' },
+        '¿Arrancar el bot con dinero real?', br.production ? 'REAL' : null);
+    }
+    add('Freno de emergencia', 'btn ghost', { action: 'freno' }, '¿Freno de emergencia? Cancela las órdenes del bot y lo para.');
+    add('Cerrar todas las apuestas', 'btn danger', { action: 'cerrar_todo' },
+      'Vende ya todas las apuestas abiertas al mejor precio que haya y para el bot. Se paga la comisión de vender ya.', 'CERRAR');
+    return wrap;
+  }
+
+  async function runAction(btn, body, question, typed) {
+    if (typed) {
+      const word = window.prompt(`${question}\n\nEscribe ${typed} para confirmar.`);
+      if (word === null) return;
+      if (word.trim().toUpperCase() !== typed) {
+        window.alert('No coincide: no se ha hecho nada.');
+        return;
+      }
+      body = { ...body, confirm: typed };
+    } else {
+      if (!window.confirm(question)) return;
+      if (body.action === 'aplicar') body = { ...body, confirm: true };
+    }
+    btn.disabled = true;
+    try {
+      const res = await Api.act(body);
+      window.alert(res.text);
+      schedule(300);
+    } catch (err) {
+      window.alert(err.message || 'No se pudo hacer.');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   const DETAIL = {
     kali(b) {
       const d = b.detail || {};
@@ -1964,7 +2012,7 @@
       const positions = d.positions || [];
       box.append(el('h3', null, positions.length ? `Apuestas abiertas (${positions.length})` : 'Sin apuestas abiertas'));
       if (positions.length) box.append(positionsList(positions));
-      box.append(el('p', 'note', 'Desde el pueblo solo se mira. Para cambiar algo, usa el panel del bot.'));
+      box.append(el('p', 'note', 'Para parar el bot, cerrar las apuestas o cambiar sus límites, ve al Puente.'));
       return box;
     },
     nube(b) {
@@ -1996,11 +2044,48 @@
     },
     vigia(b) {
       const d = b.detail || {};
+      const br = d.bridge || {};
       const kali = (state.byId.get('kali') || {}).detail || {};
       const box = el('div', 'detail');
+      if (br.connected === false) box.append(el('p', 'note warn', 'Ahora mismo no veo el bot. Vuelvo a mirar en un minuto.'));
+      const label = br.pause ? 'En pausa hasta mañana' : { running: 'Bot activo', halted: 'Bot frenado', stopped: 'Bot parado' }[br.state] || 'Sin datos del bot';
+      const mode = { live: 'con dinero real', sim: 'en simulación' }[br.mode] || '';
+      const tone = br.pause || br.state === 'halted' ? 'warn' : br.state === 'running' ? 'ok' : '';
+      box.append(el('p', `bridge-state ${tone}`, [label, br.state === 'running' ? mode : ''].filter(Boolean).join(' · ')));
+      if (br.pause) box.append(el('p', 'note warn', `${br.pause}. Lo apostado sigue hasta el final y mañana vuelve a comprar.`));
+      if (br.state === 'halted' && br.halted) box.append(el('p', 'note warn', br.halted));
+      const day = br.day || {};
       const stats = el('dl', 'stats');
-      stats.append(stat('Apuestas torcidas', String(d.risky || 0)), stat('Avisos en 24 h', String(d.alerts_today || 0)));
+      stats.append(
+        stat('Saldo', money(br.equity)),
+        stat('En juego', money(br.in_play), br.in_play_pct != null ? `${pct(br.in_play_pct)} del saldo` : ''),
+        stat('Hoy', day.change != null ? money(day.change, true) : '—', day.pause_at ? `para de comprar en ${money(day.pause_at)}` : '', num(day.change)),
+        stat('Apuestas torcidas', String(d.risky || 0), `${d.alerts_today || 0} avisos en 24 h`),
+      );
       box.append(stats);
+      const lim = br.limits || {};
+      if (lim.market_pct != null) {
+        box.append(el('p', 'row-sub', `Límites: ${pct(lim.market_pct)} del saldo por apuesta · ${pct(lim.exposure_pct)} en juego a la vez · pausa si el día baja un ${pct(lim.daily_loss_pct)}`));
+      }
+      if (br.controls) box.append(bridgeControls(br));
+      const props = br.proposals || [];
+      if (props.length) {
+        box.append(el('h3', null, 'Lo que propone la Vigía'));
+        const ul = el('ul', 'rows');
+        for (const prop of props) {
+          const li = el('li', 'row proposal');
+          li.append(el('div', 'row-name', prop.title), el('div', 'row-sub', prop.why));
+          if (br.controls) {
+            const btn = el('button', 'btn ghost', 'Aplicar');
+            btn.type = 'button';
+            btn.addEventListener('click', () => runAction(btn, { action: 'aplicar', change: prop.change },
+              `¿Aplicar «${prop.title}»? Si el bot está en marcha se reinicia unos segundos para usarlo ya.`));
+            li.append(btn);
+          }
+          ul.append(li);
+        }
+        box.append(ul);
+      }
       const positions = kali.positions || [];
       if (positions.length) {
         box.append(el('h3', null, 'Las apuestas de Kali, de la más floja a la más segura'));
@@ -2102,7 +2187,20 @@
         }
         box.append(ul);
       }
-      box.append(el('p', 'note', 'Son los mercados que ha cerrado el bot con dinero real (los compras tuyas a mano no cuentan). La Herrera no cambia nada: los ajustes se cambian en el panel.'));
+      const autopsies = d.autopsies || [];
+      if (autopsies.length) {
+        box.append(el('h3', null, 'Autopsia de lo perdido'));
+        const ul = el('ul', 'rows');
+        for (const a of autopsies.slice(0, 8)) {
+          const li = el('li', 'row');
+          const top = el('div', 'row-top');
+          top.append(el('span', 'row-name', a.name), el('b', 'test-pnl down', money(a.net, true)));
+          li.append(top, el('div', 'row-sub', a.text.replace(`«${a.name}» `, '')));
+          ul.append(li);
+        }
+        box.append(ul);
+      }
+      box.append(el('p', 'note', 'Son los mercados que ha cerrado el bot con dinero real (los compras tuyas a mano no cuentan). Los ajustes se cambian en el Puente o en el panel.'));
       return box;
     },
     probadora(b) {

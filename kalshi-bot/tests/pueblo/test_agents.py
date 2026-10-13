@@ -263,3 +263,36 @@ def test_cronista_writes_the_diary_and_the_news():
     cronista.next_run = 0
     cronista.run_if_due(clock())
     assert texts(world, kind="diary")[-1].startswith("Resumen del día: Kali cerró 20 mercados y va +$4,45")
+
+
+def test_vigia_runs_the_bridge_with_the_real_bot():
+    clock = Clock()
+    world = World(None, clock)
+    panel = FakePanel()
+    panel.can_act = True
+    panel.risk = {"max_market_pct": "0.15", "max_exposure_pct": "0.6", "max_daily_loss_pct": "0.25"}
+    panel.day = {"start_equity": "30.04", "paused": False, "max_daily_loss_pct": "0.25"}
+    panel.settings_values = {
+        "strategy": {"name": "favorites", "params": {"min_price": "0.88", "order_size": "5", "max_position": "20"}},
+        "risk": {"max_daily_loss_pct": "0.25", "max_market_pct": "0.15"},
+    }
+    vigia = Vigia(world, panel, clock=clock)
+    pit = {"ticker": PIT, "name": "Gana Pittsburgh", "side": "NO", "cost": "4.46", "chance": "0.891"}
+    world.update("kali", detail={"connected": True, "positions": [pit], "balance": {"equity": "30.04"}})
+    vigia.run_if_due(clock())
+    bridge = world.bot("vigia")["detail"]["bridge"]
+    assert bridge["controls"] and bridge["state"] == "running" and bridge["production"]
+    assert bridge["in_play"] == "4.46" and round(bridge["in_play_pct"], 3) == 0.148
+    assert bridge["day"] == {"start": "30.04", "change": "0.00", "pause_at": "22.53"}
+    assert [p["id"] for p in bridge["proposals"]] == ["min_price", "max_position"]
+    assert bridge["proposals"][1]["change"] == {"section": "strategy", "key": "max_position", "value": "5"}
+    # Si el bot entra en pausa por el día, te lo dice una vez.
+    panel.daily_pause = "pausa hasta mañana: hoy el saldo bajó más del 25 %"
+    for _ in range(2):
+        clock.advance(60)
+        vigia.run_if_due(clock())
+    assert [t for t in texts(world, to="tu") if "no compra más hoy" in t] == [
+        "El bot no compra más hoy: pausa hasta mañana: hoy el saldo bajó más del 25 %. "
+        "Lo apostado sigue hasta el final."
+    ]
+    assert world.bot("vigia")["mood"] == "alert" and "pausa" in world.bot("vigia")["status"]

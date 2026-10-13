@@ -428,6 +428,52 @@ class BotController:
         log.warning("FRENO: %d órdenes del bot canceladas desde el panel", len(cancelled))
         return {"cancelled": len(cancelled)}
 
+    def close_all_positions(self) -> dict:
+        """Cerrar todas las apuestas ya: para el bot, cancela sus órdenes y vende cada posición abierta.
+
+        Vende al mejor precio que haya en ese momento (orden inmediata, comisión de taker): un SÍ se
+        vende al mejor comprador y un NO se cierra comprando SÍ al mejor vendedor. Lo que no se pueda
+        vender (nadie compra en ese mercado) se queda y se dice.
+        """
+        settings = self.settings()
+        if settings.signer() is None:
+            raise ControllerError("Sin API key no hay apuestas reales que cerrar")
+        client = self.client(settings, require_auth=True)
+        self.kill()  # primero que no vuelva a comprar mientras se vende
+        closed = []
+        for ticker, pos in sorted(client.get_positions().items()):
+            held = abs(pos.position)
+            if held <= 0:
+                continue
+            side = "yes" if pos.position > 0 else "no"
+            row = {"ticker": ticker, "side": side, "contracts": held, "ok": False}
+            try:
+                book = client.get_orderbook(ticker)
+                yes_price = book.best_bid if side == "yes" else book.best_ask
+                if yes_price is None:
+                    row["error"] = "ahora nadie compra en este mercado"
+                    closed.append(row)
+                    continue
+                intent = OrderIntent(
+                    ticker, ASK if side == "yes" else BID, yes_price, held, IOC, reason="cerrar todas las apuestas"
+                )
+                resp = client.create_order(intent, new_client_order_id(MANUAL_PREFIX))
+                order = resp.get("order", resp) if isinstance(resp, dict) else {}
+            except KalshiAPIError as exc:
+                row["error"] = exc.message or str(exc)
+                closed.append(row)
+                continue
+            filled = to_decimal(order.get("fill_count_fp"), to_decimal(order.get("fill_count"), None))
+            row.update(
+                ok=True,
+                price=yes_price if side == "yes" else ONE - yes_price,  # precio de tu lado
+                filled=filled,
+                remaining=to_decimal(order.get("remaining_count_fp"), to_decimal(order.get("remaining_count"), None)),
+            )
+            log.warning("CERRAR TODO: vende %s %s de %s a %s", held, side.upper(), ticker, row["price"])
+            closed.append(row)
+        return {"closed": closed}
+
     def resume_if_needed(self) -> None:
         """Al reiniciar el servidor, vuelve a arrancar el bot si estaba en marcha."""
         state = self._read_state()

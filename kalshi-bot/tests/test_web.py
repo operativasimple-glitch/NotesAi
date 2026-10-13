@@ -571,3 +571,32 @@ def test_log_history_survives_a_restart(tmp_path):
     ]
     assert lines[0]["ts"].startswith("2026-10-08T13:44:01.250") and lines[1]["id"] == 2
     LogBuffer().preload(tmp_path / "no-existe.log")  # sin archivo no pasa nada
+
+
+def test_close_all_positions_stops_the_bot_and_sells_at_the_best_price(panel, pem):
+    panel.login()
+    body = {"key_id": "abc12345xyz", "private_key": pem, "env": "demo"}
+    assert panel.call("POST", "/api/credentials", body)[0] == 200
+    other = "KXTEST-26OCT08-B60"
+    panel.fake.markets[other] = make_market(other)
+    panel.fake.books[other] = make_book(other, bids=[("0.06", 10)], asks=[("0.08", 10)])
+    panel.fake.set_position(T, 5, exposure="4.50")  # 5 SÍ: se venden al mejor comprador (90¢)
+    panel.fake.set_position(other, "-3", exposure="2.79")  # 3 NO: se cierran comprando SÍ a 8¢ (NO a 92¢)
+    panel.fake.books["KXEMPTY-26OCT08-B1"] = make_book("KXEMPTY-26OCT08-B1")
+    panel.fake.set_position("KXEMPTY-26OCT08-B1", 2, exposure="1.80")  # sin compradores: se queda
+    panel.controller.start("sim")
+    result = panel.controller.close_all_positions()
+    assert panel.controller.status()["bot"]["state"] == "stopped"
+    sells = {c["intent"].ticker: c["intent"] for c in panel.fake.created}
+    assert (sells[T].side, sells[T].price, sells[T].count, sells[T].time_in_force) == (
+        ASK,
+        D("0.90"),
+        D(5),
+        "immediate_or_cancel",
+    )
+    assert (sells[other].side, sells[other].price, sells[other].count) == (BID, D("0.08"), D(3))
+    assert all(c["client_order_id"].startswith("man-") for c in panel.fake.created)  # el bot no las toca
+    rows = {r["ticker"]: r for r in result["closed"]}
+    assert rows[T]["ok"] and rows[T]["price"] == D("0.90")
+    assert rows[other]["ok"] and rows[other]["price"] == D("0.92")
+    assert not rows["KXEMPTY-26OCT08-B1"]["ok"] and "nadie compra" in rows["KXEMPTY-26OCT08-B1"]["error"]
