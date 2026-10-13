@@ -9,7 +9,7 @@
 //   • Stop a 20 puntos y objetivo a 40 puntos de la entrada.
 //   • Al ir 20 puntos a favor (1:1) el stop pasa a la entrada (breakeven).
 //   • Momentum: si cierra +20 a favor y el RSI(14) está ≥ 60 (cortos ≤ 40), se quita
-//     el objetivo y el stop sigue al precio a 20 puntos del extremo (trailing).
+//     el objetivo y el stop sigue al precio a 1,5 × ATR(14) del extremo (trailing).
 //   • Con momentum se añade 1 contrato cada 20 puntos más a favor (máx. 2), solo si
 //     con el stop actual la posición entera no puede cerrar en pérdida.
 //
@@ -40,6 +40,8 @@ const string G_VWAP         = "VWAP"
 const string G_RISK         = "Gestión de la orden (puntos)"
 const string G_RUN          = "Momentum: dejar correr y añadir"
 const string G_TIME         = "Horario"
+const string TRAIL_ATR      = "ATR (se adapta a la volatilidad)"
+const string TRAIL_POINTS   = "Puntos fijos"
 
 anchorMode = input.string(ANCHOR_SESSION, "Anclaje", options = [ANCHOR_SESSION, ANCHOR_NY], group = G_VWAP, tooltip = "En NQ1!/MNQ1! con horario extendido, 'Sesión' reinicia el VWAP a las 18:00 de Nueva York (apertura de Globex), no a las 09:30. Elige 'Apertura NY 09:30' para que se reinicie con la campana del contado.")
 src        = input.source(hlc3, "Fuente", group = G_VWAP)
@@ -58,7 +60,10 @@ allowShort = input.bool(true, "Operar cortos", group = G_RISK)
 useRunner  = input.bool(true, "Dejar correr si hay momentum", group = G_RUN, tooltip = "Si una vela cierra al menos 'Breakeven al ir a favor' puntos a favor y el RSI confirma, se quita el objetivo fijo y el stop pasa a seguir al precio.")
 rsiLen     = input.int(14, "Longitud del RSI", minval = 2, group = G_RUN)
 rsiLevel   = input.float(60.0, "Nivel de RSI con momentum", minval = 50.0, maxval = 100.0, step = 1, group = G_RUN, tooltip = "Largos: RSI ≥ este nivel. Cortos: RSI ≤ 100 − este nivel (60 → 40).")
-trailPts   = input.float(20.0, "Trailing stop (puntos desde el extremo)", minval = 0.25, step = 1, group = G_RUN)
+trailMode  = input.string(TRAIL_ATR, "Distancia del trailing", options = [TRAIL_ATR, TRAIL_POINTS], group = G_RUN, tooltip = "ATR: el stop se separa más del precio cuando el Nasdaq se mueve mucho (apertura) y menos cuando está tranquilo.")
+atrLen     = input.int(14, "Longitud del ATR", minval = 1, group = G_RUN)
+atrMult    = input.float(1.5, "Multiplicador del ATR", minval = 0.1, step = 0.1, group = G_RUN)
+trailPts   = input.float(20.0, "Puntos fijos de trailing", minval = 0.25, step = 1, group = G_RUN)
 allowAdds  = input.bool(true, "Añadir contratos con momentum", group = G_RUN, tooltip = "Solo añade si, con el stop actual, la posición entera (incluido el nuevo contrato) no puede cerrar en pérdida.")
 addStepPts = input.float(20.0, "Añadir cada (puntos más a favor)", minval = 0.25, step = 1, group = G_RUN)
 addQty     = input.int(1, "Contratos por añadido", minval = 1, group = G_RUN)
@@ -95,7 +100,9 @@ var int barsSinceAnchor = 0
 barsSinceAnchor := anchor ? 0 : barsSinceAnchor + 1
 bandsReady = barsSinceAnchor >= minBars
 
-rsiValue = ta.rsi(close, rsiLen)
+rsiValue  = ta.rsi(close, rsiLen)
+atrValue  = ta.atr(atrLen)
+trailDist = trailMode == TRAIL_ATR ? atrMult * atrValue : trailPts
 
 // ───────── Horario ─────────
 inWindowRaw   = not na(time(timeframe.period, windowSess, NY))
@@ -160,10 +167,10 @@ else
         runActive  := true
         runStarted := true
     if runActive
-        stopPx := ratchet(stopPx, math.round_to_mintick(extreme - dir * trailPts), dir)
+        stopPx := ratchet(stopPx, math.round_to_mintick(extreme - dir * trailDist), dir)
 
     if runStarted
-        alert("MOMENTUM " + syminfo.ticker + ": deja correr. Quita el objetivo; stop a " + str.tostring(trailPts) + " pts del extremo, ahora en " + str.tostring(stopPx, format.mintick), alert.freq_once_per_bar_close)
+        alert("MOMENTUM " + syminfo.ticker + ": deja correr. Quita el objetivo; stop a " + str.tostring(trailDist, format.mintick) + " pts del extremo, ahora en " + str.tostring(stopPx, format.mintick), alert.freq_once_per_bar_close)
     else if runActive and stopPx != prevStop
         alert("TRAILING " + syminfo.ticker + ": mueve el stop a " + str.tostring(stopPx, format.mintick), alert.freq_once_per_bar_close)
 

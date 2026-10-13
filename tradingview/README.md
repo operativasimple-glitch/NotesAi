@@ -22,7 +22,7 @@ antes de arriesgar dinero.
 | Stop / objetivo | 20 / 40 puntos desde la entrada |
 | Breakeven | Al ir +20 puntos a favor, el stop pasa a la entrada |
 | Momentum | Si una vela cierra +20 a favor y el RSI(14) está ≥ 60 (≤ 40 en cortos), se quita el objetivo de 40 |
-| Trailing stop | Con momentum, el stop sigue al precio a 20 puntos del máximo (mínimo en cortos) y nunca retrocede |
+| Trailing stop | Con momentum, el stop sigue al precio a 1,5 × ATR(14) del máximo (mínimo en cortos) y nunca retrocede |
 | Añadir contratos | Con momentum, +1 contrato cada 20 puntos más a favor, máximo 2 añadidos (3 contratos) |
 | Freno al añadir | Solo añade si, con el stop actual, la posición entera no puede cerrar en pérdida |
 | Horario | Solo 09:30–16:00 (hora de Nueva York); cierra lo abierto al terminar |
@@ -52,8 +52,11 @@ Todo se cambia en **Configuración → Entradas**.
 - **Momentum y añadidos:** el RSI no se dibuja en el gráfico; añade el RSI(14) con niveles 60/40 para verlo.
   Los añadidos comparten el stop de la entrada inicial. El freno solo cuenta el precio del stop: un hueco
   o el deslizamiento pueden hacer que la posición cierre algo peor. Con 3 MNQ cada punto vale 6 $.
+- **Trailing por ATR:** en la apertura el Nasdaq se mueve el doble o el triple que a mediodía; un trailing
+  fijo de 20 puntos salta por ruido a las 09:45 y queda flojo a las 13:00. El ATR ajusta la distancia sola.
+  Si prefieres puntos fijos, cambia *Distancia del trailing → Puntos fijos*.
 - **Si operas a mano:** cuando llegue `MOMENTUM`, cancela el objetivo y pon en tu bróker un trailing stop
-  de 20 puntos, o mueve el stop con cada aviso `TRAILING`.
+  con la distancia que indica el aviso, o mueve el stop con cada aviso `TRAILING`.
 - Compara en el Probador de estrategias con *Dejar correr si hay momentum* y *Añadir contratos* activados y
   desactivados: correr con trailing cambia muchos +40 por menos aciertos más grandes, y no siempre compensa.
 - En el backtest, si una vela toca stop y objetivo a la vez, TradingView supone el orden dentro de la vela.
