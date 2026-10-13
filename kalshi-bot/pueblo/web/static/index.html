@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Pueblo de bots</title>
+  <meta name="description" content="Tus bots viven en una base: los ves ir a la sala de lo que hacen, hablar entre ellos y apostar de mentira en el Consejo.">
+  <meta name="theme-color" content="#10142a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Pueblo">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icon-192.png">
+  <link rel="apple-touch-icon" href="icon-192.png">
+  <link rel="preload" href="fonts/pixelify-sans.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="app.css">
+  <script src="sprites.js" defer></script>
+  <script src="app.js" defer></script>
+</head>
+<body>
+  <div class="page">
+    <header class="top">
+      <div class="brand">
+        <h1>Pueblo de bots</h1>
+        <p id="clock" class="clock">&nbsp;</p>
+      </div>
+      <p id="conn" class="conn" data-state="wait"><span class="dot"></span><span id="conn-text">Conectando…</span></p>
+    </header>
+
+    <p id="demo-banner" class="demo-banner" hidden>Demostración: los bots, apuestas y cifras son inventados.</p>
+
+    <section class="map" aria-label="Mapa del pueblo">
+      <canvas id="map" aria-hidden="true"></canvas>
+      <div id="overlay" class="overlay"></div>
+    </section>
+
+    <main id="login" class="login" hidden>
+      <form id="login-form" class="card" autocomplete="on">
+        <h2>Entra al pueblo</h2>
+        <p>Aquí viven tus bots. Los ves trabajar, hablar entre ellos y avisarte cuando algo importa.</p>
+        <label for="password">Contraseña del panel del bot</label>
+        <input id="password" name="password" type="password" autocomplete="current-password" required>
+        <p id="login-error" class="error" role="alert"></p>
+        <button id="login-btn" class="btn primary" type="submit">Entrar</button>
+      </form>
+    </main>
+
+    <main id="app" class="app" hidden>
+      <nav class="tabs" role="tablist" aria-label="Secciones">
+        <button id="tab-diario" class="tab" role="tab" aria-selected="true" aria-controls="panel-diario" data-tab="diario">Diario</button>
+        <button id="tab-tu" class="tab" role="tab" aria-selected="false" aria-controls="panel-tu" data-tab="tu">Para ti <span id="badge-tu" class="badge" hidden></span></button>
+        <button id="tab-consejo" class="tab" role="tab" aria-selected="false" aria-controls="panel-consejo" data-tab="consejo">Consejo</button>
+        <button id="tab-vecinos" class="tab" role="tab" aria-selected="false" aria-controls="panel-vecinos" data-tab="vecinos">Vecinos</button>
+      </nav>
+
+      <section id="panel-diario" class="panel" role="tabpanel" aria-labelledby="tab-diario">
+        <div class="chips" role="group" aria-label="Qué enseñar">
+          <button class="chip" data-filter="all" aria-pressed="true">Todo</button>
+          <button class="chip" data-filter="alert" aria-pressed="false">Avisos</button>
+          <button class="chip" data-filter="trade" aria-pressed="false">Operaciones</button>
+          <button class="chip" data-filter="diary" aria-pressed="false">Crónicas</button>
+        </div>
+        <ol id="feed" class="feed"></ol>
+        <p id="feed-empty" class="empty" hidden>Todavía no ha pasado nada. En cuanto los bots hablen, aparecerá aquí.</p>
+      </section>
+
+      <section id="panel-tu" class="panel" role="tabpanel" aria-labelledby="tab-tu" hidden>
+        <p class="lead">Lo que los bots te han dejado en el buzón: avisos, el diario de la mañana y de la noche y sus respuestas.</p>
+        <ol id="feed-tu" class="feed"></ol>
+        <p id="tu-empty" class="empty" hidden>Tu buzón está vacío.</p>
+      </section>
+
+      <section id="panel-consejo" class="panel" role="tabpanel" aria-labelledby="tab-consejo" hidden>
+        <p class="lead">Cada personaje da su precio justo para los mercados del clima y las apuestas de Kali. Si se separa del mercado más que la comisión, apuesta 1 contrato de mentira; cuando el mercado se decide, se apunta solo quién acertó.</p>
+        <h3 id="board-title" class="sec-title">¿Quién acertó?</h3>
+        <ol id="board" class="board"></ol>
+        <h3 id="tests-title" class="sec-title" hidden>Pruebas: Kali en los partidos, de mentira</h3>
+        <div id="tests"></div>
+        <h3 id="topics-title" class="sec-title">Qué precio le pone cada uno</h3>
+        <ul id="legend" class="legend"></ul>
+        <ul id="topics" class="topics"></ul>
+        <p id="council-empty" class="empty" hidden>El Consejo todavía no se ha reunido. En unos minutos traerá los primeros mercados.</p>
+        <p class="note">Todo es de mentira: el Consejo no compra nada. Sirve para ver qué manera de pensar gana durante semanas antes de pensar en dinero real.</p>
+      </section>
+
+      <section id="panel-vecinos" class="panel" role="tabpanel" aria-labelledby="tab-vecinos" hidden>
+        <div id="cards" class="cards"></div>
+      </section>
+
+      <footer class="foot">
+        <button id="logout-btn" class="link" type="button">Salir</button>
+        <span>Los bots solo miran el panel de Kalshi: no pueden comprar ni cambiar nada.</span>
+      </footer>
+    </main>
+  </div>
+
+  <dialog id="sheet" class="sheet" aria-labelledby="sheet-title">
+    <div class="sheet-inner">
+      <div id="sheet-body"></div>
+      <div class="sheet-actions">
+        <button id="talk-btn" class="btn primary" type="button">Hablar</button>
+        <button id="sheet-close" class="btn ghost" type="button">Cerrar</button>
+      </div>
+    </div>
+  </dialog>
+</body>
+</html>

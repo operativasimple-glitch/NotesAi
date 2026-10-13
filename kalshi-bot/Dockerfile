@@ -11,6 +11,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY kalshi_bot ./kalshi_bot
+COPY pueblo ./pueblo
 COPY config.example.toml ./config.toml
 RUN mkdir -p /data
 

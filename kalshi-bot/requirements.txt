@@ -2,3 +2,4 @@ requests>=2.28
 cryptography>=41
 tomli>=2.0; python_version < "3.11"
 tzdata>=2024.1
+anthropic>=1.10,<2  # solo si pones ANTHROPIC_API_KEY: Claude se sienta en el Consejo del pueblo

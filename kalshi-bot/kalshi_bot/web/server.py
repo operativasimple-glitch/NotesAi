@@ -13,6 +13,7 @@ Seguridad:
 from __future__ import annotations
 
 import base64
+import gzip
 import hashlib
 import hmac
 import json
@@ -286,10 +287,13 @@ class Handler(BaseHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(body)
 
-    def _json(self, status: int, data, headers: Optional[dict] = None) -> None:
-        self._send(
-            status, to_json(data), "application/json; charset=utf-8", {"Cache-Control": "no-store", **(headers or {})}
-        )
+    def _json(self, status: int, data, headers: Optional[dict] = None, compress: bool = False) -> None:
+        body = to_json(data)
+        extra = {"Cache-Control": "no-store", **(headers or {})}
+        if compress and len(body) > 1024 and "gzip" in self.headers.get("Accept-Encoding", ""):
+            body = gzip.compress(body, compresslevel=6)  # el mundo del pueblo pesa: con gzip, unas 5 veces menos
+            extra.update({"Content-Encoding": "gzip", "Vary": "Accept-Encoding"})
+        self._send(status, body, "application/json; charset=utf-8", extra)
 
     def _error(self, status: int, message: str) -> None:
         self._json(status, {"error": message})
@@ -350,23 +354,35 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/healthz":
             self._send(200, b"ok", "text/plain; charset=utf-8", {"Cache-Control": "no-store"})
             return
-        if not path.startswith("/api/"):
+        if path == "/pueblo":
+            self._send(301, b"", "text/plain; charset=utf-8", {"Location": "/pueblo/", "Cache-Control": "no-store"})
+            return
+        # El pueblo de bots vive en /pueblo/: su web y su API, con la misma sesión que el panel.
+        pueblo_api = path.startswith("/pueblo/api/")
+        if not path.startswith("/api/") and not pueblo_api:
             self._static(path)
             return
+        api_path = path[len("/pueblo") :] if pueblo_api else path
         query = {k: v[-1] for k, v in parse_qs(url.query).items()}
         try:
             if method != "GET" and self.headers.get(CSRF_HEADER) != CSRF_VALUE:
                 raise ApiError(403, "Petición rechazada (falta la cabecera del panel)")
-            if path == "/api/login" and method == "POST":
+            if api_path == "/api/login" and method == "POST":
                 self._login(self._read_body())
                 return
-            if path == "/api/logout" and method == "POST":
+            if api_path == "/api/logout" and method == "POST":
                 self._json(200, {"ok": True}, {"Set-Cookie": self._cookie("", 0)})
                 return
             if not self.app.sessions.valid(self._session_token()):
                 raise ApiError(401, "Inicia sesión")
             body = self._read_body() if method in ("POST", "PUT", "DELETE") else {}
-            self._json(200, self.app.dispatch(method, path, query, body))
+            if pueblo_api:
+                pueblo = getattr(self.server, "pueblo", None)
+                if pueblo is None:
+                    raise ApiError(404, "El pueblo no está activado")
+                self._json(200, pueblo.dispatch(method, api_path, query, body), compress=True)
+            else:
+                self._json(200, self.app.dispatch(method, path, query, body))
         except ApiError as exc:
             self._error(exc.status, exc.message)
         except (ControllerError, ConfigError, ValueError) as exc:
@@ -390,6 +406,19 @@ class Handler(BaseHTTPRequestHandler):
         self._json(200, {"ok": True}, {"Set-Cookie": self._cookie(token, SESSION_SECONDS)})
 
     def _static(self, path: str) -> None:
+        if path.startswith("/pueblo/"):
+            pueblo = getattr(self.server, "pueblo", None)
+            found = (
+                pueblo.static(path[len("/pueblo") :], "gzip" in self.headers.get("Accept-Encoding", ""))
+                if pueblo
+                else None
+            )
+            if found is None:
+                self._send(404, b"No encontrado", "text/plain; charset=utf-8")
+                return
+            body, content_type, headers = found
+            self._send(200, body, content_type, headers)
+            return
         entry = STATIC_FILES.get(path)
         if entry is None:
             self._send(404, b"No encontrado", "text/plain; charset=utf-8")
@@ -409,10 +438,13 @@ class PanelServer(ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
 
-    def __init__(self, address: tuple, app: PanelApp):
+    def __init__(self, address: tuple, app: PanelApp, pueblo=None):
         super().__init__(address, Handler)
         self.app = app
+        self.pueblo = pueblo  # el pueblo de bots (kalshi_bot.web.pueblo.PuebloMount) o None
 
 
-def make_server(controller: BotController, password: str, host: str = "0.0.0.0", port: int = 8000) -> PanelServer:
-    return PanelServer((host, port), PanelApp(controller, password))
+def make_server(
+    controller: BotController, password: str, host: str = "0.0.0.0", port: int = 8000, pueblo=None
+) -> PanelServer:
+    return PanelServer((host, port), PanelApp(controller, password), pueblo)

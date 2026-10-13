@@ -394,7 +394,8 @@ def cmd_web(settings: Settings, args) -> int:
     controller.logs.preload(settings.log_dir / "bot.log")  # lo de antes del reinicio
     logging.getLogger().addHandler(controller.logs)
     _add_file_logging(settings.log_dir / "bot.log")
-    server = make_server(controller, password, args.host, port)
+    pueblo = _start_pueblo(controller, settings)
+    server = make_server(controller, password, args.host, port, pueblo=pueblo)
     log.info("Panel web escuchando en http://%s:%d (entorno %s)", args.host, port, settings.env)
     controller.resume_if_needed()
     controller.start_background()  # avisos al móvil de los mercados que se cierran
@@ -410,8 +411,25 @@ def cmd_web(settings: Settings, args) -> int:
     finally:
         log.info("Apagando el panel: deteniendo el bot y cancelando sus órdenes...")
         server.server_close()
+        if pueblo is not None:
+            pueblo.stop()
         controller.shutdown()
     return 0
+
+
+def _start_pueblo(controller, settings: Settings):
+    """El pueblo de bots en /pueblo/ (PUEBLO_ENABLED=0 lo apaga). Si falla, el panel y el bot siguen."""
+    if os.environ.get("PUEBLO_ENABLED", "1").strip().lower() in ("0", "false", "no", "off"):
+        return None
+    try:
+        from .web.pueblo import PuebloMount
+
+        pueblo = PuebloMount(controller, controller.data_dir / "pueblo", settings.engine.timezone)
+        pueblo.start()
+        return pueblo
+    except Exception:  # noqa: BLE001 - el pueblo es un extra: nunca para el bot
+        log.exception("No se pudo abrir el pueblo de bots; el panel y el bot siguen igual")
+        return None
 
 
 def _print_sweep(client, args) -> int:

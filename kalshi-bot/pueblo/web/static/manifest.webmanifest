@@ -1,0 +1,15 @@
+{
+  "name": "Pueblo de bots",
+  "short_name": "Pueblo",
+  "description": "Tus bots viven en un pueblo: los ves trabajar y hablar entre ellos.",
+  "lang": "es",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#10142a",
+  "theme_color": "#10142a",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
