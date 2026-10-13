@@ -548,6 +548,7 @@ function scanLabel(key, n) {
 function scanText(scan) {
   const reasons = scan.reasons || {};
   if (reasons.exchange_paused) return "Kalshi no está operando ahora: el bot espera.";
+  if (reasons.daily_loss) return "En pausa hasta mañana: hoy el saldo ya bajó demasiado. Lo apostado sigue hasta el final.";
   if (!scan.total) return "Ahora no hay mercados que mirar.";
   const active = reasons.active || 0;
   if (active === scan.total) return `${active} con apuesta u orden`;
@@ -942,11 +943,11 @@ function describeLog(message) {
   if (m) return { kind: "info", main: [`Saldo ${fmt.money(m[1])}`], extra: [`en posiciones ${fmt.money(m[2])}`] };
   m = /^Mercados seguidos \((\d+)\): (.*)$/.exec(message);
   if (m) return { kind: "info", main: [`Siguiendo ${plural(Number(m[1]), "mercado", "mercados")}`], extra: [] };
-  m = /^\[(\S+)\] riesgo: (rechazada \((.+?)\)|recortada de [\d.]+ a ([\d.]+) contratos): (.+)$/.exec(message);
-  d = m && DESCRIBE.exec(m[5]);
+  m = /^\[(\S+)\] riesgo: (rechazada \((.+?)\)|recortada de [\d.]+ a ([\d.]+) contratos(?: \((.+?)\))?): (.+)$/.exec(message);
+  d = m && DESCRIBE.exec(m[6]);
   if (d) {
     const book = d[1] === "COMPRA" ? "bid" : "ask";
-    const why = m[3] ? riskReason(m[3]) : "límite de contratos por orden";
+    const why = m[3] ? riskReason(m[3]) : m[5] ? riskReason(m[5]) : "límite de contratos por orden";
     const main = m[4]
       ? [el("b", { text: "Recortada" }), ` · comprar ${orderWords(book, m[4], d[3])} (pedía ${fmt.qty(d[2])})`]
       : [el("b", { text: "No se compra" }), ` · ${orderWords(book, d[2], d[3])}`];
@@ -1554,6 +1555,9 @@ const RISK_FIELDS = [
   { key: "min_price", label: "Precio mínimo", type: "price" },
   { key: "max_price", label: "Precio máximo", type: "price" },
   { key: "min_minutes_to_close", label: "No operar en los últimos (minutos)", type: "number" },
+  { key: "max_market_pct", label: "Máximo en una sola apuesta", type: "percent", help: "Parte de tu saldo que puede ir a un mismo mercado. 0 = sin límite." },
+  { key: "max_exposure_pct", label: "Máximo en juego a la vez", type: "percent", help: "Parte de tu saldo que puede estar apostada al mismo tiempo. 0 = sin límite." },
+  { key: "max_daily_loss_pct", label: "Pérdida máxima del día", type: "percent", help: "Si en un día el saldo baja esto, no compra hasta el día siguiente (lo apostado sigue). 0 = desactivado." },
 ];
 
 function fieldControl(def, value) {
@@ -1579,6 +1583,11 @@ function fieldControl(def, value) {
     const v = value ?? def.default;
     input.value = Array.isArray(v) ? v.join(", ") : v || "";
     read = () => input.value.split(",").map((v) => v.trim()).filter(Boolean);
+  } else if (def.type === "percent") {
+    input = el("input", { type: "number", inputmode: "decimal", step: "1" });
+    const v = value ?? def.default;
+    input.value = v == null || v === "" ? "" : String(Math.round(Number(v) * 1000) / 10);
+    read = () => (input.value === "" ? undefined : (Number(input.value) / 100).toFixed(4));
   } else if (def.type === "price") {
     input = el("input", { type: "number", inputmode: "decimal", step: "0.1" });
     const v = value ?? def.default;
@@ -1590,7 +1599,7 @@ function fieldControl(def, value) {
     input.value = v == null ? "" : String(v);
     read = () => (input.value === "" ? undefined : input.value);
   }
-  const unit = def.type === "price" ? "¢" : def.type === "money" ? "$" : null;
+  const unit = def.type === "price" ? "¢" : def.type === "money" ? "$" : def.type === "percent" ? "%" : null;
   const control = unit ? el("div", { class: "input-unit" }, input, el("span", { text: unit })) : input;
   return {
     node: el("label", { class: "field" }, def.label, control, def.help ? el("span", { class: "help", text: def.help }) : null),

@@ -26,6 +26,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 try:  # Python 3.11+
     import tomllib
@@ -36,7 +37,7 @@ from .auth import KalshiSigner, canonical_pem
 from .client import ENVIRONMENTS, FALLBACK_URLS, KalshiClient
 from .discovery import RULE_KEYS
 from .engine import EngineConfig
-from .models import to_decimal
+from .models import ZERO, to_decimal
 from .risk import RiskLimits
 
 log = logging.getLogger(__name__)
@@ -52,6 +53,12 @@ DEFAULT_SERIES = GAME_SERIES + WEATHER_SERIES
 # negociado (dónde apostar lo limita max_positions_per_event), y solo en las últimas 12 horas:
 # con datos reales, entrar antes (hasta 40 h) salió casi a cero (ver INVESTIGACION.md).
 DEFAULT_SERIES_RULES = {"KXHIGH": {"max_hours_to_close": 12, "max_markets_per_event": 4}}
+# Límites según el saldo (en tanto por uno). Con unos 20 $, una apuesta fallida a 5 contratos
+# se llevaba el 20 % de la cuenta y un mal sábado, todo lo ganado en la semana (octubre de 2026).
+DEFAULT_MARKET_PCT = "0.15"  # en un mismo mercado, como mucho el 15 % del saldo
+DEFAULT_EXPOSURE_PCT = "0.6"  # en juego a la vez, como mucho el 60 %
+DEFAULT_DAILY_LOSS_PCT = "0.25"  # si en un día el saldo baja un 25 %, no compra hasta el día siguiente
+DEFAULT_TIMEZONE = "America/Chicago"  # dónde empieza y acaba el día para la pausa por pérdidas
 
 CREDENTIALS_FILE = "credentials.json"
 KEY_FILE = "kalshi-key.pem"
@@ -69,6 +76,7 @@ KNOWN_KEYS = {
         "min_error_minutes",
         "paper_cash",
         "log_dir",
+        "timezone",
     },
     "markets": {
         "tickers",
@@ -93,6 +101,9 @@ KNOWN_KEYS = {
         "min_price",
         "max_price",
         "min_minutes_to_close",
+        "max_market_pct",
+        "max_exposure_pct",
+        "max_daily_loss_pct",
     },
     "strategy": {"name", "params"},
     "http": {"reads_per_second", "writes_per_second", "timeout_seconds", "self_trade_prevention"},
@@ -183,6 +194,7 @@ class Settings:
                 "order_ttl_seconds": e.order_ttl_seconds,
                 "taker_cooldown_seconds": e.taker_cooldown_seconds,
                 "paper_cash": e.paper_cash,
+                "timezone": e.timezone,
             },
             "markets": {
                 "tickers": list(e.tickers),
@@ -206,6 +218,9 @@ class Settings:
                 "min_price": r.min_price,
                 "max_price": r.max_price,
                 "min_minutes_to_close": r.min_minutes_to_close,
+                "max_market_pct": r.max_market_pct,
+                "max_exposure_pct": r.max_exposure_pct,
+                "max_daily_loss_pct": r.max_daily_loss_pct,
             },
             "strategy": {"name": self.strategy_name, "params": dict(self.strategy_params)},
         }
@@ -216,6 +231,23 @@ def _dec(value: Any, name: str) -> Decimal:
     if result is None:
         raise ConfigError(f"'{name}' debe ser un número (valor: {value!r})")
     return result
+
+
+def _fraction(value: Any, name: str) -> Decimal:
+    """Un tanto por uno entre 0 y 1 (0.15 = 15 %); 0 desactiva el límite."""
+    result = _dec(value, name)
+    if not (ZERO <= result <= 1):
+        raise ConfigError(f"'{name}' debe estar entre 0 y 1 (0.15 = 15 %; valor: {value!r})")
+    return result
+
+
+def _timezone(value: Any) -> str:
+    name = str(value or "").strip() or DEFAULT_TIMEZONE
+    try:
+        ZoneInfo(name)
+    except (ZoneInfoNotFoundError, ValueError):
+        raise ConfigError(f"'timezone' no es una zona horaria válida (p. ej. America/Chicago): {value!r}") from None
+    return name
 
 
 def _num(value: Any, name: str, cast=float):
@@ -439,6 +471,7 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
         max_consecutive_errors=_num(bot.get("max_consecutive_errors", 10), "max_consecutive_errors", int),
         min_error_minutes=_num(bot.get("min_error_minutes", 3), "min_error_minutes"),
         paper_cash=_dec(bot.get("paper_cash", 1000), "paper_cash"),
+        timezone=_timezone(bot.get("timezone", DEFAULT_TIMEZONE)),
         tickers=_list(markets.get("tickers"), "tickers"),
         series=_list(markets.get("series", DEFAULT_SERIES), "series"),
         events=_list(markets.get("events"), "events"),
@@ -466,6 +499,9 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
         min_price=_dec(risk.get("min_price", "0.03"), "min_price"),
         max_price=_dec(risk.get("max_price", "0.97"), "max_price"),
         min_minutes_to_close=_num(risk.get("min_minutes_to_close", 15), "min_minutes_to_close"),
+        max_market_pct=_fraction(risk.get("max_market_pct", DEFAULT_MARKET_PCT), "max_market_pct"),
+        max_exposure_pct=_fraction(risk.get("max_exposure_pct", DEFAULT_EXPOSURE_PCT), "max_exposure_pct"),
+        max_daily_loss_pct=_fraction(risk.get("max_daily_loss_pct", DEFAULT_DAILY_LOSS_PCT), "max_daily_loss_pct"),
     )
     if not (0 < limits.min_price < limits.max_price < 1):
         raise ConfigError("Se requiere 0 < min_price < max_price < 1")

@@ -581,3 +581,40 @@ def test_each_loop_says_why_it_is_not_buying():
     clock.sleep(10)
     bot.tick()
     assert bot.last_scan["reasons"] == {"exchange_paused": 1}
+
+
+def test_daily_loss_pause_stops_buying_but_not_exits():
+    limits = RiskLimits(max_daily_loss_pct=D("0.25"), max_order_contracts=D("10"), max_session_loss=D("0"))
+    bot, fake, clock = setup(FavoritesStrategy({"order_size": 5, "max_position": 5}), limits=limits)
+    later = (NOW + timedelta(days=3)).isoformat().replace("+00:00", "Z")
+    fake.markets[T] = make_market(T, close_time=later)  # que siga abierto al día siguiente
+    bot._markets_refreshed_at = None
+    fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.92", 50)])
+    events = []
+    bot.on_event = lambda kind, message: events.append((kind, message))
+    bot.tick()
+    assert len(fake.orders) == 1 and bot.daily_pause is None  # compra el favorito
+    fake.balance = Balance(D("70"), D("0"))  # el día va un 30 % abajo
+    for _ in range(3):  # se confirma en tres vueltas seguidas
+        clock.sleep(10)
+        bot.tick()
+    assert bot.daily_pause and "pausa hasta mañana" in bot.daily_pause
+    assert fake.orders == {}  # retira la compra que esperaba
+    assert events and events[0][0] == "daily_pause"
+    assert bot.last_scan["reasons"] == {"daily_loss": 1}
+    clock.sleep(10)
+    bot.tick()
+    assert fake.orders == {} and len(events) == 1  # sigue en pausa y no repite el aviso
+    clock.sleep(24 * 3600)  # día siguiente
+    bot.tick()
+    assert bot.daily_pause is None and len(fake.orders) == 1
+
+
+def test_balance_caps_size_the_bet_in_the_engine():
+    limits = RiskLimits(max_market_pct=D("0.15"), max_order_contracts=D("10"), max_session_loss=D("0"))
+    bot, fake, _ = setup(FavoritesStrategy({"order_size": 10, "max_position": 20}), limits=limits)
+    fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.92", 50)])
+    fake.balance = Balance(D("20"), D("0"))
+    bot.tick()
+    (order,) = fake.orders.values()
+    assert order.remaining == D(3)  # 15 % de 20 $ = 3 $ → 3 contratos a 91¢

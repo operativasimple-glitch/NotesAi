@@ -50,6 +50,7 @@ from .strategies.fair_value import load_fair_values_csv, parse_probability
 log = logging.getLogger(__name__)
 
 STATE_FILE = "state.json"
+RISK_DAY_FILE = "risk_day.json"  # con qué saldo empezó el día y si el bot está en pausa por pérdidas
 PUSH_STATE_FILE = "push_state.json"  # hasta dónde se avisó de las liquidaciones
 TICKER_RE = re.compile(r"[A-Z0-9][A-Z0-9._-]{1,79}")
 MANUAL_PREFIX = "man"  # las órdenes manuales del panel no las toca el bot
@@ -336,10 +337,12 @@ class BotController:
                 executor = LiveExecutor(client, prefix, journal, ttl_seconds=settings.engine.order_ttl_seconds)
             else:
                 executor = DryRunExecutor(prefix, journal)
+            # El día de la pausa por pérdidas se guarda aparte en vivo y en simulación.
+            day_file = self.data_dir / (RISK_DAY_FILE if mode == "live" else "sim_" + RISK_DAY_FILE)
             bot = Bot(
                 client,
                 strategy,
-                RiskManager(settings.risk),
+                RiskManager(settings.risk, day_file=day_file),
                 executor,
                 settings.engine,
                 env_name=settings.env,
@@ -347,6 +350,7 @@ class BotController:
             )
             if mode == "live":
                 bot.on_fill = self._on_fill
+                bot.on_event = self._on_bot_event
             thread = threading.Thread(target=self._run_bot, args=(bot,), name="kalshi-bot", daemon=True)
             self._bot, self._thread, self._mode = bot, thread, mode
             self._write_state({"desired": mode, "halted": None})
@@ -441,6 +445,16 @@ class BotController:
         """Se ha llenado una orden del bot (lo llama el bot): aviso al móvil, sin pararlo."""
         if self.push.wants("fills"):
             threading.Thread(target=self._notify_fill, args=(fill,), name="push-fill", daemon=True).start()
+
+    def _on_bot_event(self, kind: str, message: str) -> None:
+        """Avisos importantes del bot (la pausa por pérdidas del día) al móvil, a quien tenga avisos."""
+        if kind != "daily_pause":
+            return
+        channel = "settlements" if self.push.wants("settlements") else "fills"
+        if self.push.wants(channel):
+            self.push.notify_async(
+                channel, "Bot en pausa hasta mañana", message[:1].upper() + message[1:], tag="daily-pause"
+            )
 
     def _notify_fill(self, fill: dict) -> None:
         try:
@@ -595,6 +609,8 @@ class BotController:
                 "markets": list(bot.markets)[:100] if bot else [],
                 "consecutive_errors": bot._consecutive_errors if bot else 0,
                 "scan": bot.last_scan if running and bot else None,
+                "daily_pause": bot.daily_pause if running and bot else None,
+                "day": bot.risk.day_status() if running and bot else None,
             },
             "balance": (
                 {"cash": balance.cash, "portfolio_value": balance.portfolio_value, "equity": balance.equity}

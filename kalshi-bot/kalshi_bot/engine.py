@@ -30,6 +30,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 from typing import Callable, Optional
+from zoneinfo import ZoneInfo
 
 from .client import KalshiAPIError, KalshiClient, new_client_order_id
 from .discovery import MarketFilter, discover
@@ -52,6 +53,7 @@ class EngineConfig:
     max_consecutive_errors: int = 10
     min_error_minutes: float = 3.0  # el freno salta si además los fallos duran este tiempo
     paper_cash: Decimal = Decimal("1000")  # saldo virtual si no hay API key
+    timezone: str = "America/Chicago"  # dónde empieza y acaba el día (pausa por pérdidas del día)
     # Selección de mercados
     tickers: list = field(default_factory=list)
     series: list = field(default_factory=list)
@@ -338,6 +340,10 @@ class Bot:
         self._seen_fills: dict = {}  # fill_id -> None, en orden de llegada
         self._risk_notes: dict = {}  # ticker -> avisos del riesgo de la última vuelta
         self.on_fill: Optional[Callable[[dict], None]] = None  # el panel avisa al móvil
+        # Avisos del bot al panel (p. ej. "daily_pause" con su motivo), también al móvil.
+        self.on_event: Optional[Callable[[str, str], None]] = None
+        self._tz = ZoneInfo(config.timezone)
+        self.daily_pause: Optional[str] = None  # motivo mientras no compra hasta el día siguiente
         self._fills_since: Optional[int] = None
         # Estado observable (lo lee el panel web desde otro hilo).
         self.running = False
@@ -496,6 +502,7 @@ class Bot:
         if reason:
             self.halt(reason)
             return
+        self._track_day(balance, now)
 
         refreshed = self._refresh_markets_if_needed(now)
         self._update_exit_markets(positions, refreshed)
@@ -537,6 +544,8 @@ class Bot:
                 block, block_key = "cancelaste a mano una orden del bot aquí", "manual_cancel"
             elif not block and series_of(ticker) in self.other_shard:
                 block, block_key = "Kalshi lo tiene en otra parte del exchange, sin saldo tuyo", "other_shard"
+            elif not block and self.daily_pause:
+                block, block_key = self.daily_pause, "daily_loss"
             exit_only = bool(block)
             if exit_only:
                 # Aunque ya no se pueda comprar, se deja salir de una posición mientras el mercado opere.
@@ -593,7 +602,13 @@ class Bot:
             wanted = len(intents)
             intents = self._apply_cooldown(ticker, intents, now)
             committed = positions_exposure + sum((c for t, c in resting_collateral.items() if t != ticker), ZERO)
-            approved, notes = self.risk.filter_intents(intents, position=position, committed_exposure=committed)
+            approved, notes = self.risk.filter_intents(
+                intents,
+                position=position,
+                committed_exposure=committed,
+                equity=balance.equity,
+                market_cost=positions[ticker].exposure if ticker in positions else ZERO,
+            )
             # Cada aviso se dice una vez: repetido en cada vuelta taparía el resto de la actividad.
             if tuple(notes) != self._risk_notes.get(ticker, ()):
                 for note in notes:
@@ -621,6 +636,23 @@ class Bot:
             else:
                 scan[ctx.why_not or "no_signal"] += 1
         self.last_scan = {"at": now.isoformat(), "total": sum(scan.values()), "reasons": dict(scan)}
+
+    def _track_day(self, balance: Balance, now: datetime) -> None:
+        """Pausa de compras hasta el día siguiente si hoy el saldo ya bajó demasiado (lo apostado sigue)."""
+        pause = self.risk.track_day(balance.equity, now.astimezone(self._tz).date())
+        if pause == self.daily_pause:
+            return
+        if pause:
+            log.warning("PAUSA DE COMPRAS: %s", pause)
+            self.journal.record("daily_pause", reason=pause)
+            if self.on_event is not None:
+                try:
+                    self.on_event("daily_pause", pause)
+                except Exception:  # noqa: BLE001 - un aviso que falla no para al bot
+                    log.exception("No se pudo avisar de la pausa")
+        else:
+            log.info("Día nuevo: el bot vuelve a comprar")
+        self.daily_pause = pause
 
     def _execute(self, ticker: str, own: list, approved: list, now: datetime, why: str = "") -> None:
         resting_wanted = [i for i in approved if i.is_resting]

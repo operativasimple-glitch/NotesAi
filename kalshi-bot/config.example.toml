@@ -14,6 +14,7 @@ min_error_minutes = 3            # ...que además duren al menos estos minutos (
 paper_cash = 1000                # saldo virtual para simular sin API key
 order_prefix = "kb"              # el bot solo toca órdenes cuyo client_order_id empieza así (usa otro si corres varios bots)
 log_dir = "logs"                 # aquí van bot.log y journal.jsonl
+timezone = "America/Chicago"     # tu hora: cuándo empieza el día para la pérdida máxima del día
 
 [markets]
 # Por defecto, donde la prueba con datos reales dio ventaja (ver INVESTIGACION.md):
@@ -54,6 +55,12 @@ max_positions_per_event = 1      # mercados con dinero a la vez en un partido o 
 min_price = 0.03                 # no operar por debajo de 3¢...
 max_price = 0.97                 # ...ni por encima de 97¢
 min_minutes_to_close = 15        # no operar en los últimos 15 min antes del cierre (o del final previsto del partido)
+# Según tu saldo (dinero + apuestas abiertas), en tanto por uno (0.15 = 15 %; 0 = sin límite). Con
+# unos 20 $ y 5 contratos, cada fallo se llevaba el 20 % de la cuenta y un mal sábado de fútbol
+# universitario, todo lo ganado en la semana (octubre de 2026):
+max_market_pct = 0.15            # como mucho el 15 % del saldo en una sola apuesta
+max_exposure_pct = 0.6           # como mucho el 60 % del saldo en juego a la vez
+max_daily_loss_pct = 0.25        # si en un día el saldo baja un 25 %, no compra hasta el día siguiente
 
 [http]
 reads_per_second = 8             # por debajo de los límites del nivel Basic de Kalshi

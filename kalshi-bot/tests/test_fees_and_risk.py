@@ -108,3 +108,64 @@ def test_closing_orders_skip_price_and_size_caps():
     assert [i.count for i in ok] == [D("3")]  # solo la parte que cierra
     ok, _ = rm.filter_intents([intent(ASK, "0.50", "12")], position=D("3"), committed_exposure=D("0"))
     assert [i.count for i in ok] == [D("5")]  # dentro de rango: 3 que cierran + 2 nuevos (máx. 5)
+
+
+def test_caps_follow_the_balance():
+    # Con 20 $: como mucho 3 $ en un mercado (15 %) y 12 $ en juego (60 %).
+    rm = manager(max_order_contracts=D("10"), max_market_pct=D("0.15"), max_exposure_pct=D("0.6"))
+    ok, notes = rm.filter_intents([intent(BID, "0.90", 10)], position=D(0), committed_exposure=D(0), equity=D("20"))
+    assert ok[0].count == D(3)
+    assert "recortada de 10.00 a 3.00 contratos (máximo en un mercado: 15 % del saldo, $3.00)" in notes[0]
+    # Ya tiene 3 contratos en ese mercado: no suma más.
+    ok, notes = rm.filter_intents(
+        [intent(BID, "0.90", 10)], position=D(3), committed_exposure=D(0), equity=D("20"), market_cost=D("2.70")
+    )
+    assert ok == [] and "máximo en un mercado" in notes[0]
+    # Con 11 $ ya en juego en otros mercados solo cabe 1 $ más.
+    ok, notes = rm.filter_intents([intent(BID, "0.90", 10)], position=D(0), committed_exposure=D("11"), equity=D("20"))
+    assert ok[0].count == D(1) and "máximo en juego: 60 % del saldo, $12.00" in notes[0]
+    # Sin saldo conocido (o con los límites a 0) no cambia nada.
+    ok, _ = rm.filter_intents([intent(BID, "0.90", 10)], position=D(0), committed_exposure=D(0))
+    assert ok[0].count == D(10)
+
+
+def test_closing_is_never_blocked_by_the_balance_caps():
+    rm = manager(max_order_contracts=D("10"), max_market_pct=D("0.15"), max_exposure_pct=D("0.6"))
+    ok, _ = rm.filter_intents(
+        [intent(ASK, "0.60", 5, IOC)], position=D(5), committed_exposure=D("40"), equity=D("20"), market_cost=D("4.5")
+    )
+    assert ok[0].count == D(5)
+
+
+def test_daily_loss_pause_lasts_until_the_next_day_and_survives_a_restart(tmp_path):
+    day_file = tmp_path / "risk_day.json"
+    rm = RiskManager(RiskLimits(max_daily_loss_pct=D("0.25")), day_file=day_file)
+    today = NOW.date()
+    assert rm.track_day(D("20"), today) is None  # empieza el día con 20 $
+    assert rm.track_day(D("16"), today) is None  # -20 %: aún no
+    assert rm.track_day(D("14.9"), today) is None  # -25,5 %, pero una sola vuelta (puede ser un mal dato)
+    assert rm.track_day(D("16"), today) is None  # se recuperó: no era nada
+    assert [rm.track_day(D("14.9"), today) for _ in range(2)] == [None, None]
+    reason = rm.track_day(D("14.9"), today)  # tres vueltas seguidas por debajo: pausa
+    assert reason and "pausa hasta mañana" in reason and "$20.00" in reason
+    assert rm.track_day(D("19"), today) == reason  # aunque se recupere, sigue en pausa ese día
+    # Un reinicio del bot (cada vez que se sube un cambio) no borra la pausa ni el punto de partida.
+    again = RiskManager(RiskLimits(max_daily_loss_pct=D("0.25")), day_file=day_file)
+    assert again.track_day(D("19"), today) == reason
+    assert again.day_status()["paused"] is True and again.day_status()["start_equity"] == D("20")
+    # Al día siguiente vuelve a comprar, contando desde el saldo de ese día.
+    assert again.track_day(D("19"), today + timedelta(days=1)) is None
+    assert again.day_status() == {
+        "day": (today + timedelta(days=1)).isoformat(),
+        "start_equity": D("19"),
+        "paused": False,
+        "max_daily_loss_pct": D("0.25"),
+    }
+
+
+def test_daily_pause_is_off_with_zero_and_ignores_a_broken_file(tmp_path):
+    day_file = tmp_path / "risk_day.json"
+    day_file.write_text("no es json")
+    rm = RiskManager(RiskLimits(max_daily_loss_pct=D("0")), day_file=day_file)
+    assert rm.track_day(D("20"), NOW.date()) is None
+    assert rm.track_day(D("1"), NOW.date()) is None

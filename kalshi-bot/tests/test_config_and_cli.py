@@ -344,3 +344,21 @@ def test_series_rules_in_config(clean_env):
     for bad in ({"KXA": {"velocidad": 1}}, {"KXA": 3}, "KXA"):
         with pytest.raises(ConfigError, match="series_rules"):
             load_settings(overrides={"markets": {"series_rules": bad}})
+
+
+def test_balance_limits_and_timezone_in_config(clean_env):
+    s = load_settings()
+    # Por defecto: 15 % del saldo por mercado, 60 % en juego y pausa si el día baja un 25 %.
+    assert (s.risk.max_market_pct, s.risk.max_exposure_pct, s.risk.max_daily_loss_pct) == (
+        D("0.15"),
+        D("0.6"),
+        D("0.25"),
+    )
+    assert s.engine.timezone == "America/Chicago"
+    assert s.sections()["risk"]["max_daily_loss_pct"] == D("0.25")
+    s = load_settings(overrides={"risk": {"max_market_pct": "0", "max_daily_loss_pct": "0.1"}})
+    assert s.risk.max_market_pct == 0 and s.risk.max_daily_loss_pct == D("0.1")
+    with pytest.raises(ConfigError, match="entre 0 y 1"):
+        load_settings(overrides={"risk": {"max_exposure_pct": "60"}})
+    with pytest.raises(ConfigError, match="zona horaria"):
+        load_settings(overrides={"bot": {"timezone": "Marte/Base"}})

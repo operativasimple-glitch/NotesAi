@@ -253,6 +253,9 @@ Las otras estrategias:
 | `max_total_exposure_dollars` | 50 | Dinero máximo comprometido: posiciones de la cuenta más órdenes del bot. Cerrar posiciones siempre se permite. |
 | `max_session_loss_dollars` | 20 | Si tu patrimonio cae esto desde que arrancó el bot, cancela todo y se detiene. Cuenta también lo que compres a mano. |
 | `max_positions_per_event` | 1 | Mercados con dinero a la vez en un mismo partido o día de clima: los tramos vecinos son casi la misma apuesta. Cuenta también lo tuyo. |
+| `max_market_pct` | 0.15 | Como mucho esta parte de tu saldo (dinero + apuestas abiertas) en un mismo mercado. Con 20 $, unos 3 $. 0 = sin límite. |
+| `max_exposure_pct` | 0.6 | Como mucho esta parte del saldo en juego a la vez. 0 = sin límite. |
+| `max_daily_loss_pct` | 0.25 | Si en un día (hora de `timezone`, en `[bot]`) el saldo baja esto durante tres vueltas seguidas, no compra hasta el día siguiente; lo ya apostado sigue y te avisa al móvil. 0 = desactivado. |
 | `min_price` / `max_price` | 0.03 / 0.97 | No compra a precios extremos (vender para cerrar una posición sí se permite). |
 | `min_minutes_to_close` | 15 | Cancela y no compra en los últimos minutos antes del cierre (si activas las salidas, sigue vigilando para vender). |
 | `max_consecutive_errors` / `min_error_minutes` | 10 / 3 | Freno de emergencia si la API falla 10 vueltas seguidas durante al menos 3 minutos. Mientras tanto espera cada vez más entre intentos (hasta 1 minuto), así que un corte breve no lo para. |
