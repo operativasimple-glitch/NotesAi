@@ -1,0 +1,157 @@
+//@version=6
+// ─────────────────────────────────────────────────────────────────────────────
+// VWAP ±2σ · Reversión a la media en el Nasdaq (NQ / MNQ)
+//
+// Reglas:
+//   • VWAP anclado a la sesión, fuente hlc3, bandas de desviación a 1σ y 2σ.
+//   • Compra cuando el cierre cruza hacia abajo la banda inferior 2σ.
+//   • Venta cuando el cierre cruza hacia arriba la banda superior 2σ.
+//   • Stop a 20 puntos y objetivo a 40 puntos de la entrada.
+//   • Al ir 20 puntos a favor (1:1) el stop pasa a la entrada (breakeven).
+//
+// Gráfico de 2 o 5 minutos en MNQ1! (micro, 2 $/punto) o NQ1! (20 $/punto).
+// Alertas: crea una alerta sobre esta estrategia y elige la condición
+// "Solo llamadas a la función alert()".
+// ─────────────────────────────────────────────────────────────────────────────
+// margin_* = 0: los futuros se operan con el margen del broker; con el valor por
+// defecto de la v6 (100 %) el probador exigiría el nominal entero y no entraría.
+strategy("VWAP ±2σ · Reversión Nasdaq", shorttitle = "VWAP 2σ",
+     overlay           = true,
+     initial_capital   = 2000,
+     default_qty_type  = strategy.fixed,
+     default_qty_value = 1,
+     pyramiding        = 0,
+     commission_type   = strategy.commission.cash_per_contract,
+     commission_value  = 0.5,
+     slippage          = 1,
+     margin_long       = 0,
+     margin_short      = 0)
+
+// ───────── Parámetros ─────────
+const string NY             = "America/New_York"
+const string ANCHOR_SESSION = "Sesión (igual que el VWAP nativo)"
+const string ANCHOR_NY      = "Apertura NY 09:30"
+const string G_VWAP         = "VWAP"
+const string G_RISK         = "Gestión de la orden (puntos)"
+const string G_TIME         = "Horario"
+
+anchorMode = input.string(ANCHOR_SESSION, "Anclaje", options = [ANCHOR_SESSION, ANCHOR_NY], group = G_VWAP, tooltip = "En NQ1!/MNQ1! con horario extendido, 'Sesión' reinicia el VWAP a las 18:00 de Nueva York (apertura de Globex), no a las 09:30. Elige 'Apertura NY 09:30' para que se reinicie con la campana del contado.")
+src        = input.source(hlc3, "Fuente", group = G_VWAP)
+mult1      = input.float(1.0, "Multiplicador banda 1", minval = 0.1, step = 0.1, group = G_VWAP)
+mult2      = input.float(2.0, "Multiplicador banda 2 (señales)", minval = 0.1, step = 0.1, group = G_VWAP)
+minBars    = input.int(3, "Ignorar señales en las primeras N velas", minval = 1, group = G_VWAP, tooltip = "Justo después del reinicio las bandas miden casi cero y cualquier movimiento las cruza.")
+
+slPts      = input.float(20.0, "Stop loss", minval = 0.25, step = 1, group = G_RISK)
+tpPts      = input.float(40.0, "Objetivo", minval = 0.25, step = 1, group = G_RISK)
+useBE      = input.bool(true, "Mover el stop a breakeven", group = G_RISK)
+bePts      = input.float(20.0, "Breakeven al ir a favor", minval = 0.25, step = 1, group = G_RISK)
+beOffset   = input.float(0.0, "Colchón del breakeven", minval = 0, step = 0.25, group = G_RISK, tooltip = "0 = stop exactamente en la entrada. 1–2 puntos cubren comisiones y deslizamiento.")
+allowLong  = input.bool(true, "Operar largos", group = G_RISK)
+allowShort = input.bool(true, "Operar cortos", group = G_RISK)
+
+useWindow  = input.bool(true, "Operar solo dentro del horario", group = G_TIME)
+windowSess = input.session("0930-1600", "Horario (hora de Nueva York)", group = G_TIME)
+closeAtEnd = input.bool(true, "Cerrar la posición al terminar el horario", group = G_TIME)
+
+// ───────── Comprobaciones ─────────
+if timeframe.isdwm
+    runtime.error("Usa una temporalidad intradía (2 o 5 minutos).")
+
+var float cumVolume = 0.0
+cumVolume += nz(volume)
+if barstate.islast and cumVolume == 0
+    runtime.error("Este símbolo no trae volumen y el VWAP no se puede calcular. Usa MNQ1! o NQ1!.")
+
+// ───────── VWAP y bandas ─────────
+inRTH      = not na(time(timeframe.period, "0930-1600", NY))
+nyDay      = dayofmonth(time, NY)
+newNYOpen  = inRTH and (not inRTH[1] or nyDay != nyDay[1])
+newSession = timeframe.change("D")
+anchor     = anchorMode == ANCHOR_NY ? newNYOpen : newSession
+
+[vwapValue, upper1, lower1] = ta.vwap(src, anchor, 1.0)
+stdev = (upper1 - lower1) / 2
+up1   = vwapValue + stdev * mult1
+lo1   = vwapValue - stdev * mult1
+up2   = vwapValue + stdev * mult2
+lo2   = vwapValue - stdev * mult2
+
+var int barsSinceAnchor = 0
+barsSinceAnchor := anchor ? 0 : barsSinceAnchor + 1
+bandsReady = barsSinceAnchor >= minBars
+
+// ───────── Horario ─────────
+inWindowRaw   = not na(time(timeframe.period, windowSess, NY))
+endHour       = int(str.tonumber(str.substring(windowSess, 5, 7)))
+endMinute     = int(str.tonumber(str.substring(windowSess, 7, 9)))
+windowEnd     = timestamp(NY, year(time, NY), month(time, NY), dayofmonth(time, NY), endHour, endMinute)
+lastWindowBar = inWindowRaw and time_close >= windowEnd
+inWindow      = not useWindow or inWindowRaw
+// Una orden enviada en la última vela del horario se llenaría ya fuera de él.
+canEnter      = inWindow and not (useWindow and lastWindowBar)
+
+// ───────── Señales ─────────
+crossDown2  = ta.crossunder(close, lo2)
+crossUp2    = ta.crossover(close, up2)
+longSignal  = allowLong and bandsReady and canEnter and crossDown2
+shortSignal = allowShort and bandsReady and canEnter and crossUp2
+
+// ───────── Posición ─────────
+isLong  = strategy.position_size > 0
+isShort = strategy.position_size < 0
+inTrade = isLong or isShort
+entryPx = strategy.position_avg_price
+
+var bool beActive = false
+if not inTrade
+    beActive := false
+else if useBE and not beActive and (isLong ? high >= entryPx + bePts : low <= entryPx - bePts)
+    beActive := true
+    beStop = isLong ? entryPx + beOffset : entryPx - beOffset
+    alert("BREAKEVEN " + syminfo.ticker + ": +" + str.tostring(bePts) + " pts a favor. Mueve el stop a " + str.tostring(beStop, format.mintick), alert.freq_once_per_bar_close)
+
+if useWindow and closeAtEnd and inTrade and (lastWindowBar or not inWindowRaw)
+    strategy.close_all(comment = "Fin de horario", immediately = true)
+    alert("CIERRA " + syminfo.ticker + ": fin del horario operativo.", alert.freq_once_per_bar_close)
+
+if not inTrade and longSignal
+    strategy.entry("Largo", strategy.long)
+    alert("COMPRA " + syminfo.ticker + " ~" + str.tostring(close, format.mintick) + " (cierre bajo la banda -2σ) · SL " + str.tostring(close - slPts, format.mintick) + " · TP " + str.tostring(close + tpPts, format.mintick) + " · BE en " + str.tostring(close + bePts, format.mintick), alert.freq_once_per_bar_close)
+
+if not inTrade and shortSignal
+    strategy.entry("Corto", strategy.short)
+    alert("VENTA " + syminfo.ticker + " ~" + str.tostring(close, format.mintick) + " (cierre sobre la banda +2σ) · SL " + str.tostring(close + slPts, format.mintick) + " · TP " + str.tostring(close - tpPts, format.mintick) + " · BE en " + str.tostring(close - bePts, format.mintick), alert.freq_once_per_bar_close)
+
+// profit/loss van en ticks desde el precio real de llenado; "stop" (breakeven) tiene prioridad sobre "loss".
+slTicks = math.round(slPts / syminfo.mintick)
+tpTicks = math.round(tpPts / syminfo.mintick)
+beLong  = beActive and isLong ? entryPx + beOffset : na
+beShort = beActive and isShort ? entryPx - beOffset : na
+exitTag = beActive ? "BE" : "SL"
+
+strategy.exit("Salida L", "Largo", profit = tpTicks, loss = slTicks, stop = beLong, comment_profit = "TP", comment_loss = exitTag)
+strategy.exit("Salida C", "Corto", profit = tpTicks, loss = slTicks, stop = beShort, comment_profit = "TP", comment_loss = exitTag)
+
+// ───────── Gráfico ─────────
+// Color na en la vela de anclaje para no dibujar el salto entre una sesión y la siguiente.
+cVwap  = anchor ? na : #2962FF
+cBand1 = anchor ? na : #4CAF50
+cBand2 = anchor ? na : #808000
+
+plot(vwapValue, "VWAP", color = cVwap, linewidth = 2)
+pUp1 = plot(up1, "Banda superior 1σ", color = cBand1)
+pLo1 = plot(lo1, "Banda inferior 1σ", color = cBand1)
+pUp2 = plot(up2, "Banda superior 2σ", color = cBand2)
+pLo2 = plot(lo2, "Banda inferior 2σ", color = cBand2)
+fill(pUp1, pLo1, color = color.new(#4CAF50, 94), title = "Fondo banda 1")
+fill(pUp2, pUp1, color = color.new(#808000, 94), title = "Fondo banda 2 superior")
+fill(pLo1, pLo2, color = color.new(#808000, 94), title = "Fondo banda 2 inferior")
+
+plotshape(longSignal, "Señal de compra", style = shape.triangleup, location = location.belowbar, color = #26A69A, size = size.small)
+plotshape(shortSignal, "Señal de venta", style = shape.triangledown, location = location.abovebar, color = #EF5350, size = size.small)
+
+stopLevel = inTrade ? (beActive ? (isLong ? entryPx + beOffset : entryPx - beOffset) : (isLong ? entryPx - slPts : entryPx + slPts)) : na
+tpLevel   = inTrade ? (isLong ? entryPx + tpPts : entryPx - tpPts) : na
+plot(inTrade ? entryPx : na, "Entrada", color = color.gray, style = plot.style_linebr)
+plot(stopLevel, "Stop", color = #EF5350, style = plot.style_linebr)
+plot(tpLevel, "Objetivo", color = #26A69A, style = plot.style_linebr)
