@@ -1,0 +1,1894 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="description" content="Plan de swing trading con cuenta de fondeo: cabina diaria, diario de operaciones, indicadores de TradingView y backtest.">
+<meta name="theme-color" content="#0E5C70">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Plan Swing">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+<link rel="apple-touch-icon" href="icon-192.png">
+<style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px/1.4 system-ui,-apple-system,"Segoe UI",sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>Plan Swing Fondeo</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@75..100,500..800&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a single reading column like a desk trading plan; setups are printed as order tickets; tools sit in framed panels. */
+:root{
+  --paper:#F2F5F7; --card:#FFFFFF; --ink:#14202A; --muted:#58636F; --rule:#D6DDE3;
+  --accent:#0E5C70; --accent-soft:#DCEAEE; --accent-2:#7A5A12;
+  --gain:#1B7646; --gain-soft:#DCEEE3; --loss:#AE3127; --loss-soft:#F5DFDC; --warn:#8F5B00; --warn-soft:#F4E8CF;
+  --violet:#5B3FB6; --violet-soft:#ECE7FA;
+  --tone-calm:#24577A; --tone-go:#1B7646; --tone-wait:#99600A; --tone-a:#5B3FB6; --tone-b:#0E5C70; --tone-stop:#A3322A; --tone-rest:#4A5562; --on-tone:#FFFFFF;
+  --display:"Archivo","Arial Narrow",system-ui,sans-serif;
+  --body:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,"SFMono-Regular",Menlo,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){
+  --paper:#0D141A; --card:#141D25; --ink:#E2E8ED; --muted:#97A3AE; --rule:#25313B;
+  --accent:#62B6CB; --accent-soft:#15313A; --accent-2:#D7B25E;
+  --gain:#4FC58C; --gain-soft:#12321F; --loss:#F08176; --loss-soft:#3B1C19; --warn:#E3AA4D; --warn-soft:#382A11;
+  --violet:#B6A2FF; --violet-soft:#2A2147;
+  --tone-calm:#2B6A96; --tone-go:#1F8550; --tone-wait:#A66A0C; --tone-a:#6A4DD0; --tone-b:#12708A; --tone-stop:#B53A31; --tone-rest:#4F5B69; --on-tone:#FFFFFF; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --paper:#0D141A; --card:#141D25; --ink:#E2E8ED; --muted:#97A3AE; --rule:#25313B;
+  --accent:#62B6CB; --accent-soft:#15313A; --accent-2:#D7B25E;
+  --gain:#4FC58C; --gain-soft:#12321F; --loss:#F08176; --loss-soft:#3B1C19; --warn:#E3AA4D; --warn-soft:#382A11;
+  --violet:#B6A2FF; --violet-soft:#2A2147;
+  --tone-calm:#2B6A96; --tone-go:#1F8550; --tone-wait:#A66A0C; --tone-a:#6A4DD0; --tone-b:#12708A; --tone-stop:#B53A31; --tone-rest:#4F5B69; --on-tone:#FFFFFF; color-scheme:dark}
+
+*{box-sizing:border-box}
+body{background:var(--paper);color:var(--ink);font:400 16px/1.6 var(--body);-webkit-font-smoothing:antialiased}
+.wrap{max-width:860px;margin:0 auto;padding-block:28px 80px;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));display:flex;flex-direction:column;gap:56px}
+h1,h2,h3{font-family:var(--display);font-stretch:80%;line-height:1.1;margin:0;text-wrap:balance;letter-spacing:-.005em}
+h1{font-size:clamp(2.3rem,7vw,3.6rem);font-weight:800}
+h2{font-size:clamp(1.6rem,4.4vw,2.15rem);font-weight:750}
+h3{font-size:1.2rem;font-weight:700;font-stretch:85%}
+p{margin:0;max-width:68ch}
+a{color:var(--accent);text-underline-offset:2px}
+a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.eyebrow{font:600 .74rem/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.lede{font-size:1.12rem;color:var(--ink);max-width:62ch}
+.muted{color:var(--muted)}
+.num,td.n,.mono{font-family:var(--mono);font-variant-numeric:tabular-nums}
+section{display:flex;flex-direction:column;gap:18px;scroll-margin-top:16px}
+.sec-head{display:flex;flex-direction:column;gap:8px;border-top:2px solid var(--ink);padding-top:14px}
+.stack{display:flex;flex-direction:column;gap:12px}
+
+/* header */
+header.top{display:flex;flex-direction:column;gap:16px}
+.dateline{display:flex;flex-wrap:wrap;gap:8px 18px;font:500 .82rem/1.4 var(--mono);color:var(--muted)}
+nav.toc{display:flex;flex-wrap:wrap;gap:6px}
+nav.toc a{font:500 .8rem/1 var(--mono);text-decoration:none;color:var(--ink);border:1px solid var(--rule);background:var(--card);padding:8px 10px;border-radius:999px}
+nav.toc a:hover{border-color:var(--accent);color:var(--accent)}
+
+/* verdict */
+.verdict{background:var(--card);border:1px solid var(--rule);border-left:5px solid var(--accent);padding:22px 22px 20px;display:flex;flex-direction:column;gap:16px}
+.verdict .big{font-family:var(--display);font-stretch:82%;font-weight:750;font-size:clamp(1.35rem,3.6vw,1.75rem);line-height:1.2;max-width:34ch}
+.points{display:grid;gap:14px;margin:0;padding:0;list-style:none}
+.points li{display:grid;grid-template-columns:7.5rem 1fr;gap:12px;align-items:baseline;border-top:1px solid var(--rule);padding-top:12px}
+.points li>span:first-child{font:600 .74rem/1.3 var(--mono);letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+.points li>span:last-child{min-width:0}
+@media (max-width:560px){.points li{grid-template-columns:1fr;gap:4px}}
+
+/* tables */
+.tbl{overflow-x:auto;border:1px solid var(--rule);background:var(--card)}
+table{border-collapse:collapse;width:100%;font-size:.92rem}
+th,td{padding:9px 12px;text-align:left;border-bottom:1px solid var(--rule);vertical-align:top}
+th{font:600 .72rem/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);background:var(--paper);white-space:nowrap}
+td.n,th.n{text-align:right;white-space:nowrap}
+tr:last-child td{border-bottom:0}
+caption{caption-side:bottom;text-align:left;padding:10px 12px;font-size:.82rem;color:var(--muted)}
+.pill{display:inline-block;font:600 .72rem/1 var(--mono);padding:5px 8px;border-radius:4px;letter-spacing:.04em;white-space:nowrap}
+.pill.g{background:var(--gain-soft);color:var(--gain)}
+.pill.l{background:var(--loss-soft);color:var(--loss)}
+.pill.w{background:var(--warn-soft);color:var(--warn)}
+.pill.a{background:var(--accent-soft);color:var(--accent)}
+.pos{color:var(--gain)} .neg{color:var(--loss)}
+
+/* callouts */
+.note{border-left:3px solid var(--warn);background:var(--warn-soft);padding:12px 14px;font-size:.94rem}
+.note.info{border-color:var(--accent);background:var(--accent-soft)}
+.note strong{font-weight:600}
+
+/* rules list */
+dl.facts{display:grid;grid-template-columns:minmax(9rem,14rem) 1fr;margin:0;border:1px solid var(--rule);background:var(--card)}
+dl.facts dt,dl.facts dd{margin:0;padding:10px 14px;border-bottom:1px solid var(--rule)}
+dl.facts dt{font:600 .78rem/1.4 var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.06em;background:var(--paper)}
+dl.facts dd{min-width:0}
+dl.facts dt:last-of-type,dl.facts dd:last-of-type{border-bottom:0}
+@media (max-width:560px){dl.facts{grid-template-columns:1fr} dl.facts dt{border-bottom:0;padding-bottom:2px} }
+
+/* order tickets */
+.tickets{display:grid;gap:18px}
+.ticket{background:var(--card);border:1px solid var(--rule);display:flex;flex-direction:column}
+.ticket-head{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:8px;padding:14px 16px;border-bottom:1px dashed var(--rule)}
+.ticket-head .code{font:600 .78rem/1 var(--mono);letter-spacing:.1em;color:var(--accent)}
+.ticket-body{display:grid;grid-template-columns:8.5rem 1fr}
+.ticket-body>div{padding:9px 16px;border-bottom:1px solid var(--rule);min-width:0}
+.ticket-body>div:nth-child(odd){font:600 .74rem/1.5 var(--mono);text-transform:uppercase;letter-spacing:.07em;color:var(--muted);background:var(--paper)}
+.ticket-body>div:nth-last-child(-n+2){border-bottom:0}
+.ticket-foot{padding:12px 16px;border-top:1px dashed var(--rule);font-size:.9rem;color:var(--muted)}
+@media (max-width:560px){.ticket-body{grid-template-columns:1fr}.ticket-body>div:nth-child(odd){border-bottom:0;padding-bottom:0;background:transparent}}
+
+/* charts */
+.figure{background:var(--card);border:1px solid var(--rule);padding:14px 14px 10px;display:flex;flex-direction:column;gap:8px}
+.chartwrap{overflow-x:auto}
+.chart{display:block;width:100%;min-width:540px;height:auto}
+.chart .grid{stroke:var(--rule);stroke-width:1}
+.chart .axis{stroke:var(--muted);stroke-width:1}
+.chart .lbl{fill:var(--muted);font:500 12px var(--mono)}
+.chart .strong{fill:var(--accent);font-weight:600}
+.chart .band{fill:var(--accent);fill-opacity:.12;stroke:var(--accent);stroke-opacity:.5;stroke-dasharray:4 3}
+.chart .price{fill:none;stroke:var(--ink);stroke-width:1.6;stroke-linejoin:round}
+.chart .sma{fill:none;stroke:var(--accent-2);stroke-width:1.5;stroke-dasharray:5 4}
+.chart .smaT{fill:var(--accent-2)}
+.chart .dot{fill:var(--ink)}
+.chart .dot.loss{fill:var(--loss)}
+.chart .lossT{fill:var(--loss);font-weight:600}
+.chart .gain{fill:var(--gain)}
+.chart .lossF{fill:var(--loss)}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font:500 .78rem/1.3 var(--mono);color:var(--muted)}
+.legend i{display:inline-block;width:18px;height:0;border-top:2px solid var(--ink);vertical-align:middle;margin-right:6px}
+.legend i.sma{border-top:2px dashed var(--accent-2)}
+.legend i.band{height:10px;border:1px dashed var(--accent);background:var(--accent-soft)}
+
+/* bars (strategy results) */
+.bars{display:flex;flex-direction:column;gap:0;background:var(--card);border:1px solid var(--rule)}
+.bar-row{display:grid;grid-template-columns:minmax(0,15rem) 1fr 3.4rem;gap:12px;align-items:center;padding:9px 14px;border-bottom:1px solid var(--rule)}
+.bar-row:last-child{border-bottom:0}
+.bar-row .name{font-size:.9rem;min-width:0}
+.bar-row .name small{display:block;color:var(--muted);font:500 .74rem/1.3 var(--mono)}
+.track{position:relative;height:14px;background:var(--paper)}
+.track .fill{position:absolute;left:0;top:0;bottom:0}
+.track .fill.g{background:var(--gain)} .track .fill.l{background:var(--loss)}
+.track .one{position:absolute;top:-4px;bottom:-4px;width:0;border-left:2px solid var(--ink)}
+.bar-row .v{font:600 .9rem var(--mono);text-align:right}
+.bars-head{display:grid;grid-template-columns:minmax(0,15rem) 1fr 3.4rem;gap:12px;padding:10px 14px;border-bottom:1px solid var(--rule);background:var(--paper);font:600 .7rem/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.scale{position:relative;height:1em}
+.scale span{position:absolute;transform:translateX(-50%)}
+@media (max-width:560px){.bar-row,.bars-head{grid-template-columns:1fr 3.2rem}.bar-row .track,.bars-head .scale{grid-column:1 / -1;grid-row:2}}
+
+/* schedule */
+.sched{display:grid;grid-template-columns:auto 1fr auto;border:1px solid var(--rule);background:var(--card)}
+.sched>div{padding:10px 14px;border-bottom:1px solid var(--rule);min-width:0}
+.sched>.t{font:600 .86rem var(--mono);white-space:nowrap}
+.sched>.d{font-size:.95rem}
+.sched>.m{font:500 .8rem var(--mono);color:var(--muted);white-space:nowrap;text-align:right}
+.sched>div:nth-last-child(-n+3){border-bottom:0}
+@media (max-width:560px){.sched{grid-template-columns:1fr auto}.sched>.t{grid-column:1 / -1;border-bottom:0;padding-bottom:0}}
+
+/* roadmap */
+ol.road{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;border-left:2px solid var(--rule);margin-left:6px}
+ol.road li{position:relative;padding:0 0 22px 22px;display:flex;flex-direction:column;gap:4px}
+ol.road li::before{content:"";position:absolute;left:-7px;top:6px;width:12px;height:12px;border-radius:50%;background:var(--card);border:2px solid var(--accent)}
+ol.road li.gate::before{background:var(--warn);border-color:var(--warn)}
+ol.road .when{font:600 .76rem/1.3 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}
+ol.road li.gate .when{color:var(--warn)}
+
+/* tool panels */
+.panel{background:var(--card);border:1px solid var(--rule);display:flex;flex-direction:column}
+.panel-head{padding:14px 16px;border-bottom:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:8px 16px;justify-content:space-between;align-items:baseline}
+.panel-body{padding:16px;display:flex;flex-direction:column;gap:16px}
+.form-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+label.f{display:flex;flex-direction:column;gap:5px;font:600 .72rem/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted);min-width:0}
+input,select{font:500 1rem var(--mono);color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:9px 10px;width:100%;min-width:0}
+input:focus,select:focus{border-color:var(--accent)}
+button{font:600 .86rem/1 var(--body);border-radius:4px;padding:11px 14px;cursor:pointer;border:1px solid var(--accent);background:var(--accent);color:var(--card)}
+button.ghost{background:transparent;color:var(--accent)}
+button.small{padding:7px 10px;font-size:.78rem}
+button.danger{border-color:var(--loss);color:var(--loss);background:transparent}
+button:disabled{opacity:.45;cursor:not-allowed}
+.btns{display:flex;flex-wrap:wrap;gap:8px}
+.out-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--rule);border:1px solid var(--rule)}
+@media (max-width:560px){.out-grid.six{grid-template-columns:repeat(2,minmax(0,1fr))}.out .v{font-size:1.15rem}}
+.out{background:var(--card);padding:12px 14px;display:flex;flex-direction:column;gap:4px;min-width:0}
+.out .k{font:600 .7rem/1.3 var(--mono);letter-spacing:.07em;text-transform:uppercase;color:var(--muted)}
+.out .v{font:600 1.35rem/1.1 var(--mono);font-variant-numeric:tabular-nums}
+.out .s{font-size:.8rem;color:var(--muted)}
+.verdict-line{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:.95rem}
+.checks{display:grid;gap:6px;margin:0;padding:0;list-style:none}
+.checks li{display:flex;gap:10px;align-items:baseline;font-size:.93rem}
+.status{font-size:.9rem;color:var(--muted)}
+.empty{border:1px dashed var(--rule);padding:18px;text-align:left;color:var(--muted);font-size:.95rem;display:flex;flex-direction:column;gap:10px}
+td .tag{font:600 .66rem/1 var(--mono);letter-spacing:.06em;padding:3px 5px;border-radius:3px;background:var(--warn-soft);color:var(--warn);margin-left:6px}
+footer{font-size:.85rem;color:var(--muted);border-top:1px solid var(--rule);padding-top:14px}
+details.code{border:1px solid var(--rule);background:var(--card)}
+details.code summary{cursor:pointer;padding:12px 14px;font-weight:600;list-style-position:inside}
+details.code[open] summary{border-bottom:1px solid var(--rule)}
+details.code summary span{font:500 .78rem var(--mono);color:var(--muted);margin-left:8px}
+.codebar{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:8px;padding:8px 12px;border-bottom:1px solid var(--rule);background:var(--paper);font-size:.82rem;color:var(--muted)}
+pre.pine{margin:0;max-height:420px;overflow:auto;padding:12px 14px;font:400 .76rem/1.5 var(--mono);color:var(--ink);background:var(--card);white-space:pre;tab-size:4}
+ol.steps{margin:0;padding-left:1.4rem;display:flex;flex-direction:column;gap:8px}
+ol.steps li{max-width:70ch;padding-left:4px}
+ol.steps li::marker{font:600 .9rem var(--mono);color:var(--accent)}
+
+/* cockpit (Hoy) */
+.cockpit{display:flex;flex-direction:column;gap:14px}
+.ck-top{display:flex;flex-wrap:wrap;gap:14px 28px;align-items:flex-end;justify-content:space-between}
+.ck-clock{display:flex;flex-direction:column;gap:2px}
+.ck-time{font:700 clamp(2rem,7vw,2.8rem)/1 var(--mono);font-variant-numeric:tabular-nums;letter-spacing:-.02em}
+.ck-market{display:flex;flex-direction:column;gap:6px;align-items:flex-start;font-size:.88rem}
+.ck-plat{display:flex;flex-direction:column;gap:6px;align-items:flex-start}
+.seg{display:inline-flex;flex-wrap:wrap;border:1px solid var(--rule);border-radius:6px;overflow:hidden;background:var(--card)}
+.seg button{background:transparent;color:var(--ink);border:0;border-right:1px solid var(--rule);border-radius:0;padding:8px 11px;font:600 .8rem var(--body)}
+.seg button:last-child{border-right:0}
+.seg button[aria-pressed="true"]{background:var(--accent);color:var(--card)}
+.seg button.sb-L[aria-pressed="true"],.seg button.sb-up[aria-pressed="true"]{background:var(--tone-go);color:var(--on-tone)}
+.seg button.sb-S[aria-pressed="true"],.seg button.sb-down[aria-pressed="true"]{background:var(--tone-stop);color:var(--on-tone)}
+.seg button.sb-N[aria-pressed="true"]{background:var(--tone-rest);color:var(--on-tone)}
+.now{border-radius:10px;padding:18px 20px;background:var(--tone-calm);color:var(--on-tone);display:flex;flex-direction:column;gap:6px}
+.now[data-tone="go"]{background:var(--tone-go)} .now[data-tone="wait"]{background:var(--tone-wait)} .now[data-tone="a"]{background:var(--tone-a)}
+.now[data-tone="b"]{background:var(--tone-b)} .now[data-tone="stop"]{background:var(--tone-stop)} .now[data-tone="rest"]{background:var(--tone-rest)}
+.now-k{font:600 .74rem/1.2 var(--mono);letter-spacing:.12em;text-transform:uppercase;opacity:.85}
+.now-t{font-family:var(--display);font-stretch:82%;font-weight:780;font-size:clamp(1.35rem,4.2vw,1.9rem);line-height:1.15;text-wrap:balance}
+.now-s{font-size:.95rem;opacity:.95;max-width:70ch}
+.now-z{display:flex;flex-wrap:wrap;gap:6px}
+.now-z span{font:600 .74rem var(--mono);background:rgba(255,255,255,.18);color:var(--on-tone);padding:4px 8px;border-radius:4px}
+.ck-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.ck-grid>*{min-width:0}
+.ck-card{background:var(--card);border:1px solid var(--rule);border-radius:10px;padding:14px 16px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.ck-h{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:baseline;gap:6px 12px}
+.ck-h h3{font-size:1.05rem}
+ol.ck-steps{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px}
+ol.ck-steps li{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:start;padding:8px 10px;border-radius:8px;border:1px solid transparent}
+ol.ck-steps li.is-now{border-color:var(--violet);background:var(--violet-soft)}
+ol.ck-steps li.is-late{border-color:var(--warn);background:var(--warn-soft)}
+ol.ck-steps li.is-done .st-l{color:var(--muted);text-decoration:line-through;text-decoration-color:var(--rule)}
+.st-t{display:block;font:600 .72rem/1.3 var(--mono);letter-spacing:.06em;text-transform:uppercase;color:var(--muted)}
+.st-l{display:block;font-size:.95rem}
+ol.ck-steps .pill{margin-top:4px}
+button.chk{width:30px;height:30px;padding:0;border-radius:6px;border:2px solid var(--rule);background:var(--card);color:var(--on-tone);font:700 1rem/1 var(--body)}
+button.chk[aria-pressed="true"]{background:var(--tone-go);border-color:var(--tone-go)}
+button.chk:disabled{opacity:1;cursor:default}
+.bias{display:flex;flex-direction:column;gap:8px}
+.bias-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px 10px}
+.bias-row>.mono{min-width:4.6rem;font-weight:600}
+ul.evs{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.evs li{display:flex;justify-content:space-between;align-items:center;gap:8px;font-size:.92rem}
+.ev-form{display:grid;grid-template-columns:5.5rem 7rem 1fr auto;gap:8px;align-items:end}
+@media (max-width:560px){.ev-form{grid-template-columns:1fr 1fr}.ev-form .ev-name{grid-column:1 / -1}}
+.trade-card{border:1px solid var(--rule);border-left:4px solid var(--tone-b);border-radius:8px;padding:12px 14px;display:flex;flex-direction:column;gap:8px}
+.trade-card.setup-A{border-left-color:var(--tone-a)}
+.trade-card .tc-h{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:center}
+.trade-card .tc-h strong{font-family:var(--mono)}
+.trade-card .tc-l{font:500 .86rem/1.5 var(--mono);color:var(--muted)}
+.tc-close{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.tc-close input{width:8.5rem}
+.pill.v{background:var(--violet-soft);color:var(--violet)}
+ul.pre{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:6px}
+ul.pre li{display:grid;grid-template-columns:30px 1fr;gap:10px;align-items:center;font-size:.93rem}
+ul.pre li .auto{font:600 .66rem var(--mono);color:var(--muted);margin-left:6px;letter-spacing:.06em}
+textarea#alertIn{font:500 .9rem/1.4 var(--mono);color:var(--ink);background:var(--paper);border:1px solid var(--rule);border-radius:4px;padding:9px 10px;width:100%;min-height:64px;resize:vertical}
+ul.plain{margin:0;padding-left:1.1rem;display:flex;flex-direction:column;gap:6px}
+ul.plain li{max-width:68ch}
+.two{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:16px}
+.two>*{min-width:0}
+@media (prefers-reduced-motion:reduce){*{scroll-behavior:auto!important}}
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+<header class="top">
+  <div class="eyebrow">Plan de trading · residente en EE. UU.</div>
+  <h1>Plan Swing Fondeo</h1>
+  <p class="lede">Lo que he investigado y probado para que hagas swing con una cuenta de fondeo desde Estados Unidos, con poco tiempo de pantalla y sin descuidar la agencia.</p>
+  <div class="dateline"><span>Datos a 9-nov-2026</span><span>Backtest 2005–2026 · 9 mercados</span><span>Horas en Nueva York (ET)</span></div>
+  <nav class="toc" aria-label="Secciones">
+    <a href="#hoy">Hoy</a><a href="#diario">Diario</a><a href="#veredicto">Respuesta corta</a><a href="#firma">Firma</a><a href="#capital">Poco capital</a><a href="#datos">Qué funciona</a><a href="#sistema">El sistema</a><a href="#macro">Macro</a><a href="#nasdaq">Nasdaq</a><a href="#rutina">Tu semana</a><a href="#tradingview">TradingView</a><a href="#ruta">90 días</a><a href="#calculadora">¿Pasarías?</a><a href="#tamano">Lotaje</a><a href="#fuentes">Fuentes</a>
+  </nav>
+</header>
+
+<section id="hoy">
+  <div class="sec-head"><div class="eyebrow">Tu cabina · se actualiza sola</div><h2>Hoy</h2></div>
+  <div class="cockpit">
+    <div class="ck-top">
+      <div class="ck-clock"><span class="eyebrow">Hora de Nueva York</span><span id="ckTime" class="ck-time">--:--</span><span id="ckDate" class="muted">–</span></div>
+      <div class="ck-market"><span id="ckMarket" class="pill a">–</span><span id="ckNext" class="muted">–</span></div>
+      <div class="ck-plat"><span class="eyebrow">Opero en</span><div class="seg" id="ckPlat" role="group" aria-label="Plataforma"><button type="button" data-v="tv" aria-pressed="true">TradingView</button><button type="button" data-v="mt5" aria-pressed="false">MetaTrader 5</button></div></div>
+    </div>
+
+    <div class="now" id="ckNow" data-tone="calm" aria-live="polite">
+      <div class="now-k" id="ckNowK">Ahora</div>
+      <div class="now-t" id="ckNowT">Cargando tu día…</div>
+      <div class="now-s" id="ckNowS"></div>
+      <div class="now-z" id="ckNowZ"></div>
+    </div>
+
+    <div class="ck-grid">
+      <div class="ck-card">
+        <div class="ck-h"><h3>Pasos de hoy</h3><span id="ckProg" class="pill v">–</span></div>
+        <ol class="ck-steps" id="ckSteps"></ol>
+        <span class="status" id="ckStatus">Los pasos se marcan solos cuando la página lo sabe. Los demás, márcalos tú.</span>
+      </div>
+      <div class="ck-card">
+        <div class="ck-h"><h3>Sesgo de la semana</h3><span id="ckWeek" class="muted">–</span></div>
+        <p class="muted" style="font-size:.85rem">Cópialo el domingo de la tabla de PSF B. Si un gatillo va contra el sesgo, no se opera.</p>
+        <div class="bias" id="ckBias"></div>
+        <div class="ck-h"><h3>Índices sobre su media de 200</h3></div>
+        <div class="bias" id="ckIdx"></div>
+        <div class="ck-h"><h3>Noticias fuertes de la semana</h3></div>
+        <ul class="evs" id="ckEvents"></ul>
+        <form id="evForm" class="ev-form" autocomplete="off">
+          <label class="f" for="evDay">Día<select id="evDay"><option value="1">Lun</option><option value="2">Mar</option><option value="3">Mié</option><option value="4">Jue</option><option value="5">Vie</option></select></label>
+          <label class="f" for="evTime">Hora NY<input id="evTime" type="time" value="08:30" required></label>
+          <label class="f ev-name" for="evName">Noticia<input id="evName" type="text" maxlength="40" placeholder="IPC, Fed, empleo…" required></label>
+          <button type="submit" class="ghost small">Añadir</button>
+        </form>
+      </div>
+    </div>
+
+    <div class="ck-card">
+      <div class="ck-h"><h3>Operaciones abiertas</h3><span id="ckRisk" class="pill g">Riesgo abierto 0%</span></div>
+      <div id="ckOpen" class="stack"></div>
+    </div>
+
+    <div class="ck-card">
+      <div class="ck-h"><h3>Nueva operación</h3><span class="muted" style="font-size:.85rem">pega la alerta de TradingView o rellena a mano</span></div>
+      <label class="f" for="alertIn">Texto de la alerta<textarea id="alertIn" placeholder="PSF B · EURUSD · CORTO · entrada 1.12300 · stop 1.12700 · objetivo 1.11300"></textarea></label>
+      <div class="btns"><button type="button" id="alertGo">Leer alerta</button><span id="alertMsg" class="status"></span></div>
+      <div class="form-grid">
+        <label class="f" for="ckSym">Mercado<select id="ckSym"><option>US500</option><option>US30</option><option>US100</option><option selected>EURUSD</option><option>USDJPY</option><option>XAUUSD</option></select></label>
+        <label class="f" for="ckDir">Dirección<select id="ckDir"><option value="L">Largo</option><option value="S">Corto</option></select></label>
+        <label class="f" for="ckMode">Modo<select id="ckMode"><option value="demo" selected>Demo</option><option value="real">Challenge/real</option><option value="replay">Replay</option></select></label>
+        <label class="f" for="ckEntry">Entrada<input id="ckEntry" type="text" inputmode="decimal" placeholder="1.12300"></label>
+        <label class="f" for="ckStop">Stop<input id="ckStop" type="text" inputmode="decimal" placeholder="1.12700"></label>
+        <label class="f" for="ckTarget">Objetivo<input id="ckTarget" type="text" inputmode="decimal" placeholder="solo setup B"></label>
+        <label class="f" for="ckRisk2">Riesgo %<input id="ckRisk2" type="text" inputmode="decimal" value="1"></label>
+      </div>
+      <label class="f" for="ckNote">Nota<input id="ckNote" type="text" maxlength="200" placeholder="Por qué entras"></label>
+      <div class="ck-h"><h3 id="preTitle">Checklist antes de entrar</h3><span id="preProg" class="pill w">–</span></div>
+      <ul class="pre" id="preList"></ul>
+      <div class="btns"><button type="button" id="openBtn" disabled>Abrir operación</button><button type="button" class="ghost" id="openOut">Abrir fuera de plan</button><span id="openMsg" class="status"></span></div>
+    </div>
+  </div>
+</section>
+
+<section id="diario">
+  <div class="sec-head"><div class="eyebrow">Herramienta</div><h2>Diario de operaciones</h2></div>
+  <p>Aquí se decide si pagas el challenge. Se llena solo cuando abres y cierras operaciones desde <a href="#hoy">Hoy</a> o importas el CSV de FTMO MetriX. El formulario de abajo es para apuntar a mano, por ejemplo las del replay. Todo se guarda en este dispositivo, en el navegador: nadie más lo ve. Para pasarlo a otro dispositivo, usa la copia de seguridad del final.</p>
+  <div class="panel">
+    <div class="panel-head"><h3>Apuntar a mano</h3><span class="status" id="jStatus">Abriendo tu diario…</span></div>
+    <div class="panel-body">
+      <form id="jForm" class="stack" autocomplete="off">
+        <div class="form-grid">
+          <label class="f" for="jDate">Fecha<input id="jDate" type="date" required></label>
+          <label class="f" for="jSym">Mercado<select id="jSym"><option>US500</option><option>US30</option><option>US100</option><option>EURUSD</option><option>USDJPY</option><option>XAUUSD</option><option>Otro</option></select></label>
+          <label class="f" for="jSetup">Setup<select id="jSetup"><option value="A">A · Dip índices</option><option value="B" selected>B · Swing macro</option><option value="O">Fuera de plan</option></select></label>
+          <label class="f" for="jDir">Dirección<select id="jDir"><option value="L">Largo</option><option value="S">Corto</option></select></label>
+          <label class="f" for="jMode">Modo<select id="jMode"><option value="replay">Replay</option><option value="demo" selected>Demo</option><option value="real">Challenge/real</option></select></label>
+          <label class="f" for="jR">Resultado (R)<input id="jR" type="number" step="0.01" required placeholder="2.5 o -1"></label>
+          <label class="f" for="jRisk">Riesgo %<input id="jRisk" type="number" step="0.05" min="0" value="1"></label>
+        </div>
+        <label class="f" for="jNote">Nota<input id="jNote" type="text" maxlength="200" placeholder="Motivo, gatillo, si respetaste el plan"></label>
+        <div class="btns"><button type="submit" id="jAdd" disabled>Guardar operación</button><button type="button" class="ghost" id="jSeed" disabled>Añadir 3 de ejemplo</button><button type="button" class="ghost" id="jClearEx" hidden>Borrar ejemplos</button></div>
+      </form>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h3>Tus números</h3>
+      <label class="f" for="jFilter" style="flex-direction:row;align-items:center;gap:8px">Ver<select id="jFilter" style="width:auto"><option value="all">Todo</option><option value="replay">Replay</option><option value="demo">Demo</option><option value="real">Challenge/real</option></select></label>
+    </div>
+    <div class="panel-body">
+      <div class="out-grid six">
+        <div class="out"><span class="k">Operaciones</span><span class="v" id="sN">0</span><span class="s" id="sPer">–</span></div>
+        <div class="out"><span class="k">Acierto</span><span class="v" id="sWin">–</span><span class="s" id="sWL">–</span></div>
+        <div class="out"><span class="k">R medio</span><span class="v" id="sExp">–</span><span class="s">objetivo ≥ +0,30</span></div>
+        <div class="out"><span class="k">R total</span><span class="v" id="sTot">–</span><span class="s" id="sBest">–</span></div>
+        <div class="out"><span class="k">Racha perdedora</span><span class="v" id="sStreak">–</span><span class="s">máx. 8</span></div>
+        <div class="out"><span class="k">Drawdown máx.</span><span class="v" id="sDD">–</span><span class="s">máx. 8R</span></div>
+      </div>
+      <div class="stack">
+        <div class="verdict-line"><span class="pill w" id="gatePill">Aún no</span><strong>Puerta del challenge</strong><span class="muted" id="gateEx"></span></div>
+        <ul class="checks" id="gateList"></ul>
+        <div class="btns"><button type="button" class="ghost small" id="jToCalc">Usar estos números en la calculadora</button></div>
+      </div>
+      <div id="jEmpty" class="empty"><strong>Aún no hay operaciones.</strong><span>Cada operación que guardes aparecerá aquí con su resultado en R. El diario calcula tu acierto, tu R medio, la peor racha y si estás listo para pagar el challenge. Si quieres ver cómo funciona antes, pulsa "Añadir 3 de ejemplo" y bórralos después.</span></div>
+      <div class="tbl" id="jTableWrap" hidden><table>
+        <thead><tr><th>Fecha</th><th>Mercado</th><th>Setup</th><th>Dir.</th><th>Modo</th><th class="n">R</th><th>Nota</th><th></th></tr></thead>
+        <tbody id="jRows"></tbody>
+      </table></div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-head"><h3>Importar de FTMO MetriX o MT5</h3><span class="status" id="impStatus">MetriX → Trading Journal → Export → CSV</span></div>
+    <div class="panel-body">
+      <p class="muted" style="font-size:.9rem">FTMO guarda todas tus operaciones, hagas lo que hagas, en MetriX (área de cliente). Exporta el CSV y súbelo aquí: el R de cada operación sale del beneficio dividido entre lo que arriesgas por operación. Si un archivo no se lee bien, pásale a Claude una captura de sus primeras filas.</p>
+      <div class="form-grid">
+        <label class="f" for="impFile">Archivo CSV<input id="impFile" type="file" accept=".csv,text/csv,.txt"></label>
+        <label class="f" for="impAcct">Cuenta ($)<input id="impAcct" type="number" min="1000" step="1000" value="10000"></label>
+        <label class="f" for="impRisk">Riesgo por operación %<input id="impRisk" type="number" min="0.1" step="0.1" value="1"></label>
+        <label class="f" for="impMode">Modo<select id="impMode"><option value="real" selected>Challenge/real</option><option value="demo">Demo / Free Trial</option></select></label>
+      </div>
+      <div id="impPrev" class="status">Ningún archivo.</div>
+      <div class="btns"><button type="button" id="impGo" disabled>Importar</button></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-head"><h3>Copia de seguridad</h3><span class="status" id="bkStatus">Tus datos viven en este navegador</span></div>
+    <div class="panel-body">
+      <p class="muted" style="font-size:.9rem">Descarga una copia de vez en cuando (por ejemplo, cada viernes). Si cambias de iPad o de navegador, o borras los datos de Safari, cárgala y recuperas el diario, los pasos y el sesgo.</p>
+      <div class="btns"><button type="button" id="bkExport">Descargar copia</button><label class="f" for="bkFile" style="flex-direction:row;align-items:center;gap:8px">Cargar copia<input id="bkFile" type="file" accept=".json,application/json" style="width:auto"></label></div>
+    </div>
+  </div>
+</section>
+
+<section id="veredicto">
+  <div class="verdict">
+    <div class="eyebrow">Respuesta corta</div>
+    <div class="big">Sí al swing. No a meterte de lleno hasta que tu propio diario demuestre que tienes ventaja.</div>
+    <ul class="points">
+      <li><span>Firma</span><span><strong>FTMO US</strong> (ftmo.oanda.com), 2-Step, tipo de cuenta <strong>Swing</strong>. Es de las pocas grandes que da MT5 a residentes en EE. UU. y además permite operar con TradingView. Con poco capital, empieza por la de 10.000 $ (99 $).</span></li>
+      <li><span>Poco capital</span><span>Una cuenta live pequeña no da el retorno que buscas, porque lo que ganas es un porcentaje de tu capital. Con fondeo arriesgas solo la cuota y operas una cuenta mayor. Números en <a href="#capital">Poco capital</a>.</span></li>
+      <li><span>Pares</span><span>Las estrategias clásicas de pares no ganaron dinero de 2016 a 2026 en los 7 pares mayores, ya con costes. Probé rupturas, pullbacks, seguimiento de tendencia y reversión. Pares sí, pero solo EURUSD y USDJPY, más el oro, y con un sesgo macro claro.</span></li>
+      <li><span>Ventaja real</span><span>La única ventaja mecánica que aguantó todo el periodo: comprar caídas en índices de EE. UU. cuando están en tendencia alcista. Es real pero pequeña: sola tardaría años en pasar el challenge.</span></li>
+      <li><span>El listón</span><span>Para pasar el 2-Step en unos 6 meses necesitas unos <strong>+0,35R por operación</strong> con unas 6 operaciones al mes (por ejemplo, 45% de acierto con ganancias de 2R). Eso solo lo puede demostrar tu diario.</span></li>
+      <li><span>Últimos 2 años</span><span>El setup A ganó +11,4R con un 73% de acierto. La versión mecánica del setup B perdió −2,2R: solo ganó en oro. Con las reglas tal cual, el plan no habría pasado el challenge en esos dos años. Detalle en <a href="#ultimos2">Qué funciona</a>.</span></li>
+      <li><span>Nasdaq</span><span>El rango de 6 meses (mayo–octubre) se rompió <strong>hacia abajo</strong> el 5 de noviembre. Tu idea alcista tiene a favor la estacionalidad tras las elecciones de mitad de mandato, pero el precio todavía no la confirma.</span></li>
+      <li><span>Tiempo</span><span>Unas 2,5 horas a la semana: 40 minutos el domingo y unos 15 minutos al día. Es compatible con montar la agencia.</span></li>
+    </ul>
+  </div>
+</section>
+
+<section id="firma">
+  <div class="sec-head"><div class="eyebrow">Dónde operar</div><h2>FTMO US, cuenta 2-Step tipo Swing</h2></div>
+  <p>Como resides en EE. UU., tus opciones se reducen mucho. MetaQuotes no deja que la mayoría de firmas den MT5 a residentes en EE. UU. Además, las firmas de futuros, que son las que más usan los americanos, obligan a cerrar cada día. FTMO US es la vía de FTMO para residentes en EE. UU., montada con OANDA, con MT5 y TradingView. Todo es simulado: pasas la evaluación y cobras "rewards" sobre beneficios simulados.</p>
+
+  <dl class="facts">
+    <dt>Fase 1</dt><dd>Objetivo <span class="num">+10%</span>. Mínimo 4 días con operaciones.</dd>
+    <dt>Fase 2</dt><dd>Objetivo <span class="num">+5%</span>. Mínimo 4 días.</dd>
+    <dt>Pérdida diaria</dt><dd><span class="num">5%</span> del capital inicial. Cuenta el <em>equity</em>, es decir, lo flotante, los swaps y las comisiones. Se reinicia a las 00:00 de Europa central, que son las <strong>6:00 pm ET</strong>. Una pérdida flotante que arrastras de un día para otro te come margen del día siguiente.</dd>
+    <dt>Pérdida máxima</dt><dd><span class="num">10%</span> estática. En 100.000 $ el equity nunca puede bajar de 90.000 $.</dd>
+    <dt>Tiempo</dt><dd>No hay plazo para pasar las fases. Confírmalo en el checkout.</dd>
+    <dt>Reparto</dt><dd><span class="num">80%</span>, que sube hasta el 90% con el plan de escalado. El primer cobro se puede pedir a los 14 días. La cuota del 2-Step se devuelve con el primer reward.</dd>
+    <dt>Escalado</dt><dd>+25% de cuenta cada 4 meses, hasta 2 M$. Pide un 10% neto en ese periodo y 2 cobros.</dd>
+    <dt>Plataformas</dt><dd>MT5 y TradingView, este último con el perfil de bróker de OANDA desde el 29-abr-2026.</dd>
+    <dt>Instrumentos</dt><dd>42 pares de divisas, US100, US500, US30, oro, petróleo y BTC. Las posiciones van en unidades, no en lotes.</dd>
+    <dt>Requisitos</dt><dd>Mayor de 18 años, residente legal, SSN o TIN, cuenta de banco tradicional de EE. UU. (no valen Wise ni Chime) y formulario W-9 antes del primer cobro. No admiten entidades de Arkansas, Delaware, Luisiana, Montana ni Carolina del Sur.</dd>
+  </dl>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Cuenta 2-Step</th><th class="n">10k</th><th class="n">25k</th><th class="n">50k</th><th class="n">100k</th><th class="n">200k</th></tr></thead>
+    <tbody><tr><td>Cuota (USD)</td><td class="n">99</td><td class="n">289</td><td class="n">399</td><td class="n">619<br><span class="pill a">oferta 499</span></td><td class="n">1.249</td></tr></tbody>
+    <caption>Precios de FTMO US publicados a 13-sep-2026. Las ofertas cambian; mira el checkout.</caption>
+  </table></div>
+
+  <div class="two">
+    <div class="stack">
+      <h3>Por qué Swing y no Standard</h3>
+      <ul class="plain">
+        <li>En la cuenta financiada Standard tienes que cerrar todo antes de cualquier pausa de mercado de más de 2 horas, es decir, fines de semana y festivos.</li>
+        <li>También prohíbe abrir o cerrar en los 2 minutos antes y después de ciertas noticias, y eso incluye que salten tus stops y take profits. En swing tus órdenes están siempre puestas.</li>
+        <li>En el backtest, comprar caídas en US500 rinde más si puedes aguantar el fin de semana: PF 1,76 frente a 1,35 cerrando los viernes.</li>
+        <li>El coste es el apalancamiento: 1:30 en vez de 1:100. Arriesgando 0,5–1% por operación te sobra.</li>
+        <li>Se puede pasar de Swing a Standard, pero no al revés. Elige Swing al comprar.</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <h3>Descartadas y por qué</h3>
+      <div class="tbl"><table>
+        <tbody>
+          <tr><td><strong>The5ers</strong></td><td>Sus términos prohíben que los residentes en EE. UU. usen plataformas de MetaQuotes (MT4/MT5).</td></tr>
+          <tr><td><strong>FXIFY</strong></td><td>Varias reseñas de 2026 la dan como restringida para residentes en EE. UU.</td></tr>
+          <tr><td><strong>Topstep, Apex, Tradeify, Take Profit Trader, FundedNext Futures, Bulenox</strong></td><td>Futuros solo intradía: no dejan mantener posiciones de un día para otro.</td></tr>
+          <tr><td><strong>Phidias Premium, Moneta, DNA Funded</strong></td><td>Dicen permitir swing o MT5 desde EE. UU., pero solo lo he visto en webs con afiliados. Sin verificar.</td></tr>
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+  <div class="note info"><strong>Antes de pagar:</strong> FTMO US tiene una Free Trial gratuita con las mismas reglas. Úsala durante el periodo de prueba de la hoja de ruta.</div>
+</section>
+
+<section id="capital">
+  <div class="sec-head"><div class="eyebrow">Poco capital</div><h2>¿Cuenta live o fondeo?</h2></div>
+  <p>Lo que ganas es un porcentaje de la cuenta. Con la misma estrategia y el mismo riesgo, una cuenta mayor gana más dólares. Con poco dinero, el fondeo te da una cuenta mayor arriesgando solo la cuota.</p>
+  <div class="tbl"><table>
+    <thead><tr><th>Cuenta</th><th class="n">Lo que arriesgas</th><th class="n">Riesgo por operación</th><th class="n">Ganancia media al mes</th></tr></thead>
+    <tbody>
+      <tr><td>Live con 2.000 $</td><td class="n">2.000 $</td><td class="n">20 $ (1%)</td><td class="n">42 $</td></tr>
+      <tr><td>Live con 5.000 $</td><td class="n">5.000 $</td><td class="n">50 $ (1%)</td><td class="n">105 $</td></tr>
+      <tr><td>FTMO US 10k</td><td class="n">99 $ de cuota</td><td class="n">100 $ (1%)</td><td class="n">168 $</td></tr>
+      <tr><td>FTMO US 25k</td><td class="n">289 $ de cuota</td><td class="n">250 $ (1%)</td><td class="n">420 $</td></tr>
+      <tr><td>FTMO US 100k</td><td class="n">499 $ de cuota</td><td class="n">1.000 $ (1%)</td><td class="n">1.680 $</td></tr>
+    </tbody>
+    <caption>Supone que ya tienes la ventaja del perfil "swing bueno": +0,35R por operación y 6 operaciones al mes, es decir, +2,1% al mes. En fondeo, una vez pasado el challenge y con el 80% para ti. Sin ventaja, todas las filas dan cero o pérdidas.</caption>
+  </table></div>
+  <div class="two">
+    <div class="stack">
+      <h3>Por qué subir el riesgo no es la solución</h3>
+      <ul class="plain">
+        <li>Con un 40% de acierto, la probabilidad de encadenar 8 pérdidas seguidas en 100 operaciones es del 49%. La de encadenar 10, del 20%.</li>
+        <li>8 pérdidas seguidas al 1% te dejan en −8%. Al 5%, en −34%. Al 10%, en −57%.</li>
+        <li>Para recuperar un −34% necesitas ganar un +50%. Más riesgo no da más retorno: da más probabilidad de quedarte sin cuenta.</li>
+      </ul>
+    </div>
+    <div class="stack">
+      <h3>Si aun así abres una cuenta live en EE. UU.</h3>
+      <ul class="plain">
+        <li><strong>Forex:</strong> solo con brókers registrados en la NFA. FOREX.com tiene MT5 y OANDA US deja operar desde 1 unidad. Apalancamiento máximo de 50:1 en pares mayores, sin cobertura y con FIFO.</li>
+        <li><strong>Oro:</strong> no hay CFD. El futuro de 1 onza de CME se mueve 1 $ por cada dólar del oro y pide unos cientos de dólares de garantía. Algunos brókers ofrecen oro al contado con poco apalancamiento.</li>
+        <li><strong>Índices:</strong> el micro Nasdaq (MNQ) mueve unos 1.600 $ por cada ATR diario y el micro S&amp;P (MES) unos 600 $. En una cuenta pequeña el setup A no cabe; tendrías que usar SPY o QQQ sin apalancamiento.</li>
+        <li><strong>Regla:</strong> trátala como cuenta de entrenamiento, con un riesgo máximo del 1% y nunca con el dinero de la agencia.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section id="datos">
+  <div class="sec-head"><div class="eyebrow">Backtest propio</div><h2>Qué funciona y qué no en los datos</h2></div>
+  <p>Probé las estrategias swing más típicas de los traders de pares con datos diarios de 2005 a 2026 en los 7 pares mayores (EURUSD, GBPUSD, AUDUSD, NZDUSD, USDCAD, USDCHF, USDJPY), además de oro e índices. Todas las reglas se fijaron antes de mirar resultados. Incluyen spread, comisión y swap. Separé 2005–2015, el periodo de diseño, de 2016–2026, que es la prueba de verdad.</p>
+
+  <div class="bars" role="table" aria-label="Profit factor 2016–2026 por estrategia">
+    <div class="bars-head" role="row"><span role="columnheader">Estrategia · mercado</span><span class="scale" role="columnheader" aria-label="escala de profit factor de 0 a 2"><span style="left:0%">0</span><span style="left:50%">1,0</span><span style="left:100%">2,0</span></span><span role="columnheader" style="text-align:right">PF</span></div>
+    <div class="bar-row" role="row"><span class="name" role="cell">Ruptura del rango semanal<small>7 pares</small></span><span class="track" role="cell" aria-hidden="true"><span class="fill l" style="width:42.5%"></span><span class="one" style="left:50%"></span></span><span class="v neg" role="cell">0,85</span></div>
+    <div class="bar-row" role="row"><span class="name" role="cell">Pullback en tendencia (RSI2)<small>7 pares</small></span><span class="track" role="cell" aria-hidden="true"><span class="fill l" style="width:48.0%"></span><span class="one" style="left:50%"></span></span><span class="v neg" role="cell">0,96</span></div>
+    <div class="bar-row" role="row"><span class="name" role="cell">Ruptura de 20 días<small>7 pares</small></span><span class="track" role="cell" aria-hidden="true"><span class="fill l" style="width:45.5%"></span><span class="one" style="left:50%"></span></span><span class="v neg" role="cell">0,91</span></div>
+    <div class="bar-row" role="row"><span class="name" role="cell">Reversión a la media (RSI2 extremo)<small>7 pares</small></span><span class="track" role="cell" aria-hidden="true"><span class="fill l" style="width:50.0%"></span><span class="one" style="left:50%"></span></span><span class="v neg" role="cell">1,00</span></div>
+    <div class="bar-row" role="row"><span class="name" role="cell">Tendencia 20/10 tipo Turtle<small>7 pares</small></span><span class="track" role="cell" aria-hidden="true"><span class="fill l" style="width:31.0%"></span><span class="one" style="left:50%"></span></span><span class="v neg" role="cell">0,62</span></div>
+    <div class="bar-row" role="row"><span class="name" role="cell">Tendencia 55/20 tipo Turtle<small>7 pares</small></span><span class="track" role="cell" aria-hidden="true"><span class="fill l" style="width:22.5%"></span><span class="one" style="left:50%"></span></span><span class="v neg" role="cell">0,45</span></div>
+    <div class="bar-row" role="row"><span class="name" role="cell">Tendencia 55/20 solo oro + USDJPY<small>Oro y USDJPY</small></span><span class="track" role="cell" aria-hidden="true"><span class="fill g" style="width:52.0%"></span><span class="one" style="left:50%"></span></span><span class="v pos" role="cell">1,04</span></div>
+    <div class="bar-row" role="row"><span class="name" role="cell">Dip en tendencia US500<small>US500</small></span><span class="track" role="cell" aria-hidden="true"><span class="fill g" style="width:92.5%"></span><span class="one" style="left:50%"></span></span><span class="v pos" role="cell">1,85</span></div>
+    <div class="bar-row" role="row"><span class="name" role="cell">Dip en tendencia US100<small>US100</small></span><span class="track" role="cell" aria-hidden="true"><span class="fill g" style="width:64.0%"></span><span class="one" style="left:50%"></span></span><span class="v pos" role="cell">1,28</span></div>
+    <div class="bar-row" role="row"><span class="name" role="cell">Dip en tendencia US30<small>US30</small></span><span class="track" role="cell" aria-hidden="true"><span class="fill g" style="width:73.5%"></span><span class="one" style="left:50%"></span></span><span class="v pos" role="cell">1,47</span></div>
+  </div>
+  <p class="muted" style="font-size:.88rem">Profit factor (PF) de 2016 a 2026: lo ganado dividido entre lo perdido. Por encima de 1,0 gana dinero y por debajo pierde. La línea vertical marca 1,0.</p>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Estrategia</th><th>Mercados</th><th class="n">Ops/año</th><th class="n">PF 05–15</th><th class="n">PF 16–26</th><th class="n">R medio 16–26</th></tr></thead>
+    <tbody><tr><td>Ruptura del rango semanal (a favor de tendencia)</td><td>7 pares</td><td class="n">152,9</td><td class="n">1,03</td><td class="n neg">0,85</td><td class="n neg">−0,08</td></tr><tr><td>Pullback en tendencia (RSI2)</td><td>7 pares</td><td class="n">79,0</td><td class="n">0,94</td><td class="n neg">0,96</td><td class="n neg">−0,01</td></tr><tr><td>Ruptura de 20 días (cierre el viernes)</td><td>7 pares</td><td class="n">84,5</td><td class="n">1,14</td><td class="n neg">0,91</td><td class="n neg">−0,03</td></tr><tr><td>Reversión a la media (RSI2 extremo)</td><td>7 pares</td><td class="n">95,9</td><td class="n">0,89</td><td class="n neg">1,00</td><td class="n neg">−0,00</td></tr><tr><td>Tendencia 20/10 tipo Turtle (con fin de semana)</td><td>7 pares</td><td class="n">47,5</td><td class="n">0,98</td><td class="n neg">0,62</td><td class="n neg">−0,22</td></tr><tr><td>Tendencia 55/20 tipo Turtle (con fin de semana)</td><td>7 pares</td><td class="n">29,0</td><td class="n">1,35</td><td class="n neg">0,45</td><td class="n neg">−0,41</td></tr><tr><td>Tendencia 55/20 solo oro + USDJPY</td><td>Oro y USDJPY</td><td class="n">7,6</td><td class="n">1,44</td><td class="n pos">1,04</td><td class="n pos">+0,03</td></tr><tr><td>Dip en tendencia US500</td><td>US500</td><td class="n">8,7</td><td class="n">1,68</td><td class="n pos">1,85</td><td class="n pos">+0,12</td></tr><tr><td>Dip en tendencia US100</td><td>US100</td><td class="n">8,9</td><td class="n">1,51</td><td class="n pos">1,28</td><td class="n pos">+0,05</td></tr><tr><td>Dip en tendencia US30</td><td>US30</td><td class="n">8,7</td><td class="n">1,17</td><td class="n pos">1,47</td><td class="n pos">+0,08</td></tr></tbody>
+    <caption>R = lo que arriesgas en la operación. Un R medio de +0,10 significa que de media ganas el 10% de lo arriesgado por operación.</caption>
+  </table></div>
+
+  <div class="stack">
+    <h3>Lo que significa para ti</h3>
+    <ul class="plain">
+      <li><strong>En pares, la técnica sola no basta.</strong> El seguimiento de tendencia funcionó hasta 2015, con PF de 1,35, y después se hundió a 0,45. Lo que ves en YouTube suele estar probado en la época buena.</li>
+      <li><strong>Oro y USDJPY aguantan algo mejor.</strong> Su seguimiento de tendencia ganó de 2005 a 2015 (PF 1,44), pero de 2016 a 2026 apenas empató (1,04). Úsalos para decidir la dirección, no como sistema.</li>
+      <li><strong>Los índices de EE. UU. tienen ventaja comprando caídas en tendencia alcista.</strong> Es el setup A. Aguanta en los dos periodos y en los tres índices, pero da pocas operaciones (unas 9 al año por índice) y ganancias pequeñas por operación.</li>
+    </ul>
+  </div>
+
+  <div class="stack" id="ultimos2">
+    <h3>Solo los últimos dos años (nov-2024 a nov-2026)</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Setup</th><th class="n">Operaciones</th><th class="n">Acierto</th><th class="n">R medio</th><th class="n">R total</th><th class="n">Peor caída</th></tr></thead>
+      <tbody>
+        <tr><td>A · US500, US30 y US100</td><td class="n">70</td><td class="n">73%</td><td class="n pos">+0,16</td><td class="n pos">+11,4</td><td class="n">−2,1R</td></tr>
+        <tr><td>B · versión diaria (EURUSD, USDJPY, oro)</td><td class="n">28</td><td class="n">36%</td><td class="n">+0,01</td><td class="n">+0,3</td><td class="n">−9,9R</td></tr>
+        <tr><td>B · versión 4H, la del indicador</td><td class="n">45</td><td class="n">33%</td><td class="n neg">−0,05</td><td class="n neg">−2,2</td><td class="n">−9,9R</td></tr>
+      </tbody>
+      <caption>En el setup B de 4H solo ganó el oro (+5,8R); EURUSD perdió 0,9R y USDJPY 7,2R. Repitiendo el challenge desde noviembre de 2024 con el plan (A al 0,5% y B al 1%), la cuenta habría acabado en +0,6% tras dos años. Con A y B al 1% habría pasado la fase 1 en febrero de 2026, a los 15 meses, y no la fase 2.</caption>
+    </table></div>
+  </div>
+
+  <div class="figure">
+    <div class="eyebrow">Setup A, resultado anual en R (US500 + US100 + US30)</div>
+    <div class="chartwrap"><svg viewBox="0 0 640 220" role="img" aria-labelledby="yrT yrD" class="chart">
+<title id="yrT">Resultado anual en R del setup Dip en tendencia, 2005 a 2026</title>
+<desc id="yrD">Suma de R por año de las operaciones en US500, US100 y US30. 14 de 22 años positivos; el mejor 2021 con +10,6 R y el peor 2018 con −3,3 R.</desc>
+<line x1="40" x2="630" y1="192.0" y2="192.0" class="grid"/>
+<text x="34" y="196.0" class="lbl" text-anchor="end">−4</text>
+<line x1="40" x2="630" y1="147.5" y2="147.5" class="axis"/>
+<text x="34" y="151.5" class="lbl" text-anchor="end">0</text>
+<line x1="40" x2="630" y1="103.0" y2="103.0" class="grid"/>
+<text x="34" y="107.0" class="lbl" text-anchor="end">+4</text>
+<line x1="40" x2="630" y1="58.5" y2="58.5" class="grid"/>
+<text x="34" y="62.5" class="lbl" text-anchor="end">+8</text>
+<line x1="40" x2="630" y1="14.0" y2="14.0" class="grid"/>
+<text x="34" y="18.0" class="lbl" text-anchor="end">+12</text>
+<rect x="44.0" y="137.7" width="18.8" height="9.8" class="gain"><title>2005: +0.9 R</title></rect>
+<text x="53.4" y="208" class="lbl" text-anchor="middle">’05</text>
+<rect x="70.8" y="117.8" width="18.8" height="29.7" class="gain"><title>2006: +2.7 R</title></rect>
+<rect x="97.7" y="147.5" width="18.8" height="21.6" class="lossF"><title>2007: -1.9 R</title></rect>
+<rect x="124.5" y="147.5" width="18.8" height="10.8" class="lossF"><title>2008: -1.0 R</title></rect>
+<text x="133.9" y="208" class="lbl" text-anchor="middle">’08</text>
+<rect x="151.3" y="97.0" width="18.8" height="50.5" class="gain"><title>2009: +4.5 R</title></rect>
+<rect x="178.1" y="132.6" width="18.8" height="14.9" class="gain"><title>2010: +1.3 R</title></rect>
+<rect x="204.9" y="118.1" width="18.8" height="29.4" class="gain"><title>2011: +2.6 R</title></rect>
+<text x="214.3" y="208" class="lbl" text-anchor="middle">’11</text>
+<rect x="231.8" y="85.0" width="18.8" height="62.5" class="gain"><title>2012: +5.6 R</title></rect>
+<rect x="258.6" y="101.8" width="18.8" height="45.7" class="gain"><title>2013: +4.1 R</title></rect>
+<rect x="285.4" y="123.5" width="18.8" height="24.0" class="gain"><title>2014: +2.2 R</title></rect>
+<text x="294.8" y="208" class="lbl" text-anchor="middle">’14</text>
+<rect x="312.2" y="147.5" width="18.8" height="7.1" class="lossF"><title>2015: -0.6 R</title></rect>
+<rect x="339.0" y="147.5" width="18.8" height="5.5" class="lossF"><title>2016: -0.5 R</title></rect>
+<rect x="365.8" y="67.3" width="18.8" height="80.2" class="gain"><title>2017: +7.2 R</title></rect>
+<text x="375.2" y="208" class="lbl" text-anchor="middle">’17</text>
+<rect x="392.7" y="147.5" width="18.8" height="37.2" class="lossF"><title>2018: -3.3 R</title></rect>
+<rect x="419.5" y="147.5" width="18.8" height="5.3" class="lossF"><title>2019: -0.5 R</title></rect>
+<rect x="446.3" y="147.5" width="18.8" height="18.8" class="lossF"><title>2020: -1.7 R</title></rect>
+<text x="455.7" y="208" class="lbl" text-anchor="middle">’20</text>
+<rect x="473.1" y="30.0" width="18.8" height="117.5" class="gain"><title>2021: +10.6 R</title></rect>
+<rect x="499.9" y="147.5" width="18.8" height="24.5" class="lossF"><title>2022: -2.2 R</title></rect>
+<rect x="526.8" y="143.4" width="18.8" height="4.1" class="gain"><title>2023: +0.4 R</title></rect>
+<text x="536.1" y="208" class="lbl" text-anchor="middle">’23</text>
+<rect x="553.6" y="83.2" width="18.8" height="64.3" class="gain"><title>2024: +5.8 R</title></rect>
+<rect x="580.4" y="122.1" width="18.8" height="25.4" class="gain"><title>2025: +2.3 R</title></rect>
+<rect x="607.2" y="72.7" width="18.8" height="74.8" class="gain"><title>2026: +6.7 R</title></rect>
+<text x="616.6" y="208" class="lbl" text-anchor="middle">’26</text>
+</svg></div>
+    <div class="legend"><span><i style="border-top:10px solid var(--gain);width:12px"></i>año positivo</span><span><i style="border-top:10px solid var(--loss);width:12px"></i>año negativo</span><span>14 de 22 años positivos</span></div>
+  </div>
+
+  <div class="stack">
+    <h3>¿Y el challenge con el sistema mecánico?</h3>
+    <p>Simulé el 2-Step de FTMO arrancando cada semana entre 2006 y 2024, con las reglas reales: 10% y 5% de objetivo, 5% diario y 10% máximo, ejecutando el setup A. Arriesgando más para ir más rápido, se rompe la pérdida diaria, porque los tres índices caen a la vez.</p>
+    <div class="tbl"><table>
+      <thead><tr><th>Configuración</th><th class="n">Pasa ambas fases</th><th class="n">Tiempo mediano</th><th>Lectura</th></tr></thead>
+      <tbody>
+        <tr><td>Setup A, 1% por operación, máx. 3 a la vez</td><td class="n">91%</td><td class="n">79 meses</td><td><span class="pill w">seguro pero eterno</span></td></tr>
+        <tr><td>Setup A, 2%, máx. 2 a la vez</td><td class="n">70%</td><td class="n">41 meses</td><td><span class="pill w">lento</span></td></tr>
+        <tr><td>Setup A, 2%, máx. 3 a la vez</td><td class="n">40%</td><td class="n">20 meses</td><td><span class="pill l">35% suspende por pérdida diaria</span></td></tr>
+      </tbody>
+      <caption>Conclusión: el setup A sirve como uno de tus setups, pero no basta para pasar un challenge en un plazo razonable. Esa parte tiene que venir del setup B.</caption>
+    </table></div>
+  </div>
+
+  <div class="stack">
+    <h3>Qué ventaja necesitas para pasarlo rápido</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Perfil (riesgo 1%)</th><th class="n">R medio</th><th class="n">Pasa ambas</th><th class="n">Mediana</th><th class="n">En ≤ 6 meses</th><th class="n">En ≤ 12 meses</th></tr></thead>
+      <tbody>
+        <tr><td>Trader medio · 45% a 1:1,2 · 8/mes</td><td class="n neg">−0,01</td><td class="n">26%</td><td class="n">13,0 m</td><td class="n">3%</td><td class="n">12%</td></tr>
+        <tr><td>Swing bueno · 45% a 1:2 · 6/mes</td><td class="n pos">+0,35</td><td class="n">94%</td><td class="n">6,0 m</td><td class="n">48%</td><td class="n">84%</td></tr>
+        <tr><td>Swing muy bueno · 40% a 1:2,5 · 6/mes</td><td class="n pos">+0,40</td><td class="n">92%</td><td class="n">5,5 m</td><td class="n">51%</td><td class="n">84%</td></tr>
+        <tr><td>Alta efectividad · 55% a 1:1,5 · 6/mes</td><td class="n pos">+0,38</td><td class="n">99%</td><td class="n">6,3 m</td><td class="n">47%</td><td class="n">90%</td></tr>
+        <tr><td>Francotirador · 35% a 1:3 · 5/mes</td><td class="n pos">+0,40</td><td class="n">86%</td><td class="n">6,1 m</td><td class="n">43%</td><td class="n">76%</td></tr>
+      </tbody>
+      <caption>Monte Carlo de 4.000 intentos por perfil. Modelo simple: cada operación gana el ratio indicado o pierde 1R. Un trader sin ventaja pasa 1 de cada 4 veces por pura suerte, así que un aprobado no demuestra nada. Prueba tus propios números en la <a href="#calculadora">calculadora</a>.</caption>
+    </table></div>
+  </div>
+</section>
+
+<section id="sistema">
+  <div class="sec-head"><div class="eyebrow">El sistema</div><h2>Dos setups, seis mercados, reglas fijas</h2></div>
+  <p>Universo cerrado: <span class="mono">US500 · US30 · US100</span> para el setup A, y <span class="mono">EURUSD · USDJPY · XAUUSD</span> para el setup B. Nada más. Menos mercados significa menos tiempo y menos operaciones malas.</p>
+
+  <div class="tickets">
+    <article class="ticket">
+      <div class="ticket-head"><h3>Setup A · Dip en tendencia</h3><span class="code">MECÁNICO · ÍNDICES</span></div>
+      <div class="ticket-body">
+        <div>Gráfico</div><div>Diario de US500, US30 y US100. Indicadores: media simple de 200, media simple de 5, RSI de 2 periodos y ATR de 14.</div>
+        <div>Condición</div><div>Precio <strong>por encima</strong> de la media de 200 <strong>y</strong> RSI(2) <strong>por debajo de 10</strong>.</div>
+        <div>Entrada</div><div>Compra a mercado entre las <span class="mono">3:50 y las 3:58 pm ET</span>, antes del cierre de la bolsa.</div>
+        <div>Stop</div><div><span class="mono">2,5 × ATR(14)</span> por debajo de la entrada. Ponlo al entrar y no lo toques.</div>
+        <div>Salida</div><div>Cierra a las 3:50 pm ET el primer día que el precio esté por encima de su media de 5. Si no pasa en 7 sesiones, cierra igualmente.</div>
+        <div>Riesgo</div><div><span class="mono">0,5%</span> por operación. Máximo 2 índices a la vez, porque caen juntos.</div>
+        <div>Datos</div><div>US500: 191 operaciones desde 2005, 72% de acierto, PF 1,68 (2005–15) y 1,85 (2016–26). Duración media: 4 días.</div>
+      </div>
+      <div class="ticket-foot">Ahora (6-nov): US500 está un 0,7% por encima de su media de 200 y US30 un 1,1%, así que el setup está activo si el RSI(2) baja de 10. US100 está un 3,6% por debajo: no se compra hasta que la recupere.</div>
+    </article>
+
+    <article class="ticket">
+      <div class="ticket-head"><h3>Setup B · Swing macro</h3><span class="code">DISCRECIONAL · PARES Y ORO</span></div>
+      <div class="ticket-body">
+        <div>1 · Sesgo</div><div>El domingo puntúa cada mercado de −1 a +1 en tres cosas:<br><strong>Tipos</strong>: hacia dónde va lo que descuenta el mercado de la Fed frente al otro banco central.<br><strong>Tendencia</strong>: precio frente a la media de 100 días, y su pendiente.<br><strong>Riesgo</strong>: VIX por encima de 20 favorece al USD y al JPY.<br>Suma ≥ +2: solo largos. Suma ≤ −2: solo cortos. Cualquier otra suma: no operas ese mercado esa semana.</div>
+        <div>2 · Zona</div><div>En diario, espera un retroceso a un nivel: máximo o mínimo de la semana anterior, la zona de la última ruptura o la media de 20. Aquí puedes meter tu lectura de liquidez.</div>
+        <div>3 · Gatillo</div><div>En 4H, ruptura de estructura a favor del sesgo (supera el último máximo o mínimo de 4H) o vela envolvente al cierre.</div>
+        <div>Stop</div><div>Detrás del último swing de 4H, más el spread.</div>
+        <div>Objetivo</div><div>Mínimo <span class="mono">2,5R</span>, en el siguiente nivel diario. Si no hay sitio para 2,5R, no hay operación. A +1,5R mueve el stop a breakeven.</div>
+        <div>Riesgo</div><div><span class="mono">1%</span> por operación. Máximo 2 abiertas. EURUSD corto y USDJPY largo son la misma apuesta (USD fuerte): juntas, como mucho 1,5%.</div>
+        <div>Prohibido</div><div>Operar contra el sesgo. Entrar en los 30 minutos previos a la Fed, el IPC o el informe de empleo. Mover el stop en contra. Abrir una operación por aburrimiento.</div>
+      </div>
+      <div class="ticket-foot">Probé una versión mecánica de este setup en EURUSD, USDJPY y oro: sesgo con tendencia, bono a 10 años y VIX; toque de la media de 20; cierre por encima del máximo del día anterior; objetivo 2,5R. De 2005 a 2015 empató (PF 1,00). De 2016 a 2026 ganó +0,20R por operación (PF 1,38), casi todo gracias al oro. En los demás pares perdió. Es una base razonable, no una ventaja demostrada: tu criterio tiene que sumar, y eso solo lo dice el <a href="#diario">diario</a>.</div>
+    </article>
+  </div>
+
+  <div class="stack">
+    <h3>Reglas de la cuenta</h3>
+    <div class="tbl"><table><tbody>
+      <tr><td>Riesgo abierto total</td><td>Máximo <span class="mono">3%</span> sumando todo lo abierto. El límite diario es 5%: deja colchón para gaps.</td></tr>
+      <tr><td>Día malo</td><td>Si el día va <span class="mono">−2,5%</span>, no abres nada más hasta el día siguiente (6:00 pm ET).</td></tr>
+      <tr><td>Racha mala</td><td>Si caes un <span class="mono">4%</span> desde el máximo de la cuenta, el riesgo baja a la mitad hasta recuperar un 2%.</td></tr>
+      <tr><td>Fase 2</td><td>Las mismas reglas. No tienes prisa: no hay plazo.</td></tr>
+      <tr><td>Cuenta financiada</td><td>Setup A al 0,5% y setup B al 0,75%. Cobra cada mes para bajar el riesgo de perderla.</td></tr>
+    </tbody></table></div>
+  </div>
+</section>
+
+<section id="macro">
+  <div class="sec-head"><div class="eyebrow">Contexto a 9-nov-2026</div><h2>Macro: lo que mueve tus seis mercados</h2></div>
+  <div class="tbl"><table>
+    <tbody>
+      <tr><td><strong>Elecciones</strong></td><td>Los demócratas ganan la Cámara y el Senado; todavía quedan escaños por asignar. Con Trump en la Casa Blanca habrá gobierno dividido: más bloqueo legislativo, menos estímulo fiscal nuevo y más investigaciones.</td></tr>
+      <tr><td><strong>Reacción</strong></td><td>El Nasdaq Composite subió un 1,44% el 4-nov, cayó un 5,5% el 5-nov y entró en corrección, y rebotó un 1,1% el 6-nov. La caída vino del miedo a que se frenen los centros de datos de IA y de una nota de Citrini Research sobre el fin del "AI trade".</td></tr>
+      <tr><td><strong>Fed</strong></td><td>Mantuvo los tipos en 3,75–4,00% el 28-oct, con 10 votos contra 2: los otros dos querían subir. Los mercados de predicción dan un ~77% de probabilidad de <strong>subida</strong> de 25 pb el 9 de diciembre.</td></tr>
+      <tr><td><strong>Dólar y bonos</strong></td><td>DXY en <span class="mono">102,2</span>, cerca de su máximo de 52 semanas. Bono a 10 años al <span class="mono">4,86%</span>. VIX en <span class="mono">25,6</span>.</td></tr>
+      <tr><td><strong>Oro</strong></td><td>Alrededor de <span class="mono">4.100</span>, un 23% por debajo de su máximo de 5.318 y por debajo de la media de 200. La subida de tipos le juega en contra.</td></tr>
+      <tr><td><strong>USDJPY</strong></td><td><span class="mono">158,3</span>, sin tendencia. Japón intervino cerca de 160 en 2024: ahí hay techo por riesgo de intervención.</td></tr>
+    </tbody>
+  </table></div>
+
+  <div class="stack">
+    <h3>Ejemplo de marcador del domingo (semana del 9-nov)</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Mercado</th><th class="n">Tipos</th><th class="n">Tendencia</th><th class="n">Riesgo</th><th class="n">Suma</th><th>Setup B esta semana</th></tr></thead>
+      <tbody>
+        <tr><td class="mono">EURUSD</td><td class="n">0</td><td class="n">−1</td><td class="n">−1</td><td class="n neg">−2</td><td><span class="pill l">solo cortos</span> Precio en 1,1156, cerca de mínimos de 52 semanas.</td></tr>
+        <tr><td class="mono">USDJPY</td><td class="n">0</td><td class="n">0</td><td class="n">−1</td><td class="n">−1</td><td><span class="pill a">no operar</span></td></tr>
+        <tr><td class="mono">XAUUSD</td><td class="n">0</td><td class="n">−1</td><td class="n">+1</td><td class="n">0</td><td><span class="pill a">no operar</span></td></tr>
+      </tbody>
+      <caption>Tipos en 0 esta semana porque las señales se contradicen: la Fed apunta a subir, pero el bono a 10 años ha bajado 0,37 puntos en un mes. Es un ejemplo de cómo se rellena el marcador, no una señal de entrada: falta la zona y el gatillo.</caption>
+    </table></div>
+  </div>
+</section>
+
+<section id="nasdaq">
+  <div class="sec-head"><div class="eyebrow">Tu tesis</div><h2>Nasdaq: ¿acumulación o distribución?</h2></div>
+  <p>Tienes razón en que hubo seis meses de rango. Del 1 de mayo al 31 de octubre, el Nasdaq-100 se movió entre 27.176 y 31.361. El problema es por dónde ha salido. El 5 de noviembre cerró en <span class="mono">26.630</span>, por debajo del suelo del rango y de su media de 200 días (<span class="mono">27.984</span>). Cuando un rango se rompe hacia abajo, se parece más a distribución que a acumulación. La excepción es que el precio vuelva a meterse dentro enseguida, lo que en Wyckoff se llama un <em>spring</em>.</p>
+
+  <div class="figure">
+    <div class="eyebrow">Nasdaq-100 (NDX), cierre diario</div>
+    <div class="chartwrap"><svg viewBox="0 0 640 310" role="img" aria-labelledby="ndxT ndxD" class="chart">
+<title id="ndxT">Nasdaq-100 diario, octubre 2025 a noviembre 2026</title>
+<desc id="ndxD">El índice sube de 23.700 a 30.300 entre abril y mayo de 2026, se mueve en un rango entre 27.176 y 31.361 de mayo a octubre y el 5 de noviembre cierra en 26.630, por debajo del rango y de su media de 200 días.</desc>
+<line x1="54" x2="628" y1="280.0" y2="280.0" class="grid"/>
+<text x="46" y="284.0" class="lbl" text-anchor="end">22.000</text>
+<line x1="54" x2="628" y1="227.6" y2="227.6" class="grid"/>
+<text x="46" y="231.6" class="lbl" text-anchor="end">24.000</text>
+<line x1="54" x2="628" y1="175.2" y2="175.2" class="grid"/>
+<text x="46" y="179.2" class="lbl" text-anchor="end">26.000</text>
+<line x1="54" x2="628" y1="122.8" y2="122.8" class="grid"/>
+<text x="46" y="126.8" class="lbl" text-anchor="end">28.000</text>
+<line x1="54" x2="628" y1="70.4" y2="70.4" class="grid"/>
+<text x="46" y="74.4" class="lbl" text-anchor="end">30.000</text>
+<line x1="54" x2="628" y1="18.0" y2="18.0" class="grid"/>
+<text x="46" y="22.0" class="lbl" text-anchor="end">32.000</text>
+<rect x="357.5" y="34.7" width="262.0" height="109.6" class="band"/>
+<text x="619.4" y="27.7" class="lbl strong" text-anchor="end">Rango may–oct: 27.176–31.361 · máx. 31.224 (6-oct)</text>
+<line x1="54.0" x2="54.0" y1="280" y2="284" class="axis"/>
+<text x="54.0" y="298" class="lbl" text-anchor="middle">oct 25</text>
+<line x1="98.4" x2="98.4" y1="280" y2="284" class="axis"/>
+<line x1="141.3" x2="141.3" y1="280" y2="284" class="axis"/>
+<text x="141.3" y="298" class="lbl" text-anchor="middle">dic</text>
+<line x1="185.7" x2="185.7" y1="280" y2="284" class="axis"/>
+<line x1="230.1" x2="230.1" y1="280" y2="284" class="axis"/>
+<text x="230.1" y="298" class="lbl" text-anchor="middle">feb 26</text>
+<line x1="270.1" x2="270.1" y1="280" y2="284" class="axis"/>
+<line x1="314.5" x2="314.5" y1="280" y2="284" class="axis"/>
+<text x="314.5" y="298" class="lbl" text-anchor="middle">abr</text>
+<line x1="357.5" x2="357.5" y1="280" y2="284" class="axis"/>
+<line x1="401.8" x2="401.8" y1="280" y2="284" class="axis"/>
+<text x="401.8" y="298" class="lbl" text-anchor="middle">jun</text>
+<line x1="444.8" x2="444.8" y1="280" y2="284" class="axis"/>
+<line x1="489.2" x2="489.2" y1="280" y2="284" class="axis"/>
+<text x="489.2" y="298" class="lbl" text-anchor="middle">ago</text>
+<line x1="533.5" x2="533.5" y1="280" y2="284" class="axis"/>
+<line x1="576.5" x2="576.5" y1="280" y2="284" class="axis"/>
+<text x="576.5" y="298" class="lbl" text-anchor="middle">oct</text>
+<line x1="620.8" x2="620.8" y1="280" y2="284" class="axis"/>
+<line x1="54" x2="628" y1="280" y2="280" class="axis"/>
+<path class="sma" d="M54.0,289.1 L55.4,288.7 L56.9,288.3 L61.2,287.9 L62.6,287.5 L64.0,287.0 L65.5,286.5 L66.9,286.1 L71.2,285.7 L72.6,285.3 L74.0,284.9 L75.5,284.5 L76.9,284.0 L81.2,283.5 L82.6,283.0 L84.1,282.5 L85.5,282.0 L86.9,281.5 L91.2,280.9 L92.6,280.2 L94.1,279.5 L95.5,278.8 L96.9,278.2 L101.2,277.6 L102.7,277.1 L104.1,276.6 L105.5,276.1 L107.0,275.7 L111.3,275.2 L112.7,274.6 L114.1,274.1 L115.6,273.6 L117.0,273.2 L121.3,272.7 L122.7,272.3 L124.1,271.9 L125.6,271.6 L127.0,271.3 L131.3,270.8 L132.7,270.4 L134.2,269.9 L137.0,269.5 L141.3,269.0 L142.7,268.6 L144.2,268.1 L145.6,267.7 L147.0,267.2 L151.3,266.7 L152.8,266.1 L154.2,265.5 L155.6,264.9 L157.1,264.3 L161.4,263.7 L162.8,263.1 L164.2,262.6 L165.7,262.0 L167.1,261.3 L171.4,260.6 L172.8,259.8 L174.2,259.0 L177.1,258.2 L181.4,257.4 L182.8,256.6 L184.3,255.9 L187.1,255.1 L191.4,254.4 L192.8,253.6 L194.3,252.8 L195.7,252.1 L197.1,251.4 L201.4,250.7 L202.9,249.9 L204.3,249.1 L205.7,248.2 L207.2,247.4 L212.9,246.7 L214.3,245.8 L215.8,244.8 L217.2,243.7 L221.5,242.6 L222.9,241.7 L224.3,240.7 L225.8,239.7 L227.2,238.9 L231.5,238.0 L232.9,237.0 L234.4,236.2 L235.8,235.3 L237.2,234.4 L241.5,233.5 L242.9,232.8 L244.4,232.0 L245.8,231.3 L247.2,230.6 L253.0,230.0 L254.4,229.3 L255.8,228.7 L257.3,228.0 L261.6,227.4 L263.0,226.7 L264.4,226.0 L265.9,225.4 L267.3,224.8 L271.6,224.3 L273.0,223.9 L274.4,223.4 L275.9,222.9 L277.3,222.5 L281.6,222.0 L283.0,221.5 L284.5,221.0 L285.9,220.5 L287.3,220.1 L291.6,219.7 L293.0,219.3 L294.5,218.9 L295.9,218.5 L297.3,218.2 L301.6,217.9 L303.1,217.5 L304.5,217.2 L305.9,217.0 L307.4,216.8 L311.7,216.7 L313.1,216.5 L314.5,216.1 L316.0,215.9 L321.7,215.5 L323.1,215.2 L324.5,214.8 L326.0,214.4 L327.4,214.0 L331.7,213.6 L333.1,213.1 L334.6,212.6 L336.0,212.2 L337.4,211.6 L341.7,211.1 L343.1,210.6 L344.6,210.1 L346.0,209.5 L347.4,209.0 L351.7,208.4 L353.2,207.8 L354.6,207.2 L356.0,206.6 L357.5,206.0 L361.8,205.4 L363.2,204.8 L364.6,204.1 L366.0,203.3 L367.5,202.5 L371.8,201.7 L373.2,201.0 L374.6,200.2 L376.1,199.4 L377.5,198.6 L381.8,197.9 L383.2,197.1 L384.7,196.3 L386.1,195.4 L387.5,194.6 L393.2,193.8 L394.7,192.9 L396.1,192.1 L397.5,191.2 L401.8,190.3 L403.3,189.4 L404.7,188.5 L406.1,187.7 L407.6,186.9 L411.9,186.1 L413.3,185.3 L414.7,184.7 L416.1,183.9 L417.6,183.1 L421.9,182.2 L423.3,181.4 L424.7,180.5 L426.2,179.6 L431.9,178.7 L433.3,177.9 L434.8,177.2 L436.2,176.5 L437.6,175.8 L441.9,175.0 L443.3,174.2 L444.8,173.4 L446.2,172.8 L451.9,172.1 L453.4,171.4 L454.8,170.8 L456.2,170.1 L457.7,169.5 L462.0,168.8 L463.4,168.2 L464.8,167.5 L466.2,166.9 L467.7,166.4 L472.0,165.9 L473.4,165.3 L474.8,164.8 L476.3,164.3 L477.7,163.9 L482.0,163.5 L483.4,163.1 L484.9,162.8 L486.3,162.3 L487.7,161.9 L492.0,161.3 L493.4,160.7 L494.9,160.0 L496.3,159.4 L497.7,158.8 L502.0,158.2 L503.5,157.6 L504.9,157.0 L506.3,156.4 L507.8,155.9 L512.1,155.3 L513.5,154.9 L514.9,154.4 L516.3,154.0 L517.8,153.5 L522.1,153.1 L523.5,152.6 L524.9,152.1 L526.4,151.5 L527.8,151.0 L532.1,150.4 L533.5,150.0 L535.0,149.4 L536.4,148.8 L537.8,148.2 L543.5,147.6 L545.0,146.9 L546.4,146.3 L547.8,145.6 L552.1,145.1 L553.6,144.5 L555.0,144.1 L556.4,143.5 L557.9,143.0 L562.2,142.3 L563.6,141.6 L565.0,141.0 L566.4,140.4 L567.9,139.7 L572.2,139.1 L573.6,138.5 L575.0,137.9 L576.5,137.2 L577.9,136.5 L582.2,135.7 L583.6,134.8 L585.1,134.0 L586.5,133.3 L587.9,132.6 L592.2,131.9 L593.6,131.3 L595.1,130.7 L596.5,130.2 L597.9,129.7 L602.2,129.1 L603.7,128.5 L605.1,128.0 L606.5,127.5 L608.0,127.1 L612.3,126.6 L613.7,126.1 L615.1,125.6 L616.5,125.1 L618.0,124.7 L622.3,124.4 L623.7,124.0 L625.1,123.6 L626.6,123.4 L628.0,123.2"/>
+<path class="price" d="M54.0,206.6 L55.4,204.2 L56.9,207.0 L61.2,202.0 L62.6,205.6 L64.0,197.8 L65.5,198.8 L66.9,221.8 L71.2,207.9 L72.6,212.4 L74.0,208.1 L75.5,210.4 L76.9,206.2 L81.2,197.7 L82.6,198.1 L84.1,204.6 L85.5,198.8 L86.9,192.0 L91.2,179.9 L92.6,174.9 L94.1,172.1 L95.5,182.1 L96.9,178.9 L101.2,175.9 L102.7,190.0 L104.1,185.2 L105.5,198.0 L107.0,199.8 L111.3,185.4 L112.7,187.4 L114.1,187.8 L115.6,201.6 L117.0,201.2 L121.3,206.6 L122.7,214.4 L124.1,210.8 L125.6,226.2 L127.0,221.3 L131.3,204.7 L132.7,200.9 L134.2,195.2 L137.0,190.0 L141.3,192.4 L142.7,186.8 L144.2,185.5 L145.6,186.2 L147.0,183.3 L151.3,184.9 L152.8,183.9 L154.2,181.1 L155.6,183.4 L157.1,196.2 L161.4,199.6 L162.8,197.9 L164.2,210.6 L165.7,200.9 L167.1,192.3 L171.4,189.3 L172.8,186.0 L174.2,184.2 L177.1,184.5 L181.4,187.6 L182.8,189.3 L184.3,194.9 L187.1,196.0 L191.4,190.9 L192.8,184.6 L194.3,184.3 L195.7,188.1 L197.1,181.3 L201.4,180.8 L202.9,182.0 L204.3,189.2 L205.7,187.1 L207.2,187.5 L212.9,201.7 L214.3,192.8 L215.8,187.8 L217.2,185.5 L221.5,182.7 L222.9,176.8 L224.3,174.6 L225.8,178.2 L227.2,186.9 L231.5,182.0 L232.9,192.5 L234.4,204.2 L235.8,213.2 L237.2,199.4 L241.5,194.4 L242.9,198.1 L244.4,196.1 L245.8,209.6 L247.2,208.4 L253.0,209.2 L254.4,204.0 L255.8,206.7 L257.3,201.1 L261.6,209.0 L263.0,202.0 L264.4,192.8 L265.9,200.5 L267.3,202.4 L271.6,201.6 L273.0,208.7 L274.4,198.9 L275.9,200.9 L277.3,210.8 L281.6,202.3 L283.0,202.5 L284.5,202.3 L285.9,213.6 L287.3,217.6 L291.6,210.4 L293.0,207.2 L294.5,216.5 L295.9,218.3 L297.3,230.3 L301.6,222.7 L303.1,227.5 L304.5,223.3 L305.9,238.4 L307.4,250.3 L311.7,255.0 L313.1,234.4 L314.5,227.1 L316.0,226.4 L321.7,222.6 L323.1,222.3 L324.5,203.9 L326.0,199.2 L327.4,198.4 L331.7,191.3 L333.1,179.3 L334.6,169.8 L336.0,166.5 L337.4,157.6 L341.7,159.7 L343.1,162.6 L344.6,150.6 L346.0,154.7 L347.4,141.0 L351.7,141.0 L353.2,148.2 L354.6,144.1 L356.0,137.2 L357.5,130.4 L361.8,131.9 L363.2,122.4 L364.6,107.1 L366.0,108.0 L367.5,90.4 L371.8,88.2 L373.2,94.9 L374.6,87.0 L376.1,81.4 L377.5,93.3 L381.8,96.7 L383.2,101.3 L384.7,88.8 L386.1,87.2 L387.5,84.0 L393.2,70.4 L394.7,71.1 L396.1,64.5 L397.5,61.7 L401.8,56.9 L403.3,53.1 L404.7,55.4 L406.1,59.7 L407.6,97.7 L411.9,85.7 L413.3,94.4 L414.7,109.5 L416.1,84.9 L417.6,79.9 L421.9,56.1 L423.3,71.2 L424.7,79.0 L426.2,59.8 L431.9,61.3 L433.3,87.5 L434.8,90.8 L436.2,85.1 L437.6,93.5 L441.9,76.3 L443.3,63.2 L444.8,75.4 L446.2,88.0 L451.9,78.3 L453.4,92.1 L454.8,90.0 L456.2,77.5 L457.7,75.0 L462.0,89.7 L463.4,81.2 L464.8,83.4 L466.2,95.9 L467.7,107.3 L472.0,107.0 L473.4,92.5 L474.8,96.6 L476.3,110.9 L477.7,119.4 L482.0,121.8 L483.4,129.0 L484.9,144.0 L486.3,120.0 L487.7,115.6 L492.0,102.4 L493.4,77.4 L494.9,83.8 L496.3,86.8 L497.7,77.7 L502.0,80.3 L503.5,82.8 L504.9,77.1 L506.3,68.2 L507.8,69.2 L512.1,70.5 L513.5,83.7 L514.9,85.4 L516.3,91.0 L517.8,88.5 L522.1,96.0 L523.5,91.1 L524.9,90.7 L526.4,79.8 L527.8,85.2 L532.1,84.6 L533.5,94.6 L535.0,92.8 L536.4,84.0 L537.8,82.3 L543.5,83.3 L545.0,85.6 L546.4,93.9 L547.8,86.9 L552.1,93.3 L553.6,98.2 L555.0,98.0 L556.4,84.9 L557.9,79.7 L562.2,57.8 L563.6,51.2 L565.0,58.1 L566.4,57.9 L567.9,54.5 L572.2,63.1 L573.6,61.5 L575.0,59.7 L576.5,57.3 L577.9,49.2 L582.2,42.2 L583.6,38.3 L585.1,40.0 L586.5,51.4 L587.9,47.3 L592.2,53.0 L593.6,55.5 L595.1,71.7 L596.5,72.1 L597.9,91.7 L602.2,82.7 L603.7,83.8 L605.1,75.0 L606.5,97.7 L608.0,97.7 L612.3,89.4 L613.7,79.5 L615.1,75.3 L616.5,86.1 L618.0,112.7 L622.3,123.1 L623.7,118.1 L625.1,111.3 L626.6,158.7 L628.0,149.3"/>
+<circle cx="583.6" cy="38.3" r="3.5" class="dot"/>
+<circle cx="626.6" cy="158.7" r="4" class="dot loss"/>
+<line x1="626.6" y1="163.7" x2="620.6" y2="181.5" class="axis"/>
+<text x="618.6" y="193.5" class="lbl lossT" text-anchor="end">5-nov: 26.630, rompe el rango</text>
+<text x="212.9" y="272.7" class="lbl smaT" text-anchor="start">media de 200 días</text>
+</svg></div>
+    <div class="legend"><span><i></i>precio</span><span><i class="sma"></i>media de 200 días</span><span><i class="band"></i>rango mayo–octubre</span></div>
+  </div>
+
+  <div class="tbl"><table>
+    <thead><tr><th>Escenario</th><th>Qué tiene que pasar</th><th>Qué haces</th></tr></thead>
+    <tbody>
+      <tr><td><span class="pill g">Spring alcista</span></td><td>Cierre diario de vuelta por encima de <span class="mono">27.200</span> (dentro del rango) y después por encima de la media de 200 (~<span class="mono">28.000</span>).</td><td>Tu tesis gana peso. El setup A se reactiva en US100 y puedes buscar largos en US100.</td></tr>
+      <tr><td><span class="pill l">Distribución</span></td><td>Cierres por debajo de <span class="mono">26.600</span>, el mínimo del 5-nov.</td><td>Nada de largos en US100. El siguiente soporte es la zona de 24.400–26.100, el rango de diciembre a febrero.</td></tr>
+    </tbody>
+  </table></div>
+  <p>A favor de tu idea a medio plazo: en las cinco elecciones de mitad de mandato desde 2006, el NDX estaba más alto 12 meses después en todas, entre un +9,5% y un +37%. Son solo cinco casos. Sirve de contexto, no de señal. En la apertura del domingo, el futuro del Nasdaq estaba en ~27.240, justo en el suelo del rango. Esta semana se decide.</p>
+</section>
+
+<section id="rutina">
+  <div class="sec-head"><div class="eyebrow">Tiempo</div><h2>Tu semana: unas 2,5 horas</h2></div>
+  <div class="sched">
+    <div class="t">Domingo, tarde</div><div class="d">Calendario de la semana (Fed, IPC, empleo, BCE, Banco de Japón). Rellena el marcador. Marca niveles diarios y deja alertas en TradingView.</div><div class="m">40 min</div>
+    <div class="t">L–V · 3:50 pm</div><div class="d">Setup A: revisa el RSI(2) y la media de 200 en US500, US30 y US100. Entra o sal antes de las 3:58.</div><div class="m">5 min</div>
+    <div class="t">L–V · 5:05 pm</div><div class="d">Cierre diario de forex: revisa zonas del setup B, gatillos en 4H y gestión de lo abierto.</div><div class="m">10 min</div>
+    <div class="t">Cuando suene</div><div class="d">Alertas de TradingView en el móvil cuando el precio llega a tu zona. No hace falta estar mirando la pantalla.</div><div class="m">2–3 min</div>
+    <div class="t">Viernes</div><div class="d">Apunta todo en el diario y revisa si respetaste las reglas.</div><div class="m">20 min</div>
+  </div>
+</section>
+
+<section id="tradingview">
+  <div class="sec-head"><div class="eyebrow">Herramientas</div><h2>Opera en TradingView; MT5 de reserva</h2></div>
+  <p>Mi recomendación es hacerlo todo en TradingView. Desde abril de 2026, FTMO US deja operar ahí con el perfil de bróker de OANDA. Así la alerta, el indicador y la orden están en la misma pantalla del iPad, los niveles del indicador son los de tu orden y no copias precios a mano. MetaTrader 5 queda de reserva por si un día falla la conexión.</p>
+  <ul class="plain">
+    <li><strong>Cómo conectarlo:</strong> abre el panel de trading del gráfico, elige OANDA y "Continuar con el perfil de FTMO". Te pedirá entrar en tu área de cliente de FTMO. La conexión no se comparte entre dispositivos: hazla en el iPad y en el móvil por separado.</li>
+    <li><strong>Pruébalo en la Free Trial:</strong> comprueba que puedes poner stop y objetivo en la misma orden en índices, pares y oro antes de pagar nada.</li>
+    <li><strong>Necesitas 4 alertas.</strong> El plan gratuito de TradingView da muy pocas alertas y 2 indicadores por gráfico. El plan Essential (unos 13–15 $ al mes) da 20 alertas y 2 gráficos por pestaña. En los planes bajos las alertas caducan: renuévalas cuando TradingView avise.</li>
+    <li><strong>Tu diario automático:</strong> FTMO guarda todas tus operaciones en MetriX, en el área de cliente. Exporta el CSV desde Trading Journal y súbelo al <a href="#diario">diario</a> de esta página.</li>
+  </ul>
+  <div class="note info"><strong>Si un día operas en MT5:</strong> pon los niveles con el precio de MT5. Si el indicador dice stop en 1,1270 y MT5 cotiza 2 pips por encima de TradingView, mueve stop y objetivo 2 pips. En cortos el stop salta con el precio de compra (Ask): súmale el spread.</div>
+
+  <div class="stack">
+    <h3>Layout limpio en 15 minutos</h3>
+    <p class="muted">No puedo entrar en tu cuenta de TradingView, así que el layout lo montas tú con estos pasos. Reutilizan el de "Deal and Trades".</p>
+    <ol class="steps">
+      <li>Abre el layout "Deal and Trades". Arriba a la derecha, en el nombre del layout, elige "Cambiar nombre" y ponle "PSF Swing". Si "Deal and Trades" es un indicador y no un layout, quítalo con la papelera de la leyenda.</li>
+      <li>Límpialo. Clic derecho en el gráfico y elimina todos los dibujos e indicadores, el volumen incluido. El árbol de objetos sirve para comprobar que no queda nada.</li>
+      <li>Con el icono de cuadrícula de la barra superior, divide en dos gráficos uno al lado del otro. Desactiva la sincronización de símbolo y deja la del cursor.</li>
+      <li>Gráfico izquierdo: <span class="mono">OANDA:SPX500USD</span> en diario. Gráfico derecho: <span class="mono">OANDA:EURUSD</span> en 4 horas.</li>
+      <li>Haz clic en la hora de abajo a la derecha y elige Nueva York (UTC−5). Así la vela diaria cierra a las 5 pm, igual que en MT5.</li>
+      <li>En la configuración del gráfico, quita los botones de compra y venta y deja en la línea de estado solo el nombre y los valores de los indicadores.</li>
+      <li>Abre el Editor de Pine, crea un indicador nuevo, borra lo que trae, pega PSF A y guárdalo. Con el gráfico izquierdo activo pulsa "Añadir al gráfico". Repite con PSF B en el gráfico derecho.</li>
+      <li>Crea una lista de seguimiento "PSF" con <span class="mono">OANDA:SPX500USD, OANDA:US30USD, OANDA:NAS100USD, OANDA:EURUSD, OANDA:USDJPY, OANDA:XAUUSD, TVC:US10Y</span> y <span class="mono">TVC:VIX</span>.</li>
+      <li>Guarda con Ctrl+S y deja activado el guardado automático.</li>
+    </ol>
+  </div>
+
+  <div class="stack">
+    <h3>Los dos indicadores</h3>
+    <details class="code">
+      <summary>PSF A · Dip en tendencia<span>gráfico diario · unas 150 líneas</span></summary>
+      <div class="codebar"><span>Pine Script v5</span><button type="button" class="ghost small" data-copy="pineA">Copiar código</button></div>
+      <pre class="pine" id="pineA">//@version=5
+// PSF A · Dip en tendencia
+// Plan Swing Fondeo. Úsalo en gráfico DIARIO de US500, US30 o US100 (feed OANDA).
+// Señal: precio por encima de la media de 200 y RSI(2) por debajo de 10.
+// Entrada antes del cierre (3:50-3:58 pm Nueva York). Stop 2,5 x ATR(14).
+// Salida: primer cierre por encima de la media de 5, o a las 7 sesiones.
+// Alertas: crea UNA alerta con &quot;Cualquier llamada a la función alert()&quot;.
+// El escáner vigila los tres índices a la vez, sea cual sea el gráfico.
+indicator(&quot;PSF A · Dip en tendencia&quot;, shorttitle=&quot;PSF A&quot;, overlay=true, max_labels_count=200, max_lines_count=100)
+
+// ───────── Parámetros
+grpR = &quot;Reglas&quot;
+lenTrend = input.int(200, &quot;Media de tendencia&quot;, minval=20, group=grpR)
+lenExit  = input.int(5, &quot;Media de salida&quot;, minval=2, group=grpR)
+lenRsi   = input.int(2, &quot;RSI periodos&quot;, minval=2, group=grpR)
+rsiMax   = input.float(10.0, &quot;RSI por debajo de&quot;, minval=1.0, maxval=50.0, group=grpR)
+lenAtr   = input.int(14, &quot;ATR periodos&quot;, minval=2, group=grpR)
+atrMult  = input.float(2.5, &quot;Stop = ATR x&quot;, minval=0.5, step=0.1, group=grpR)
+maxDays  = input.int(7, &quot;Sesiones máximas&quot;, minval=1, group=grpR)
+
+grpW = &quot;Ventana de alertas (hora de Nueva York)&quot;
+winFrom = input.int(1545, &quot;Desde (HHMM)&quot;, minval=0, maxval=2359, group=grpW)
+winTo   = input.int(1558, &quot;Hasta (HHMM)&quot;, minval=0, maxval=2359, group=grpW)
+
+grpS = &quot;Escáner&quot;
+sym1 = input.symbol(&quot;OANDA:SPX500USD&quot;, &quot;Índice 1&quot;, group=grpS)
+sym2 = input.symbol(&quot;OANDA:US30USD&quot;, &quot;Índice 2&quot;, group=grpS)
+sym3 = input.symbol(&quot;OANDA:NAS100USD&quot;, &quot;Índice 3&quot;, group=grpS)
+
+grpV = &quot;Vista&quot;
+showMAs   = input.bool(true, &quot;Medias de 200 y 5&quot;, group=grpV)
+showTable = input.bool(true, &quot;Tabla del escáner&quot;, group=grpV)
+tblPos    = input.string(&quot;Abajo a la derecha&quot;, &quot;Posición de la tabla&quot;, options=[&quot;Arriba a la derecha&quot;, &quot;Abajo a la derecha&quot;, &quot;Abajo a la izquierda&quot;, &quot;Arriba a la izquierda&quot;], group=grpV)
+
+grpC = &quot;Colores&quot;
+cMA200 = input.color(color.new(color.gray, 20), &quot;Media 200&quot;, group=grpC)
+cMA5   = input.color(color.new(color.orange, 20), &quot;Media 5&quot;, group=grpC)
+cBuy   = input.color(color.new(color.green, 10), &quot;Señal de compra&quot;, group=grpC)
+cExit  = input.color(color.new(color.teal, 10), &quot;Salida&quot;, group=grpC)
+cStop  = input.color(color.new(color.red, 10), &quot;Stop&quot;, group=grpC)
+
+// ───────── Cálculo diario
+f_daily() =&gt;
+    s200 = ta.sma(close, lenTrend)
+    s5   = ta.sma(close, lenExit)
+    r    = ta.rsi(close, lenRsi)
+    a    = ta.atr(lenAtr)
+    sig  = close &gt; s200 and r &lt; rsiMax
+    bs   = ta.barssince(sig)
+    [close, s200, s5, r, a, sig, bs]
+
+[cD, s200D, s5D, rD, aD, sigD, bsD] = request.security(syminfo.tickerid, &quot;D&quot;, f_daily())
+[c1, t1, e1, r1, a1, g1, b1] = request.security(sym1, &quot;D&quot;, f_daily())
+[c2, t2, e2, r2, a2, g2, b2] = request.security(sym2, &quot;D&quot;, f_daily())
+[c3, t3, e3, r3, a3, g3, b3] = request.security(sym3, &quot;D&quot;, f_daily())
+
+plot(showMAs ? s200D : na, &quot;Media 200&quot;, color=cMA200, linewidth=2)
+plot(showMAs ? s5D : na, &quot;Media 5&quot;, color=cMA5, linewidth=1)
+
+// ───────── Operación simulada en el gráfico (solo velas cerradas, gráfico diario)
+var bool  inPos   = false
+var float stopLvl = na
+var int   held    = 0
+var line  stopLn  = na
+
+if barstate.isconfirmed and timeframe.isdaily
+    bool exitedNow = false
+    if inPos
+        held += 1
+        bool exStop = low &lt;= stopLvl
+        bool exRule = close &gt; s5D
+        bool exTime = held &gt;= maxDays
+        if exStop or exRule or exTime
+            string why = exStop ? &quot;Stop&quot; : exRule ? &quot;Salida&quot; : &quot;Tiempo&quot;
+            label.new(bar_index, high, why, style=label.style_label_down, color=exStop ? cStop : cExit, textcolor=color.white, size=size.tiny)
+            if not na(stopLn)
+                line.set_x2(stopLn, bar_index)
+            inPos := false
+            exitedNow := true
+        else
+            if not na(stopLn)
+                line.set_x2(stopLn, bar_index + 1)
+    if not inPos and not exitedNow and sigD
+        inPos   := true
+        held    := 0
+        stopLvl := close - atrMult * aD
+        label.new(bar_index, low, &quot;A ▲&quot;, style=label.style_label_up, color=cBuy, textcolor=color.white, size=size.tiny)
+        stopLn  := line.new(bar_index, stopLvl, bar_index + 1, stopLvl, color=cStop, style=line.style_dashed, width=1)
+
+// ───────── Alertas del escáner (tiempo real, dentro de la ventana)
+string NY = &quot;America/New_York&quot;
+int nowMin  = hour(timenow, NY) * 60 + minute(timenow, NY)
+int fromMin = int(winFrom / 100) * 60 + winFrom % 100
+int toMin   = int(winTo / 100) * 60 + winTo % 100
+int dowNY   = dayofweek(timenow, NY)
+bool inWindow = barstate.isrealtime and dowNY &gt;= dayofweek.monday and dowNY &lt;= dayofweek.friday and nowMin &gt;= fromMin and nowMin &lt;= toMin
+int todayNY = year(timenow, NY) * 10000 + month(timenow, NY) * 100 + dayofmonth(timenow, NY)
+
+f_name(string s) =&gt;
+    str.replace_all(str.replace_all(s, &quot;OANDA:&quot;, &quot;&quot;), &quot;TVC:&quot;, &quot;&quot;)
+
+f_eval(string s, float c, float t, float e, float r, float a, bool g, int bs, int sentBuy, int sentExit) =&gt;
+    string msg = &quot;&quot;
+    int nb = sentBuy
+    int nx = sentExit
+    int since = nz(bs, 9999)
+    if inWindow and not na(c)
+        if g and sentBuy != todayNY
+            msg := &quot;PSF A · COMPRA &quot; + f_name(s) + &quot; · precio &quot; + str.tostring(c, &quot;#.##&quot;) + &quot; · stop &quot; + str.tostring(c - atrMult * a, &quot;#.##&quot;) + &quot; · RSI(2) &quot; + str.tostring(r, &quot;#.#&quot;)
+            nb := todayNY
+        else if not g and since &gt;= 1 and since &lt;= maxDays and (c &gt; e or since == maxDays) and sentExit != todayNY
+            msg := &quot;PSF A · SALIDA &quot; + f_name(s) + (c &gt; e ? &quot; · cierra por encima de la media de 5&quot; : &quot; · séptima sesión, cierre por tiempo&quot;) + &quot; · precio &quot; + str.tostring(c, &quot;#.##&quot;)
+            nx := todayNY
+    [msg, nb, nx]
+
+varip int sentB1 = 0
+varip int sentX1 = 0
+varip int sentB2 = 0
+varip int sentX2 = 0
+varip int sentB3 = 0
+varip int sentX3 = 0
+
+[m1, nb1, nx1] = f_eval(sym1, c1, t1, e1, r1, a1, g1, b1, sentB1, sentX1)
+[m2, nb2, nx2] = f_eval(sym2, c2, t2, e2, r2, a2, g2, b2, sentB2, sentX2)
+[m3, nb3, nx3] = f_eval(sym3, c3, t3, e3, r3, a3, g3, b3, sentB3, sentX3)
+sentB1 := nb1
+sentX1 := nx1
+sentB2 := nb2
+sentX2 := nx2
+sentB3 := nb3
+sentX3 := nx3
+if m1 != &quot;&quot;
+    alert(m1, alert.freq_all)
+if m2 != &quot;&quot;
+    alert(m2, alert.freq_all)
+if m3 != &quot;&quot;
+    alert(m3, alert.freq_all)
+
+// ───────── Tabla del escáner
+string tPos = tblPos == &quot;Arriba a la derecha&quot; ? position.top_right : tblPos == &quot;Abajo a la derecha&quot; ? position.bottom_right : tblPos == &quot;Abajo a la izquierda&quot; ? position.bottom_left : position.top_left
+var table tb = table.new(tPos, 4, 4, bgcolor=color.new(chart.bg_color, 0), border_color=color.new(chart.fg_color, 80), border_width=1, frame_color=color.new(chart.fg_color, 70), frame_width=1)
+
+f_row(int row, string s, float c, float t, float r, bool g) =&gt;
+    string st = na(c) ? &quot;sin datos&quot; : g ? &quot;SEÑAL&quot; : c &gt; t ? &quot;en tendencia&quot; : &quot;bajo la 200&quot;
+    color stc = g ? cBuy : (not na(c) and c &gt; t) ? chart.fg_color : cStop
+    table.cell(tb, 0, row, f_name(s), text_color=chart.fg_color, text_size=size.small, text_halign=text.align_left)
+    float pct = (c / t - 1) * 100
+    table.cell(tb, 1, row, na(t) ? &quot;-&quot; : (pct &gt;= 0 ? &quot;+&quot; : &quot;&quot;) + str.tostring(pct, &quot;#.0&quot;) + &quot;%&quot;, text_color=chart.fg_color, text_size=size.small)
+    table.cell(tb, 2, row, na(r) ? &quot;-&quot; : str.tostring(r, &quot;#.0&quot;), text_color=chart.fg_color, text_size=size.small)
+    table.cell(tb, 3, row, st, text_color=stc, text_size=size.small)
+
+if showTable and barstate.islast
+    table.cell(tb, 0, 0, &quot;PSF A&quot;, text_color=chart.fg_color, text_size=size.small, text_halign=text.align_left)
+    table.cell(tb, 1, 0, &quot;vs 200&quot;, text_color=chart.fg_color, text_size=size.small)
+    table.cell(tb, 2, 0, &quot;RSI(2)&quot;, text_color=chart.fg_color, text_size=size.small)
+    table.cell(tb, 3, 0, &quot;estado&quot;, text_color=chart.fg_color, text_size=size.small)
+    f_row(1, sym1, c1, t1, r1, g1)
+    f_row(2, sym2, c2, t2, r2, g2)
+    f_row(3, sym3, c3, t3, r3, g3)</pre>
+    </details>
+    <details class="code">
+      <summary>PSF B · Swing macro<span>gráfico de 4 horas · unas 180 líneas</span></summary>
+      <div class="codebar"><span>Pine Script v5</span><button type="button" class="ghost small" data-copy="pineB">Copiar código</button></div>
+      <pre class="pine" id="pineB">//@version=5
+// PSF B · Swing macro
+// Plan Swing Fondeo. Úsalo en gráfico de 4H de EURUSD, USDJPY o XAUUSD (feed OANDA).
+// 1) Sesgo: tendencia diaria (media de 100 y su pendiente) + bono a 10 años (cambio en 20 días) + VIX.
+//    Suma &gt;= +2: solo largos. Suma &lt;= -2: solo cortos. Si no, no se opera.
+// 2) Zona: la vela de 4H toca la media de 20 diaria (± 0,25 ATR diario).
+// 3) Gatillo: en las 6 velas siguientes, cierre de 4H por encima del máximo (o por debajo del mínimo) de las 5 anteriores.
+// Stop: extremo de las últimas 6 velas ± 0,1 ATR de 4H. Objetivo 2,5R. Breakeven a +1,5R. Máximo 60 velas.
+// Alertas: una alerta por gráfico con &quot;Cualquier llamada a la función alert()&quot;. Se evalúa al cierre de cada vela.
+indicator(&quot;PSF B · Swing macro&quot;, shorttitle=&quot;PSF B&quot;, overlay=true, max_labels_count=300, max_lines_count=300)
+
+// ───────── Parámetros
+grpS = &quot;Sesgo&quot;
+biasMode = input.string(&quot;Automático&quot;, &quot;Sesgo&quot;, options=[&quot;Automático&quot;, &quot;Solo largos&quot;, &quot;Solo cortos&quot;, &quot;No operar&quot;], group=grpS)
+yieldSym = input.symbol(&quot;TVC:US10Y&quot;, &quot;Bono a 10 años de EE. UU.&quot;, group=grpS)
+vixSym   = input.symbol(&quot;TVC:VIX&quot;, &quot;VIX&quot;, group=grpS)
+yThr     = input.float(0.10, &quot;Cambio del bono en 20 días (puntos)&quot;, minval=0.0, step=0.01, group=grpS)
+vixHi    = input.float(20.0, &quot;VIX alto (huida del riesgo)&quot;, group=grpS)
+vixLo    = input.float(15.0, &quot;VIX bajo (apetito por riesgo)&quot;, group=grpS)
+mktType  = input.string(&quot;Automático&quot;, &quot;Tipo de mercado&quot;, options=[&quot;Automático&quot;, &quot;XXX/USD (EURUSD, GBPUSD)&quot;, &quot;USD/JPY o USD/CHF&quot;, &quot;USD/CAD&quot;, &quot;Oro (XAUUSD)&quot;], group=grpS)
+
+grpZ = &quot;Zona y gatillo&quot;
+zoneK    = input.float(0.25, &quot;Margen de la zona (x ATR diario)&quot;, minval=0.0, step=0.05, group=grpZ)
+touchWin = input.int(6, &quot;Velas de 4H para el gatillo&quot;, minval=1, group=grpZ)
+trigLen  = input.int(5, &quot;Ruptura de las últimas N velas&quot;, minval=2, group=grpZ)
+stopLen  = input.int(6, &quot;Stop: extremo de las últimas N velas&quot;, minval=2, group=grpZ)
+stopBuf  = input.float(0.1, &quot;Margen del stop (x ATR de 4H)&quot;, minval=0.0, step=0.05, group=grpZ)
+
+grpG = &quot;Gestión&quot;
+rrTarget = input.float(2.5, &quot;Objetivo (R)&quot;, minval=0.5, step=0.1, group=grpG)
+beAt     = input.float(1.5, &quot;Breakeven a (R)&quot;, minval=0.1, step=0.1, group=grpG)
+minRisk  = input.float(0.3, &quot;Stop mínimo (x ATR diario)&quot;, minval=0.0, step=0.05, group=grpG)
+maxRisk  = input.float(1.5, &quot;Stop máximo (x ATR diario)&quot;, minval=0.1, step=0.05, group=grpG)
+maxBars  = input.int(60, &quot;Velas máximas en la operación&quot;, minval=1, group=grpG)
+
+grpV = &quot;Vista&quot;
+showZone  = input.bool(true, &quot;Banda de la media de 20 diaria&quot;, group=grpV)
+showWeek  = input.bool(true, &quot;Máximo y mínimo de la semana anterior&quot;, group=grpV)
+showTable = input.bool(true, &quot;Tabla de sesgo&quot;, group=grpV)
+tblPos    = input.string(&quot;Arriba a la derecha&quot;, &quot;Posición de la tabla&quot;, options=[&quot;Arriba a la derecha&quot;, &quot;Abajo a la derecha&quot;, &quot;Abajo a la izquierda&quot;, &quot;Arriba a la izquierda&quot;], group=grpV)
+
+grpC = &quot;Colores&quot;
+cLong   = input.color(color.new(color.green, 10), &quot;Largos y objetivo&quot;, group=grpC)
+cShort  = input.color(color.new(color.red, 10), &quot;Cortos y stop&quot;, group=grpC)
+zoneTr  = input.int(85, &quot;Transparencia de la zona (0-100)&quot;, minval=0, maxval=100, group=grpC)
+cZoneLn = input.color(color.new(color.blue, 75), &quot;Borde de la zona&quot;, group=grpC)
+cS20    = input.color(color.new(color.gray, 30), &quot;Media 20 diaria&quot;, group=grpC)
+cWeek   = input.color(color.new(color.gray, 55), &quot;Semana anterior&quot;, group=grpC)
+cEntry  = input.color(color.new(color.gray, 0), &quot;Entrada y breakeven&quot;, group=grpC)
+
+// ───────── Datos diarios y semanales (vela anterior cerrada, sin repintar)
+[dClose, dS20, dS100, dS100p, dAtr] = request.security(syminfo.tickerid, &quot;D&quot;, [close[1], ta.sma(close, 20)[1], ta.sma(close, 100)[1], ta.sma(close, 100)[21], ta.atr(14)[1]], lookahead=barmerge.lookahead_on)
+[wHigh, wLow] = request.security(syminfo.tickerid, &quot;W&quot;, [high[1], low[1]], lookahead=barmerge.lookahead_on)
+[y0, y20] = request.security(yieldSym, &quot;D&quot;, [close[1], close[21]], lookahead=barmerge.lookahead_on)
+vixPrev = request.security(vixSym, &quot;D&quot;, close[1], lookahead=barmerge.lookahead_on)
+
+// ───────── Sesgo
+string base  = syminfo.basecurrency
+string quote = syminfo.currency
+int autoType = base == &quot;XAU&quot; ? 4 : (base == &quot;USD&quot; and (quote == &quot;JPY&quot; or quote == &quot;CHF&quot;)) ? 2 : base == &quot;USD&quot; ? 3 : 1
+int mt = mktType == &quot;XXX/USD (EURUSD, GBPUSD)&quot; ? 1 : mktType == &quot;USD/JPY o USD/CHF&quot; ? 2 : mktType == &quot;USD/CAD&quot; ? 3 : mktType == &quot;Oro (XAUUSD)&quot; ? 4 : autoType
+
+int trendS = (dClose &gt; dS100 and dS100 &gt; dS100p) ? 1 : (dClose &lt; dS100 and dS100 &lt; dS100p) ? -1 : 0
+float dy   = y0 - y20
+int usd    = dy &gt; yThr ? 1 : dy &lt; -yThr ? -1 : 0
+int ratesS = (mt == 2 or mt == 3) ? usd : -usd
+int riskOff = vixPrev &gt; vixHi ? 1 : vixPrev &lt; vixLo ? -1 : 0
+int riskS  = (mt == 3 or mt == 4) ? riskOff : -riskOff
+int score  = trendS + ratesS + riskS
+int autoBias = score &gt;= 2 ? 1 : score &lt;= -2 ? -1 : 0
+int bias = biasMode == &quot;Automático&quot; ? autoBias : biasMode == &quot;Solo largos&quot; ? 1 : biasMode == &quot;Solo cortos&quot; ? -1 : 0
+
+// ───────── Zona, gatillo y stop
+float atr4 = ta.atr(14)
+bool zoneL = low &lt;= dS20 + zoneK * dAtr and close &gt; dS20 - dAtr
+bool zoneS = high &gt;= dS20 - zoneK * dAtr and close &lt; dS20 + dAtr
+float hiN = ta.highest(high, trigLen)[1]
+float loN = ta.lowest(low, trigLen)[1]
+float stopL = ta.lowest(low, stopLen) - stopBuf * atr4
+float stopS = ta.highest(high, stopLen) + stopBuf * atr4
+float riskL  = close - stopL
+float riskSh = stopS - close
+bool okL = riskL &gt;= minRisk * dAtr and riskL &lt;= maxRisk * dAtr
+bool okS = riskSh &gt;= minRisk * dAtr and riskSh &lt;= maxRisk * dAtr
+bool newTL = zoneL and not zoneL[1]
+bool newTS = zoneS and not zoneS[1]
+
+// ───────── Dibujo de zona y niveles
+pU = plot(showZone and bias != 0 ? dS20 + zoneK * dAtr : na, &quot;Zona superior&quot;, color=cZoneLn, style=plot.style_linebr)
+pD = plot(showZone and bias != 0 ? dS20 - zoneK * dAtr : na, &quot;Zona inferior&quot;, color=cZoneLn, style=plot.style_linebr)
+fill(pU, pD, color=bias == 1 ? color.new(cLong, zoneTr) : color.new(cShort, zoneTr), title=&quot;Zona&quot;)
+plot(showZone ? dS20 : na, &quot;Media 20 diaria&quot;, color=cS20, style=plot.style_linebr)
+plot(showWeek ? wHigh : na, &quot;Máximo semana anterior&quot;, color=cWeek, style=plot.style_stepline)
+plot(showWeek ? wLow : na, &quot;Mínimo semana anterior&quot;, color=cWeek, style=plot.style_stepline)
+
+// ───────── Operación simulada (solo velas cerradas)
+var int   pos    = 0
+var float ent    = na
+var float stp    = na
+var float tgt    = na
+var float rUnit  = na
+var bool  armed  = false
+var int   entBar = na
+var int   lastTL = na
+var int   lastTS = na
+var line  lE = na
+var line  lS = na
+var line  lT = na
+
+string tk = syminfo.ticker
+
+if barstate.isconfirmed
+    bool exitedNow = false
+    if pos != 0 and bar_index &gt; entBar
+        float curStop = armed ? ent : stp
+        bool hitStop = pos == 1 ? low &lt;= curStop : high &gt;= curStop
+        bool hitTgt  = pos == 1 ? high &gt;= tgt : low &lt;= tgt
+        bool timeUp  = bar_index - entBar &gt;= maxBars
+        string why = hitStop ? (armed ? &quot;Breakeven&quot; : &quot;Stop&quot;) : hitTgt ? &quot;Objetivo&quot; : timeUp ? &quot;Tiempo&quot; : &quot;&quot;
+        if why != &quot;&quot;
+            label.new(bar_index, pos == 1 ? high : low, why, style=pos == 1 ? label.style_label_down : label.style_label_up, color=why == &quot;Objetivo&quot; ? cLong : why == &quot;Stop&quot; ? cShort : color.new(color.gray, 10), textcolor=color.white, size=size.tiny)
+            if not na(lE)
+                line.set_x2(lE, bar_index)
+                line.set_x2(lS, bar_index)
+                line.set_x2(lT, bar_index)
+            alert(&quot;PSF B · &quot; + tk + &quot; · &quot; + why + &quot; · cierra la operación si sigue abierta&quot;, alert.freq_once_per_bar_close)
+            pos := 0
+            exitedNow := true
+        else
+            if not armed and (pos == 1 ? high &gt;= ent + beAt * rUnit : low &lt;= ent - beAt * rUnit)
+                armed := true
+                alert(&quot;PSF B · &quot; + tk + &quot; · +&quot; + str.tostring(beAt) + &quot;R alcanzado · mueve el stop a &quot; + str.tostring(ent, format.mintick), alert.freq_once_per_bar_close)
+                if not na(lS)
+                    line.set_x2(lS, bar_index)
+                lS := line.new(bar_index, ent, bar_index + 1, ent, color=cEntry, style=line.style_dashed, width=1)
+            if not na(lE)
+                line.set_x2(lE, bar_index + 1)
+                line.set_x2(lS, bar_index + 1)
+                line.set_x2(lT, bar_index + 1)
+    if pos == 0 and not exitedNow
+        if zoneL
+            lastTL := bar_index
+        if zoneS
+            lastTS := bar_index
+        bool tL = not na(lastTL) and bar_index - lastTL &lt;= touchWin - 1
+        bool tS = not na(lastTS) and bar_index - lastTS &lt;= touchWin - 1
+        bool goL = bias == 1 and tL and close &gt; hiN and okL
+        bool goS = bias == -1 and tS and close &lt; loN and okS
+        if goL or goS
+            pos    := goL ? 1 : -1
+            ent    := close
+            stp    := goL ? stopL : stopS
+            rUnit  := math.abs(ent - stp)
+            tgt    := ent + pos * rrTarget * rUnit
+            armed  := false
+            entBar := bar_index
+            lastTL := na
+            lastTS := na
+            lE := line.new(bar_index, ent, bar_index + 1, ent, color=cEntry, width=1)
+            lS := line.new(bar_index, stp, bar_index + 1, stp, color=cShort, style=line.style_dashed, width=1)
+            lT := line.new(bar_index, tgt, bar_index + 1, tgt, color=cLong, style=line.style_dashed, width=1)
+            label.new(bar_index, goL ? low : high, goL ? &quot;B ▲&quot; : &quot;B ▼&quot;, style=goL ? label.style_label_up : label.style_label_down, color=goL ? cLong : cShort, textcolor=color.white, size=size.tiny)
+            alert(&quot;PSF B · &quot; + tk + (goL ? &quot; · LARGO&quot; : &quot; · CORTO&quot;) + &quot; · entrada &quot; + str.tostring(ent, format.mintick) + &quot; · stop &quot; + str.tostring(stp, format.mintick) + &quot; · objetivo &quot; + str.tostring(tgt, format.mintick), alert.freq_once_per_bar_close)
+        else if (bias == 1 and newTL) or (bias == -1 and newTS)
+            alert(&quot;PSF B · &quot; + tk + &quot; toca la zona (&quot; + (bias == 1 ? &quot;sesgo largo&quot; : &quot;sesgo corto&quot;) + &quot;) · precio &quot; + str.tostring(close, format.mintick) + &quot; · espera el gatillo en 4H&quot;, alert.freq_once_per_bar_close)
+
+// ───────── Tabla de sesgo
+string tPos = tblPos == &quot;Arriba a la derecha&quot; ? position.top_right : tblPos == &quot;Abajo a la derecha&quot; ? position.bottom_right : tblPos == &quot;Abajo a la izquierda&quot; ? position.bottom_left : position.top_left
+var table tb = table.new(tPos, 2, 7, bgcolor=color.new(chart.bg_color, 0), border_color=color.new(chart.fg_color, 80), border_width=1, frame_color=color.new(chart.fg_color, 70), frame_width=1)
+
+f_sig(int v) =&gt;
+    v &gt; 0 ? &quot;+&quot; + str.tostring(v) : str.tostring(v)
+
+f_put(int row, string k, string v, color c) =&gt;
+    table.cell(tb, 0, row, k, text_color=chart.fg_color, text_size=size.small, text_halign=text.align_left)
+    table.cell(tb, 1, row, v, text_color=c, text_size=size.small, text_halign=text.align_right)
+
+if showTable and barstate.islast
+    string biasTxt = bias == 1 ? &quot;SOLO LARGOS&quot; : bias == -1 ? &quot;SOLO CORTOS&quot; : &quot;NO OPERAR&quot;
+    color biasCol  = bias == 1 ? cLong : bias == -1 ? cShort : chart.fg_color
+    bool tLn = not na(lastTL) and bar_index - lastTL &lt;= touchWin - 1
+    bool tSn = not na(lastTS) and bar_index - lastTS &lt;= touchWin - 1
+    string est = pos != 0 ? &quot;en operación&quot; : (bias == 1 and tLn) or (bias == -1 and tSn) ? &quot;zona tocada: espera gatillo&quot; : bias != 0 ? &quot;esperando zona&quot; : &quot;-&quot;
+    f_put(0, &quot;PSF B · &quot; + tk, &quot;&quot;, chart.fg_color)
+    f_put(1, &quot;Tendencia&quot;, f_sig(trendS), chart.fg_color)
+    f_put(2, &quot;Tipos (10 años, 20 d: &quot; + (dy &gt;= 0 ? &quot;+&quot; : &quot;&quot;) + str.tostring(dy, &quot;#.00&quot;) + &quot;)&quot;, f_sig(ratesS), chart.fg_color)
+    f_put(3, &quot;Riesgo (VIX &quot; + str.tostring(vixPrev, &quot;#.0&quot;) + &quot;)&quot;, f_sig(riskS), chart.fg_color)
+    f_put(4, &quot;Total&quot;, f_sig(score), chart.fg_color)
+    f_put(5, biasMode == &quot;Automático&quot; ? &quot;Sesgo&quot; : &quot;Sesgo (manual)&quot;, biasTxt, biasCol)
+    f_put(6, &quot;Estado&quot;, est, chart.fg_color)</pre>
+    </details>
+    <div class="two">
+      <div class="stack">
+        <h3>Qué verás con PSF A</h3>
+        <ul class="plain">
+          <li>Media de 200 en gris y media de 5 en naranja.</li>
+          <li>"A ▲" el día de la señal, con el stop en rojo discontinuo, y "Salida", "Stop" o "Tiempo" donde terminó.</li>
+          <li>Una tabla con los tres índices: distancia a la media de 200, RSI(2) y estado.</li>
+        </ul>
+      </div>
+      <div class="stack">
+        <h3>Qué verás con PSF B</h3>
+        <ul class="plain">
+          <li>La zona en verde o en rojo, solo cuando hay sesgo, alrededor de la media de 20 diaria. Escalones grises con el máximo y el mínimo de la semana anterior.</li>
+          <li>"B ▲" o "B ▼" en el gatillo, con líneas de entrada, stop (rojo) y objetivo (verde).</li>
+          <li>Una tabla con el marcador: tendencia, tipos, riesgo, total y estado. Si el domingo decides otro sesgo, cámbialo a mano en la configuración.</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="stack">
+    <h3>Las cuatro alertas</h3>
+    <div class="tbl"><table>
+      <thead><tr><th>Alerta</th><th>Dónde se crea</th><th>Te avisa cuando</th></tr></thead>
+      <tbody>
+        <tr><td><strong>PSF A</strong></td><td>Gráfico izquierdo, condición "PSF A" → "Cualquier llamada a la función alert()"</td><td>Hay compra o salida en US500, US30 o US100 entre las 3:45 y las 3:58 pm ET. Una sola alerta vigila los tres.</td></tr>
+        <tr><td><strong>PSF B EURUSD</strong></td><td>Gráfico derecho con <span class="mono">OANDA:EURUSD</span> en 4H, condición "PSF B" → "Cualquier llamada a la función alert()"</td><td>Toca la zona, salta el gatillo (con entrada, stop y objetivo), llega a +1,5R o termina la operación.</td></tr>
+        <tr><td><strong>PSF B USDJPY</strong></td><td>Cambia el gráfico derecho a <span class="mono">OANDA:USDJPY</span> y crea otra igual</td><td>Lo mismo en USDJPY.</td></tr>
+        <tr><td><strong>PSF B XAUUSD</strong></td><td>Cambia a <span class="mono">OANDA:XAUUSD</span> y crea otra igual</td><td>Lo mismo en oro.</td></tr>
+      </tbody>
+      <caption>En cada alerta activa la notificación en la app para que te llegue al móvil. Cada alerta guarda el símbolo con el que la creaste.</caption>
+    </table></div>
+  </div>
+
+  <div class="stack">
+    <h3>Si operas en MT5</h3>
+    <ul class="plain">
+      <li>Los símbolos de FTMO US llevan ".sim": <span class="mono">US500.sim, US30.sim, US100.sim, EURUSD.sim, USDJPY.sim, XAUUSD.sim</span>. Usa los continuos, no los que tienen vencimiento.</li>
+      <li>Manda la orden con el stop y el objetivo ya puestos. El tamaño en unidades lo sacas de la <a href="#tamano">calculadora</a>.</li>
+      <li>Antes de enviarla, compara el precio de MT5 con el de TradingView y ajusta stop y objetivo por la diferencia.</li>
+      <li>Apunta la operación en el <a href="#diario">diario</a> el mismo día.</li>
+    </ul>
+  </div>
+</section>
+
+<section id="ruta">
+  <div class="sec-head"><div class="eyebrow">Hoja de ruta</div><h2>90 días antes de jugarte dinero</h2></div>
+  <ol class="road">
+    <li><span class="when">Semana 1</span><strong>Montaje.</strong><span>Abre la Free Trial de FTMO US. Configura TradingView con los indicadores del setup A y tu plantilla del setup B. Escribe tu presupuesto máximo para challenges (por ejemplo, 2 intentos) y no lo superes.</span></li>
+    <li><span class="when">Semanas 1–3</span><strong>Backtest manual del setup B.</strong><span>Con el Bar Replay de TradingView en EURUSD, USDJPY y oro, de 2023 a 2026. Registra al menos 60 operaciones en el diario, marcadas como "Replay".</span></li>
+    <li><span class="when">Semanas 3–10</span><strong>Prueba en real con dinero ficticio.</strong><span>Free Trial o demo, con los setups A y B y las reglas de riesgo. Apunta cada operación como "Demo".</span></li>
+    <li class="gate"><span class="when">Puerta</span><strong>Solo pagas si cumples las cuatro:</strong><span>40 o más operaciones registradas, R medio de +0,30 o más, racha perdedora de 8 o menos y drawdown máximo de 8R o menos. Además, la calculadora con tus números tiene que dar un 70% o más de pasar ambas fases. El diario te lo marca.</span></li>
+    <li><span class="when">Mes 3</span><strong>Challenge.</strong><span>FTMO US 2-Step de 10k (99 $) o 25k (289 $), tipo Swing. Setup B al 1% y setup A al 0,5%. Cuando cobres, la cuota se devuelve y puedes pasar a 50k o 100k. Si no pasas la puerta, repite el periodo de prueba con ajustes. No pagues por esperanza.</span></li>
+  </ol>
+</section>
+
+<section id="calculadora">
+  <div class="sec-head"><div class="eyebrow">Herramienta</div><h2>¿Pasarías el challenge con tus números?</h2></div>
+  <div class="panel">
+    <div class="panel-head"><h3>Simulador del 2-Step de FTMO US</h3><span class="status" id="calcStatus">3.000 intentos simulados</span></div>
+    <div class="panel-body">
+      <div class="form-grid">
+        <label class="f" for="cWin">% de acierto<input id="cWin" type="number" min="5" max="95" step="1" value="45"></label>
+        <label class="f" for="cRR">Ganancia media (R)<input id="cRR" type="number" min="0.2" max="10" step="0.1" value="2"></label>
+        <label class="f" for="cFreq">Operaciones al mes<input id="cFreq" type="number" min="0.5" max="40" step="0.5" value="6"></label>
+        <label class="f" for="cRisk">Riesgo por operación %<input id="cRisk" type="number" min="0.1" max="5" step="0.1" value="1"></label>
+        <label class="f" for="cAcct">Cuenta<select id="cAcct"><option value="10000">10k (99 $)</option><option value="25000">25k (289 $)</option><option value="50000">50k (399 $)</option><option value="100000" selected>100k (499 $)</option><option value="200000">200k (1.249 $)</option></select></label>
+      </div>
+      <div class="out-grid six" aria-live="polite">
+        <div class="out"><span class="k">R medio</span><span class="v" id="oExp">–</span><span class="s">por operación</span></div>
+        <div class="out"><span class="k">Pasa fase 1</span><span class="v" id="oP1">–</span><span class="s">+10% antes de −10%</span></div>
+        <div class="out"><span class="k">Pasa ambas</span><span class="v" id="oBoth">–</span><span class="s">fase 1 y fase 2</span></div>
+        <div class="out"><span class="k">Tiempo mediano</span><span class="v" id="oMed">–</span><span class="s">de los que pasan</span></div>
+        <div class="out"><span class="k">En ≤ 6 meses</span><span class="v" id="o6">–</span><span class="s">de todos los intentos</span></div>
+        <div class="out"><span class="k">Cobros 12 meses</span><span class="v" id="oPay">–</span><span class="s">medios, si pasas (80%)</span></div>
+      </div>
+      <div class="verdict-line"><span class="pill a" id="oVerdict">–</span><span id="oVerdictText" class="muted"></span></div>
+      <p class="muted" style="font-size:.85rem">Supone operaciones independientes que ganan tu ganancia media o pierden 1R, el límite del 10% y un máximo de 36 meses. No modela la pérdida diaria: respeta el límite del 3% de riesgo abierto. La cuota de 100k es la de oferta.</p>
+    </div>
+  </div>
+</section>
+
+<section id="tamano">
+  <div class="sec-head"><div class="eyebrow">Herramienta</div><h2>Tamaño de posición</h2></div>
+  <div class="panel">
+    <div class="panel-head"><h3>Unidades para MT5 o TradingView</h3><span class="status">FTMO US usa unidades: 100.000 unidades = 1 lote</span></div>
+    <div class="panel-body">
+      <div class="form-grid">
+        <label class="f" for="pSym">Instrumento<select id="pSym">
+          <option value="EURUSD">EURUSD</option><option value="USDJPY">USDJPY</option><option value="XAUUSD">XAUUSD</option>
+          <option value="US500" selected>US500</option><option value="US30">US30</option><option value="US100">US100</option>
+          <option value="GBPUSD">GBPUSD</option><option value="AUDUSD">AUDUSD</option><option value="USDCAD">USDCAD</option><option value="USDCHF">USDCHF</option>
+        </select></label>
+        <label class="f" for="pAcct">Cuenta ($)<input id="pAcct" type="number" min="1000" step="1000" value="100000"></label>
+        <label class="f" for="pRisk">Riesgo %<input id="pRisk" type="number" min="0.1" max="5" step="0.1" value="0.5"></label>
+        <label class="f" for="pEntry">Entrada<input id="pEntry" type="number" step="any" value="7380"></label>
+        <label class="f" for="pStop">Stop<input id="pStop" type="number" step="any" value="7130"></label>
+        <label class="f" for="pVpp" id="pVppWrap">$ por punto y unidad<input id="pVpp" type="number" step="any" value="1"></label>
+        <label class="f" for="pAtr">ATR(14) · setup A<input id="pAtr" type="number" step="any" value="100"></label>
+      </div>
+      <div class="btns"><button type="button" class="ghost small" id="pAtrBtn">Stop = entrada − 2,5 × ATR</button></div>
+      <div class="out-grid" aria-live="polite">
+        <div class="out"><span class="k">Riesgo</span><span class="v" id="qRisk">–</span><span class="s">en dólares</span></div>
+        <div class="out"><span class="k">Distancia</span><span class="v" id="qDist">–</span><span class="s" id="qDistU">–</span></div>
+        <div class="out"><span class="k">Unidades</span><span class="v" id="qUnits">–</span><span class="s" id="qLots">–</span></div>
+      </div>
+      <p class="muted" style="font-size:.85rem">En índices y oro, comprueba en MT5 (clic derecho en el símbolo, Especificación) cuánto vale 1 punto por unidad y ajústalo arriba. Lo normal en OANDA es 1 $ por punto y unidad.</p>
+    </div>
+  </div>
+</section>
+
+
+
+<section id="fuentes">
+  <div class="sec-head"><div class="eyebrow">Fuentes y método</div><h2>De dónde sale cada cosa</h2></div>
+  <div class="two">
+    <div class="stack">
+      <h3>FTMO US y firmas</h3>
+      <ul class="plain">
+        <li><a href="https://ftmo.oanda.com/trading-objectives/" target="_blank" rel="noopener">FTMO US · Trading Objectives</a></li>
+        <li><a href="https://ftmo.oanda.com/faq/who-can-join-ftmo-us/" target="_blank" rel="noopener">FTMO US · Quién puede unirse</a></li>
+        <li><a href="https://ftmo.oanda.com/faq/can-i-hold-positions-overnight-or-over-the-weekend/" target="_blank" rel="noopener">FTMO US · Overnight y fin de semana</a></li>
+        <li><a href="https://ftmo.oanda.com/faq/what-is-the-swing-account-type-and-how-does-it-work/" target="_blank" rel="noopener">FTMO US · Cuenta Swing</a></li>
+        <li><a href="https://ftmo.oanda.com/faq/what-are-the-account-specifications/" target="_blank" rel="noopener">FTMO US · Especificaciones</a></li>
+        <li><a href="https://ftmo.oanda.com/blog/trading-updates/trading-update-30-apr-2026/" target="_blank" rel="noopener">FTMO US · TradingView (30-abr-2026)</a></li>
+        <li><a href="https://propfirmmap.com/blog/ftmous-review" target="_blank" rel="noopener">PropFirmMap · Precios FTMO US (13-sep-2026)</a></li>
+        <li><a href="https://the5ers.com/terms-and-conditions/" target="_blank" rel="noopener">The5ers · Términos (MetaQuotes y EE. UU.)</a></li>
+        <li><a href="https://www.myforexfirms.com/blogs/fxify-review-2026" target="_blank" rel="noopener">MyForexFirms · FXIFY y EE. UU.</a></li>
+        <li><a href="https://propfirmxl.com/futures-prop-firms-that-allow-overnight-holding/" target="_blank" rel="noopener">PropfirmXL · Futuros y overnight</a></li>
+        <li><a href="https://www.forex.com/en-us/lp/metatrader-5/" target="_blank" rel="noopener">FOREX.com · MT5 en EE. UU.</a></li>
+        <li><a href="https://www.cmegroup.com/markets/metals/precious/1-ounce-gold.quotes.html" target="_blank" rel="noopener">CME · Futuro de oro de 1 onza</a></li>
+      </ul>
+    </div>
+    <div class="stack">
+      <h3>Mercado y macro</h3>
+      <ul class="plain">
+        <li><a href="https://www.cnbc.com/2026/11/04/2026-midterm-election-results-live-updates.html" target="_blank" rel="noopener">CNBC · Resultados midterms 2026</a></li>
+        <li><a href="https://www.nbcwashington.com/elections/election-day-after-2026-midterms-congress-results-live-updates/4177248/" target="_blank" rel="noopener">NBC · Demócratas ganan Cámara y Senado</a></li>
+        <li><a href="https://www.cnn.com/2026/11/04/investing/us-markets-midterm-elections" target="_blank" rel="noopener">CNN · Mercados tras las elecciones</a></li>
+        <li><a href="https://www.cbsnews.com/news/stocks-midterm-elections-tech-companies-ai-data-centers/" target="_blank" rel="noopener">CBS · Caída de tecnológicas e IA</a></li>
+        <li><a href="https://www.thestreet.com/stock-market-today/stock-market-today-dow-jones-sp-500-nasdaq-updates-nov-06-2026" target="_blank" rel="noopener">TheStreet · Mercado 6-nov-2026</a></li>
+        <li><a href="https://admiralmarkets.com/analytics/traders-blog/fomc-october-2026-fed-holds-rates" target="_blank" rel="noopener">Admirals · FOMC octubre 2026</a></li>
+        <li><a href="https://kalshi.com/fed-rate-odds" target="_blank" rel="noopener">Kalshi · Probabilidades Fed diciembre</a></li>
+      </ul>
+      <h3>Método del backtest</h3>
+      <p class="muted" style="font-size:.9rem">Datos diarios de Yahoo Finance: pares spot, futuros de oro, ES, NQ y YM como equivalentes de los CFD, y NDX para el gráfico. Se limpiaron barras erróneas. En forex, desde 2011 Yahoo pone la apertura del día en el campo del cierre: reconstruí el cierre con la apertura del día siguiente y lo comprobé contra datos horarios (diferencia mediana de 2,4 puntos básicos). Los costes son spread y comisión de 1,2 a 1,8 pips en pares, 0,40 $ en oro y 0,6 a 3 puntos en índices, más un swap diario. El setup A sigue la regla RSI(2) de Connors y Alvarez (2008). Un backtest no garantiza el futuro: sirve para descartar lo que no funcionó ni en el pasado.</p>
+    </div>
+  </div>
+</section>
+
+<footer>Esto es investigación y un plan de trabajo, no asesoramiento financiero. Las reglas de las firmas cambian: confirma todo en el checkout antes de pagar. Los rewards de FTMO US se declaran a Hacienda (piden el W-9); consulta a un asesor fiscal.</footer>
+</div>
+
+<script>
+(function(){
+"use strict";
+const $=id=>document.getElementById(id);
+const fmtPct=x=>(x*100).toFixed(0)+"%";
+const fmtUSD=x=>x.toLocaleString("es-ES",{maximumFractionDigits:0})+" $";
+const fmtR=x=>(x>=0?"+":"−")+Math.abs(x).toFixed(2).replace(".",",");
+
+/* ---------- copy Pine code ---------- */
+document.querySelectorAll("[data-copy]").forEach(btn=>{
+  btn.addEventListener("click",()=>{
+    const pre=document.getElementById(btn.dataset.copy);if(!pre)return;
+    const txt=pre.textContent;
+    const done=()=>{btn.textContent="Copiado";setTimeout(()=>{btn.textContent="Copiar código"},1800)};
+    const fallback=()=>{try{const r=document.createRange();r.selectNodeContents(pre);const s=window.getSelection();s.removeAllRanges();s.addRange(r);btn.textContent="Seleccionado: pulsa Ctrl+C"}catch(e){}};
+    try{navigator.clipboard.writeText(txt).then(done,fallback)}catch(e){fallback()}
+  });
+});
+
+/* ---------- challenge simulator ---------- */
+function rng(seed){let a=seed>>>0;return function(){a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function phase(r,p,rr,q,risk,target){let pnl=0,days=0,td=0;while(days<756){days++;if(r()<q){td++;pnl+=r()<p?rr*risk:-risk;if(pnl<=-10)return[false,days];if(pnl>=target&&td>=4)return[true,days];}}return[false,days]}
+function funded(r,p,rr,q,risk){let paid=0;for(let m=0;m<12;m++){let pnl=0;for(let d=0;d<21;d++){if(r()<q){pnl+=r()<p?rr*risk:-risk;if(pnl<=-10)return paid;}}if(pnl>0)paid+=pnl*0.8;}return paid}
+function simulate(p,rr,f,risk,N){const r=rng(7);const q=Math.min(f/21,1);let p1=0;const T=[],pays=[];
+  for(let i=0;i<N;i++){const a=phase(r,p,rr,q,risk,10);if(!a[0])continue;p1++;const b=phase(r,p,rr,q,risk,5);if(!b[0])continue;T.push((a[1]+b[1])/21);pays.push(funded(r,p,rr,q,risk));}
+  T.sort((x,y)=>x-y);return{p1:p1/N,both:T.length/N,med:T.length?T[Math.floor(T.length/2)]:null,w6:T.filter(t=>t<=6).length/N,pay:pays.length?pays.reduce((s,x)=>s+x,0)/pays.length:0}}
+const FEES={10000:99,25000:289,50000:399,100000:499,200000:1249};
+let calcTimer=null;
+function runCalc(){
+  const p=Math.min(Math.max(parseFloat($("cWin").value)||0,1),99)/100;
+  const rr=Math.max(parseFloat($("cRR").value)||0,0.05);
+  const f=Math.max(parseFloat($("cFreq").value)||0,0);
+  const risk=Math.min(Math.max(parseFloat($("cRisk").value)||0,0.05),10);
+  const acct=parseInt($("cAcct").value,10);
+  const e=p*rr-(1-p);
+  $("oExp").textContent=fmtR(e)+"R";$("oExp").className="v "+(e>0?"pos":"neg");
+  const s=simulate(p,rr,f,risk,3000);
+  $("oP1").textContent=fmtPct(s.p1);$("oBoth").textContent=fmtPct(s.both);
+  $("oMed").textContent=s.med==null?"–":s.med.toFixed(1).replace(".",",")+" m";
+  $("o6").textContent=fmtPct(s.w6);
+  $("oPay").textContent=s.both>0?fmtUSD(s.pay/100*acct):"–";
+  const v=$("oVerdict"),t=$("oVerdictText");
+  if(e<=0){v.className="pill l";v.textContent="No pagues";t.textContent="Sin ventaja positiva, cualquier aprobado sería suerte.";}
+  else if(s.both>=0.7&&s.med!=null&&s.med<=9){v.className="pill g";v.textContent="Buena opción";t.textContent="Con estos números el challenge tiene sentido. Comprueba que salen de 40 o más operaciones reales.";}
+  else if(s.both>=0.7){v.className="pill w";v.textContent="Lento";t.textContent="Pasarías, pero tardarías. Más operaciones de calidad o algo más de riesgo, sin pasar del 1,5%.";}
+  else{v.className="pill w";v.textContent="Arriesgado";t.textContent="Demasiadas cuentas suspendidas. Baja el riesgo o mejora el R medio.";}
+}
+function schedCalc(){clearTimeout(calcTimer);calcTimer=setTimeout(runCalc,160)}
+["cWin","cRR","cFreq","cRisk","cAcct"].forEach(id=>$(id).addEventListener("input",schedCalc));
+runCalc();
+
+/* ---------- position size ---------- */
+const INSTR={EURUSD:{t:"q",pip:1e-4},GBPUSD:{t:"q",pip:1e-4},AUDUSD:{t:"q",pip:1e-4},USDJPY:{t:"b",pip:0.01},USDCAD:{t:"b",pip:1e-4},USDCHF:{t:"b",pip:1e-4},XAUUSD:{t:"u",unit:"$"},US500:{t:"i"},US30:{t:"i"},US100:{t:"i"}};
+const DEF={EURUSD:[1.1156,1.1230,0.0069],GBPUSD:[1.3371,1.3290,0.0081],AUDUSD:[0.6893,0.6840,0.0055],USDJPY:[158.29,156.80,0.98],USDCAD:[1.4017,1.3950,0.0066],USDCHF:[0.8210,0.8150,0.0062],XAUUSD:[4100,4180,87],US500:[7380,7130,100],US30:[51385,49200,876],US100:[27000,25400,680]};
+function runPos(){
+  const sym=$("pSym").value,I=INSTR[sym];
+  const acct=parseFloat($("pAcct").value)||0,riskP=parseFloat($("pRisk").value)||0;
+  const e=parseFloat($("pEntry").value),s=parseFloat($("pStop").value),vpp=parseFloat($("pVpp").value)||1;
+  const riskUSD=acct*riskP/100;$("qRisk").textContent=fmtUSD(riskUSD);
+  $("pVppWrap").hidden=!(I.t==="i"||I.t==="u");
+  if(!(e>0)||!(s>0)||e===s){$("qDist").textContent="–";$("qUnits").textContent="–";$("qLots").textContent="Pon entrada y stop";$("qDistU").textContent="–";return}
+  const d=Math.abs(e-s);let perUnit,units,lots="",distTxt,distU;
+  if(I.t==="q"){perUnit=d;units=Math.floor(riskUSD/perUnit/100)*100;distTxt=(d/I.pip).toFixed(1);distU="pips";lots=(units/1e5).toFixed(2).replace(".",",")+" lotes"}
+  else if(I.t==="b"){perUnit=d/e;units=Math.floor(riskUSD/perUnit/100)*100;distTxt=(d/I.pip).toFixed(1);distU="pips";lots=(units/1e5).toFixed(2).replace(".",",")+" lotes"}
+  else{perUnit=d*vpp;units=Math.floor(riskUSD/perUnit*10)/10;distTxt=d.toLocaleString("es-ES",{maximumFractionDigits:2});distU=I.t==="u"?"dólares por onza":"puntos";lots="unidades (mín. 0,1)"}
+  $("qDist").textContent=distTxt.replace(".",",");$("qDistU").textContent=distU;
+  $("qUnits").textContent=units.toLocaleString("es-ES",{maximumFractionDigits:1});$("qLots").textContent=lots;
+}
+$("pSym").addEventListener("change",()=>{const v=DEF[$("pSym").value];$("pEntry").value=v[0];$("pStop").value=v[1];$("pAtr").value=v[2];runPos()});
+["pAcct","pRisk","pEntry","pStop","pVpp"].forEach(id=>$(id).addEventListener("input",runPos));
+$("pAtrBtn").addEventListener("click",()=>{const e=parseFloat($("pEntry").value),a=parseFloat($("pAtr").value);if(e>0&&a>0){const dec=e<20?5:2;$("pStop").value=(e-2.5*a).toFixed(dec);runPos()}});
+runPos();
+
+/* ---------- journal (db) ---------- */
+let trades=[],col=null,writing=false,dbReady=false;
+const setupName={A:"A",B:"B",O:"Fuera"},modeName={replay:"Replay",demo:"Demo",real:"Real"};
+function today(){const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
+$("jDate").value=today();
+function statsOf(list){
+  const L=[...list].sort((a,b)=>a.date<b.date?-1:a.date>b.date?1:0);
+  const n=L.length;if(!n)return null;
+  const R=L.map(t=>Number(t.r)||0);const wins=R.filter(x=>x>0),loss=R.filter(x=>x<=0);
+  const tot=R.reduce((s,x)=>s+x,0);let streak=0,cur=0,peak=0,eq=0,dd=0;
+  for(const x of R){cur=x<=0?cur+1:0;streak=Math.max(streak,cur);eq+=x;peak=Math.max(peak,eq);dd=Math.min(dd,eq-peak)}
+  const d0=new Date(L[0].date),d1=new Date(L[n-1].date);const months=Math.max((d1-d0)/(864e5*30.44),1);
+  return{n,win:wins.length/n,avgW:wins.length?wins.reduce((s,x)=>s+x,0)/wins.length:0,avgL:loss.length?loss.reduce((s,x)=>s+x,0)/loss.length:0,exp:tot/n,tot,best:Math.max(...R),worst:Math.min(...R),streak,dd:-dd,perMonth:n/months,nw:wins.length,nl:loss.length};
+}
+function closedOnly(list){return list.filter(t=>t.status!=="open")}
+function render(){
+  const filt=$("jFilter").value;const list=trades.filter(t=>filt==="all"||t.mode===filt);
+  const st=statsOf(closedOnly(list));const hasEx=trades.some(t=>t.example);
+  $("jClearEx").hidden=!hasEx;
+  $("sN").textContent=st?st.n:0;
+  $("sPer").textContent=st?st.perMonth.toFixed(1).replace(".",",")+" al mes"+(hasEx?" · con ejemplos":""):"–";
+  $("sWin").textContent=st?fmtPct(st.win):"–";$("sWL").textContent=st?st.nw+" ganadas / "+st.nl+" perdidas":"–";
+  $("sExp").textContent=st?fmtR(st.exp)+"R":"–";$("sExp").className="v "+(st?(st.exp>0?"pos":"neg"):"");
+  $("sTot").textContent=st?fmtR(st.tot)+"R":"–";$("sBest").textContent=st?"mejor "+fmtR(st.best)+" · peor "+fmtR(st.worst):"–";
+  $("sStreak").textContent=st?st.streak:"–";$("sDD").textContent=st?st.dd.toFixed(1).replace(".",",")+"R":"–";
+  const checks=[["40 operaciones o más",st&&st.n>=40,st?st.n+" de 40":"0 de 40"],["R medio ≥ +0,30",st&&st.exp>=0.30,st?fmtR(st.exp)+"R":"–"],["Racha perdedora ≤ 8",st&&st.streak<=8,st?String(st.streak):"–"],["Drawdown ≤ 8R",st&&st.dd<=8,st?st.dd.toFixed(1).replace(".",",")+"R":"–"]];
+  const ul=$("gateList");ul.textContent="";
+  checks.forEach(([label,ok,val])=>{const li=document.createElement("li");const p=document.createElement("span");p.className="pill "+(ok?"g":"l");p.textContent=ok?"OK":"NO";const s=document.createElement("span");s.textContent=label+" · "+val;li.append(p,s);ul.append(li)});
+  const all=checks.every(c=>c[1]);const gp=$("gatePill");
+  gp.className="pill "+(all?"g":"w");gp.textContent=all?"Lista":"Aún no";
+  $("gateEx").textContent=all?(hasEx?"Quita los ejemplos y comprueba que sigue en verde.":"Mira también la calculadora antes de comprar."):"";
+  const tb=$("jRows");tb.textContent="";
+  $("jEmpty").hidden=trades.length>0;$("jTableWrap").hidden=trades.length===0;
+  list.forEach(t=>{const tr=document.createElement("tr");
+    const c=(txt,cls)=>{const td=document.createElement("td");if(cls)td.className=cls;td.textContent=txt;return td};
+    const tdDate=c(t.date||"","mono");if(t.example){const tg=document.createElement("span");tg.className="tag";tg.textContent="EJEMPLO";tdDate.append(tg)}
+    const rv=Number(t.r)||0;const isOpen=t.status==="open";
+    if(isOpen){const tg=document.createElement("span");tg.className="tag";tg.textContent="ABIERTA";tdDate.append(tg)}
+    tr.append(tdDate,c(t.sym||"","mono"),c(setupName[t.setup]||t.setup||""),c(t.dir==="S"?"Corto":"Largo"),c(modeName[t.mode]||""),isOpen?c("–","n"):c(fmtR(rv),"n "+(rv>0?"pos":"neg")),c(t.note||""));
+    const tdB=document.createElement("td");const b=document.createElement("button");b.type="button";b.className="danger small";b.textContent="Borrar";
+    b.addEventListener("click",async()=>{if(b.dataset.armed!=="1"){b.dataset.armed="1";b.textContent="¿Seguro?";setTimeout(()=>{if(b.isConnected){b.dataset.armed="";b.textContent="Borrar"}},3000);return}
+      b.disabled=true;try{await col.doc(t.id).delete()}catch(e){b.disabled=false;$("jStatus").textContent="No se pudo borrar. Inténtalo de nuevo."}});
+    tdB.append(b);tr.append(tdB);tb.append(tr)});
+}
+$("jFilter").addEventListener("change",render);
+$("jToCalc").addEventListener("click",()=>{const filt=$("jFilter").value;const st=statsOf(closedOnly(trades.filter(t=>filt==="all"||t.mode===filt)));if(!st)return;
+  $("cWin").value=Math.round(st.win*100);$("cRR").value=(st.avgL<0?Math.max(st.avgW/Math.abs(st.avgL),0.1):Math.max(st.avgW,0.1)).toFixed(2);
+  $("cFreq").value=Math.max(st.perMonth,0.5).toFixed(1);runCalc();location.hash="calculadora";document.getElementById("calculadora").scrollIntoView({behavior:"smooth",block:"start"})});
+render();
+
+function setDisabled(on){["jAdd","jSeed"].forEach(id=>$(id).disabled=on)}
+async function addTrade(data){if(!col||writing)return;writing=true;setDisabled(true);
+  try{await col.add(data);$("jStatus").textContent="Guardado."}catch(e){$("jStatus").textContent=e&&e.code==="quota_exceeded"?"El diario está lleno. Borra operaciones antiguas.":"No se pudo guardar. Revisa la conexión e inténtalo otra vez."}
+  finally{writing=false;setDisabled(!dbReady)}}
+$("jForm").addEventListener("submit",async ev=>{ev.preventDefault();const r=parseFloat($("jR").value);if(!isFinite(r)){$("jStatus").textContent="Pon el resultado en R, por ejemplo 2.5 o -1.";return}
+  await addTrade({status:"closed",platform:(typeof settings!=="undefined"&&settings.plat)||"tv",date:$("jDate").value||today(),sym:$("jSym").value,setup:$("jSetup").value,dir:$("jDir").value,mode:$("jMode").value,r:Math.round(r*100)/100,risk:parseFloat($("jRisk").value)||0,note:$("jNote").value.slice(0,200),example:false,created:new Date().toISOString()});
+  $("jR").value="";$("jNote").value=""});
+$("jSeed").addEventListener("click",async()=>{if(!col||writing)return;writing=true;setDisabled(true);const d=today();
+  const ex=[{date:d,sym:"US500",setup:"A",dir:"L",mode:"demo",r:0.6,risk:0.5,note:"RSI(2) en 7 sobre la media de 200; salida al cruzar la de 5"},
+            {date:d,sym:"EURUSD",setup:"B",dir:"S",mode:"replay",r:2.6,risk:1,note:"Sesgo −3; retroceso al máximo semanal; ruptura de estructura en 4H"},
+            {date:d,sym:"XAUUSD",setup:"B",dir:"L",mode:"replay",r:-1,risk:1,note:"Entrada contra el sesgo, fuera de plan"}];
+  try{for(const t of ex){await col.add(Object.assign(t,{example:true,created:new Date().toISOString()}))}$("jStatus").textContent="Ejemplos añadidos. Bórralos cuando quieras."}
+  catch(e){$("jStatus").textContent="No se pudieron añadir los ejemplos."}finally{writing=false;setDisabled(!dbReady)}});
+$("jClearEx").addEventListener("click",async()=>{if(!col||writing)return;writing=true;const b=$("jClearEx");b.disabled=true;
+  try{for(const t of trades.filter(x=>x.example)){await col.doc(t.id).delete()}$("jStatus").textContent="Ejemplos borrados."}catch(e){$("jStatus").textContent="No se pudieron borrar los ejemplos."}finally{writing=false;b.disabled=false}});
+
+/* ---------- cockpit: Hoy ---------- */
+const NYZ="America/New_York";
+const MKT_B=["EURUSD","USDJPY","XAUUSD"],MKT_A=["US500","US30","US100"];
+const ALIAS={SPX500USD:"US500",SPX500:"US500",US500:"US500",SPX:"US500",US500USD:"US500",US30USD:"US30",US30:"US30",DJI:"US30",NAS100USD:"US100",NAS100:"US100",US100:"US100",NDX:"US100",EURUSD:"EURUSD",USDJPY:"USDJPY",XAUUSD:"XAUUSD",GOLD:"XAUUSD"};
+const DAYN=["domingo","lunes","martes","miércoles","jueves","viernes","sábado"];
+const DAYS=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+let jdoc=null,ckDb=false,dayKey=null,weekKey=null,unsubDay=null,unsubWeek=null,dayRef=null,weekRef=null,setRef=null;
+let dayData={done:{}},weekData={bias:{},idx:{},events:[],zones:{}},settings={plat:"tv"};
+const saving={},pending={},manualChk={};
+const num=v=>parseFloat(String(v==null?"":v).trim().replace(",","."));
+
+function nyNow(){
+  const f=new Intl.DateTimeFormat("en-US",{timeZone:NYZ,hourCycle:"h23",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",weekday:"short"});
+  const p={};f.formatToParts(new Date()).forEach(x=>{p[x.type]=x.value});
+  const dm={Sun:0,Mon:1,Tue:2,Wed:3,Thu:4,Fri:5,Sat:6};let h=parseInt(p.hour,10);if(h===24)h=0;const mi=parseInt(p.minute,10);
+  return{y:+p.year,m:+p.month,d:+p.day,h,mi,min:h*60+mi,dow:dm[p.weekday],date:p.year+"-"+p.month+"-"+p.day};
+}
+function isoWeekKey(y,m,d){const t=new Date(Date.UTC(y,m-1,d));const dn=(t.getUTCDay()+6)%7;t.setUTCDate(t.getUTCDate()-dn+3);const fy=t.getUTCFullYear();const ft=new Date(Date.UTC(fy,0,4));const w=1+Math.round(((t-ft)/864e5-3+((ft.getUTCDay()+6)%7))/7);return fy+"-W"+String(w).padStart(2,"0")}
+function tradingWeekKey(n){const add=n.dow===6?2:n.dow===0?1:0;const t=new Date(Date.UTC(n.y,n.m-1,n.d+add));return isoWeekKey(t.getUTCFullYear(),t.getUTCMonth()+1,t.getUTCDate())}
+function fmtMin(m){m=((Math.round(m)%1440)+1440)%1440;let h=Math.floor(m/60);const mi=m%60;const ap=h>=12?"pm":"am";h=h%12||12;return h+":"+String(mi).padStart(2,"0")+" "+ap}
+function fmtDur(d){d=Math.max(0,Math.round(d));if(d<60)return d+" min";const h=Math.floor(d/60),m=d%60;return h+" h"+(m?" "+m+" min":"")}
+function parseHM(s){const m=/^(\d{1,2}):(\d{2})/.exec(String(s||"").trim());if(!m)return null;const h=+m[1],mi=+m[2];if(h>23||mi>59)return null;return h*60+mi}
+function fmtNY(ms){const p={};new Intl.DateTimeFormat("en-US",{timeZone:NYZ,weekday:"short",hour:"numeric",minute:"2-digit",hour12:true}).formatToParts(new Date(ms)).forEach(x=>{p[x.type]=x.value});const dm={Sun:"dom",Mon:"lun",Tue:"mar",Wed:"mié",Thu:"jue",Fri:"vie",Sat:"sáb"};return (dm[p.weekday]||"")+" "+p.hour+":"+p.minute+" "+String(p.dayPeriod||"").toLowerCase()}
+function decimalsFor(sym,v){if(sym==="USDJPY")return 3;if(Math.abs(v)<20)return 5;return 2}
+function fmtPx(sym,v){if(v==null||!isFinite(v))return "–";return Number(v).toFixed(decimalsFor(sym,v))}
+function ckStatus(t){const el=$("ckStatus");if(el)el.textContent=t}
+
+function openTrades(){return trades.filter(t=>t.status==="open")}
+function openRisk(){return openTrades().reduce((s,t)=>s+(Number(t.risk)||0),0)}
+function todayEvents(n){return (weekData.events||[]).filter(e=>Number(e.day)===n.dow).map(e=>Object.assign({},e,{m:parseHM(e.time)})).filter(e=>e.m!=null).sort((a,b)=>a.m-b.m)}
+function newsSoon(n,win){win=win==null?30:win;return todayEvents(n).find(e=>n.min>=e.m-win&&n.min<=e.m+5)||null}
+function zoneLive(z){return z&&z.at&&(Date.now()-Date.parse(z.at))<24*3600e3}
+
+/* guardar sin pisar escrituras: una a la vez por documento */
+async function saveDoc(ref,data,key){
+  if(!ref)return;
+  if(saving[key]){pending[key]=data;return}
+  saving[key]=true;
+  try{await ref.set(data)}catch(e){ckStatus(e&&e.code==="quota_exceeded"?"El diario está lleno.":"No se pudo guardar. Revisa la conexión.")}
+  finally{saving[key]=false;if(pending[key]){const d=pending[key];delete pending[key];saveDoc(ref,d,key)}}
+}
+const clone=o=>JSON.parse(JSON.stringify(o));
+function saveDay(){dayData.updated=new Date().toISOString();saveDoc(dayRef,clone(dayData),"day")}
+function saveWeek(){weekData.updated=new Date().toISOString();saveDoc(weekRef,clone(weekData),"week")}
+function saveSettings(){saveDoc(setRef,clone(settings),"set")}
+
+function ensureSubs(n){
+  const dk=n.date,wk=tradingWeekKey(n);
+  if(dk!==dayKey){dayKey=dk;if(unsubDay){unsubDay();unsubDay=null}dayData={done:{}};
+    if(ckDb){dayRef=jdoc.collection("days").doc(dk);unsubDay=dayRef.onSnapshot(s=>{if(saving.day||pending.day)return;const d=s.exists?clone(s.data()):{};dayData=Object.assign({done:{}},d);if(!dayData.done)dayData.done={};renderCockpit()},()=>{})}}
+  if(wk!==weekKey){weekKey=wk;if(unsubWeek){unsubWeek();unsubWeek=null}weekData={bias:{},idx:{},events:[],zones:{}};
+    if(ckDb){weekRef=jdoc.collection("weeks").doc(wk);unsubWeek=weekRef.onSnapshot(s=>{if(saving.week||pending.week)return;const d=s.exists?clone(s.data()):{};weekData=Object.assign({bias:{},idx:{},events:[],zones:{}},d);renderCockpit()},()=>{})}}
+}
+function ckAttach(){
+  ckDb=true;dayKey=null;weekKey=null;
+  setRef=jdoc.collection("settings").doc("main");
+  setRef.onSnapshot(s=>{if(saving.set||pending.set)return;settings=Object.assign({plat:"tv"},s.exists?clone(s.data()):{});renderCockpit()},()=>{});
+  ckStatus("Los pasos se marcan solos cuando la página lo sabe. Los demás, márcalos tú.");
+  renderCockpit();
+}
+
+/* pasos del día */
+function stepsFor(n){
+  const S=[];const open=openTrades().length;
+  if(n.dow===6){S.push({id:"descanso",t:"Hoy",label:"Descanso. Si quieres, adelanta la preparación del domingo.",nocheck:true});return S}
+  if(n.dow===0){
+    S.push({id:"calendario",t:"Antes de las 5 pm",label:"Apunta las noticias fuertes de la semana: Fed, IPC, empleo, BCE y Banco de Japón",auto:()=>(weekData.events||[]).length>0});
+    S.push({id:"sesgo",t:"Antes de las 5 pm",label:"Rellena el sesgo de EURUSD, USDJPY y oro con la tabla de PSF B",auto:()=>MKT_B.every(m=>(weekData.bias||{})[m])});
+    S.push({id:"indices",t:"Antes de las 5 pm",label:"Marca qué índices están por encima de su media de 200 con la tabla de PSF A",auto:()=>MKT_A.every(m=>(weekData.idx||{})[m])});
+    S.push({id:"niveles",t:"Antes de las 5 pm",label:"Mira el máximo y el mínimo de la semana pasada en cada mercado"});
+    S.push({id:"alertas",t:"5:00 pm, al abrir",label:"Comprueba que las 4 alertas de TradingView están activas",win:[1020,1440]});
+    return S;
+  }
+  const ev=todayEvents(n);
+  S.push({id:"alertas",t:"Al empezar",label:"Comprueba que tus alertas de TradingView siguen activas"});
+  S.push({id:"noticias",t:"Al empezar",label:ev.length?("Noticias de hoy: "+ev.map(e=>fmtMin(e.m)+" "+e.name).join(" · ")+". No abras operaciones 30 min antes."):"Hoy no tienes noticias fuertes apuntadas"});
+  S.push({id:"setupA",t:"3:45–3:58 pm",label:"Setup A: mira la tabla de PSF A y entra o sal antes de las 3:58",win:[945,959]});
+  S.push({id:"cierre",t:"5:00–5:30 pm",label:"Cierre diario: revisa PSF B en EURUSD, USDJPY y oro",win:[1020,1050]});
+  if(open)S.push({id:"gestion",t:"Tras el cierre",label:"Gestiona lo abierto ("+open+"): stop puesto y breakeven a +1,5R",win:[1020,1440]});
+  S.push({id:"diario",t:"Antes de dormir",label:"Revisa que lo de hoy está en el diario",win:[1050,1440]});
+  if(n.dow===5)S.push({id:"revision",t:"Tras el cierre",label:"Revisión semanal (20 min): ¿respetaste las reglas? Mira tus números en el diario",win:[1020,1440]});
+  return S;
+}
+function isDone(s){return !!((dayData.done||{})[s.id])||!!(s.auto&&s.auto())}
+
+/* qué toca ahora */
+function nowCard(n,steps){
+  const open=openTrades();const news=newsSoon(n);const pend=steps.filter(s=>!s.nocheck&&!isDone(s));
+  const dayName=DAYN[n.dow].charAt(0).toUpperCase()+DAYN[n.dow].slice(1);
+  const openTxt=open.length?" Tienes "+open.length+(open.length===1?" operación abierta.":" operaciones abiertas."):"";
+  if(news)return{tone:"stop",k:"Cuidado",t:"Noticia a las "+fmtMin(news.m)+": "+news.name,s:"No abras operaciones hasta las "+fmtMin(news.m+30)+". Lo que tengas abierto, con su stop puesto."};
+  if(n.dow===6)return{tone:"rest",k:"Sábado",t:"Descanso",s:"El mercado abre el domingo a las 5:00 pm."+openTxt};
+  if(n.dow===0){
+    const done=steps.filter(isDone).length;
+    if(n.min<1020)return{tone:pend.length?"wait":"go",k:"Domingo",t:pend.length?"Prepara la semana (unos 40 min)":"Semana preparada",s:pend.length?(done+" de "+steps.length+" pasos hechos. El mercado abre a las 5:00 pm, en "+fmtDur(1020-n.min)+"."):"Cuando abra el mercado, espera a las alertas."};
+    return{tone:pend.length?"wait":"go",k:"Domingo",t:pend.length?"El mercado ya abrió: termina la preparación":"Mercado abierto: espera a las alertas",s:pend.length?("Falta: "+pend.map(s=>s.label).slice(0,2).join(" · ")):""};
+  }
+  if(n.dow===5&&n.min>=1020)return{tone:"b",k:"Viernes",t:"Mercado cerrado: toca la revisión semanal",s:"20 minutos con el diario y las reglas. Abre el domingo a las 5:00 pm."+openTxt};
+  if(n.min<930)return{tone:"calm",k:dayName,t:"Día tranquilo: actúa solo si salta una alerta",s:"Próximo: setup A a las 3:45 pm, en "+fmtDur(945-n.min)+"."+openTxt};
+  if(n.min<945)return{tone:"wait",k:"Prepárate",t:"En "+fmtDur(945-n.min)+": setup A",s:"Ten abierto TradingView con la tabla de PSF A."+openTxt};
+  if(n.min<959)return{tone:"a",k:"Setup A, ahora",t:"Mira PSF A: si hay señal, entra antes de las 3:58",s:"Si tienes un índice abierto y cierra por encima de su media de 5, sal ahora."};
+  if(n.min<1020)return{tone:"calm",k:"Siguiente",t:"Cierre diario a las 5:00 pm, en "+fmtDur(1020-n.min),s:open.length?"Comprueba que lo abierto tiene stop.":"Nada más que hacer hasta entonces."};
+  if(n.min<1050)return{tone:"b",k:"Cierre diario, ahora",t:"Revisa PSF B en EURUSD, USDJPY y oro",s:"Sesgo, zona y gatillo de 4H. Si hay gatillo, pasa la checklist de abajo antes de entrar."};
+  return{tone:pend.length?"wait":"go",k:"Resto del día",t:pend.length?("Te falta"+(pend.length===1?" 1 paso":"n "+pend.length+" pasos")+" de hoy"):"Día hecho. Descansa.",s:pend.length?pend.map(s=>s.label).slice(0,2).join(" · "):"Mañana más."+openTxt};
+}
+
+/* render */
+function renderCockpit(n){
+  n=n||nyNow();ensureSubs(n);
+  $("ckTime").textContent=fmtMin(n.min);
+  $("ckDate").textContent=DAYN[n.dow]+" "+n.d+"/"+n.m+" · semana "+String(weekKey||"").split("-W")[1];
+  const closed=n.dow===6||(n.dow===5&&n.min>=1020)||(n.dow===0&&n.min<1020);
+  const mk=$("ckMarket");mk.textContent=closed?"Mercado cerrado":"Mercado abierto";mk.className="pill "+(closed?"a":"g");
+  let toClose=1020-n.min;if(toClose<=0)toClose+=1440;
+  $("ckNext").textContent=closed?"Abre el domingo a las 5:00 pm":((n.dow===5?"Cierra el fin de semana en ":"Cierre diario en ")+fmtDur(toClose));
+  document.querySelectorAll("#ckPlat button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===(settings.plat||"tv"))));
+  $("ckWeek").textContent=weekKey?("semana "+weekKey.split("-W")[1]):"";
+
+  const steps=stepsFor(n);const ol=$("ckSteps");ol.textContent="";let doneN=0,tot=0;
+  steps.forEach(s=>{
+    const li=document.createElement("li");const done=isDone(s);const now=s.win&&n.min>=s.win[0]&&n.min<s.win[1]&&!done;const late=s.win&&n.min>=s.win[1]&&!done;
+    li.className=(done?"is-done ":"")+(now?"is-now ":"")+(late?"is-late":"");
+    if(!s.nocheck){tot++;if(done)doneN++}
+    let box;
+    if(s.nocheck){box=document.createElement("span")}else{
+      box=document.createElement("button");box.type="button";box.className="chk";box.setAttribute("aria-pressed",String(done));box.textContent=done?"✓":"";
+      const autoOk=!!(s.auto&&s.auto());
+      box.setAttribute("aria-label",(autoOk?"Hecho automáticamente: ":done?"Desmarcar: ":"Marcar como hecho: ")+s.label);
+      if(autoOk){box.disabled=true}else{box.addEventListener("click",()=>{dayData.done=dayData.done||{};dayData.done[s.id]=!dayData.done[s.id];saveDay();renderCockpit()})}
+    }
+    const body=document.createElement("div");const tt=document.createElement("span");tt.className="st-t";tt.textContent=s.t;const lb=document.createElement("span");lb.className="st-l";lb.textContent=s.label;body.append(tt,lb);
+    if(now){const p=document.createElement("span");p.className="pill v";p.textContent="ahora";body.append(p)}
+    if(late){const p=document.createElement("span");p.className="pill w";p.textContent="se pasó la hora";body.append(p)}
+    if(s.auto&&s.auto()){const p=document.createElement("span");p.className="pill g";p.textContent="hecho solo";body.append(p)}
+    li.append(box,body);ol.append(li)});
+  $("ckProg").textContent=tot?(doneN+" de "+tot):"–";
+
+  const c=nowCard(n,steps);const card=$("ckNow");card.dataset.tone=c.tone;$("ckNowK").textContent=c.k;$("ckNowT").textContent=c.t;$("ckNowS").textContent=c.s||"";
+  const zb=$("ckNowZ");zb.textContent="";
+  MKT_B.forEach(m=>{const z=(weekData.zones||{})[m];if(zoneLive(z)&&!openTrades().some(t=>t.sym===m)){const sp=document.createElement("span");sp.textContent=m+" tocó la zona: gatillo de 4H hasta "+fmtNY(Date.parse(z.at)+24*3600e3);zb.append(sp)}});
+  openTrades().forEach(t=>{const sp=document.createElement("span");sp.textContent=t.sym+" "+(t.dir==="S"?"corto":"largo")+" abierta"+(t.be?" · en breakeven":"");zb.append(sp)});
+
+  renderBias();renderEvents();renderOpen(n);renderPre(n);
+}
+
+function segRow(box,label,opts,cur,onPick,extra){
+  const row=document.createElement("div");row.className="bias-row";
+  const name=document.createElement("span");name.className="mono";name.textContent=label;
+  const seg=document.createElement("div");seg.className="seg";seg.setAttribute("role","group");seg.setAttribute("aria-label",label);
+  opts.forEach(([v,l])=>{const b=document.createElement("button");b.type="button";b.textContent=l;b.className="sb-"+v;b.setAttribute("aria-pressed",String(cur===v));b.addEventListener("click",()=>onPick(cur===v?"":v));seg.append(b)});
+  row.append(name,seg);if(extra)row.append(extra);box.append(row);
+}
+function renderBias(){
+  const box=$("ckBias");box.textContent="";
+  MKT_B.forEach(m=>{const z=(weekData.zones||{})[m];let chip=null;if(zoneLive(z)){chip=document.createElement("span");chip.className="pill w";chip.textContent="zona tocada · hasta "+fmtNY(Date.parse(z.at)+24*3600e3)}
+    segRow(box,m,[["L","Solo largos"],["S","Solo cortos"],["N","No operar"]],(weekData.bias||{})[m]||"",v=>{weekData.bias=weekData.bias||{};if(v)weekData.bias[m]=v;else delete weekData.bias[m];saveWeek();renderCockpit()},chip)});
+  const ib=$("ckIdx");ib.textContent="";
+  MKT_A.forEach(m=>segRow(ib,m,[["up","Encima"],["down","Debajo"]],(weekData.idx||{})[m]||"",v=>{weekData.idx=weekData.idx||{};if(v)weekData.idx[m]=v;else delete weekData.idx[m];saveWeek();renderCockpit()}));
+}
+function renderEvents(){
+  const ul=$("ckEvents");ul.textContent="";
+  const ev=[...(weekData.events||[])].sort((a,b)=>(a.day-b.day)||((parseHM(a.time)||0)-(parseHM(b.time)||0)));
+  if(!ev.length){const li=document.createElement("li");li.className="muted";li.textContent="Sin noticias apuntadas esta semana.";ul.append(li);return}
+  ev.forEach(e=>{const li=document.createElement("li");const s=document.createElement("span");s.textContent=DAYS[e.day]+" "+fmtMin(parseHM(e.time)||0)+" · "+e.name;
+    const x=document.createElement("button");x.type="button";x.className="danger small";x.textContent="Quitar";
+    x.addEventListener("click",()=>{weekData.events=(weekData.events||[]).filter(q=>!(Number(q.day)===Number(e.day)&&q.time===e.time&&q.name===e.name));saveWeek();renderCockpit()});
+    li.append(s,x);ul.append(li)});
+}
+$("evForm").addEventListener("submit",ev=>{ev.preventDefault();const name=$("evName").value.trim();const time=$("evTime").value;if(!name||parseHM(time)==null)return;
+  weekData.events=(weekData.events||[]).concat([{day:Number($("evDay").value),time,name:name.slice(0,40)}]);$("evName").value="";saveWeek();renderCockpit()});
+document.querySelectorAll("#ckPlat button").forEach(b=>b.addEventListener("click",()=>{settings.plat=b.dataset.v;saveSettings();renderCockpit()}));
+
+/* operaciones abiertas */
+function renderOpen(n){
+  const box=$("ckOpen");const ae=document.activeElement;if(ae&&box.contains(ae)&&ae.tagName==="INPUT")return;
+  box.textContent="";const ot=openTrades();const risk=openRisk();
+  const rp=$("ckRisk");rp.textContent="Riesgo abierto "+risk.toFixed(2).replace(".",",")+"%";rp.className="pill "+(risk<=2?"g":risk<=3?"w":"l");
+  if(!ot.length){const p=document.createElement("p");p.className="muted";p.style.fontSize=".92rem";p.textContent="Ninguna. Cuando abras una abajo, o pegues la alerta de un gatillo, aparecerá aquí con sus botones para cerrarla.";box.append(p);return}
+  ot.forEach(t=>{
+    const card=document.createElement("div");card.className="trade-card setup-"+(t.setup||"B");
+    const h=document.createElement("div");h.className="tc-h";const st=document.createElement("strong");st.textContent=t.sym;
+    const d=document.createElement("span");d.className="pill "+(t.dir==="S"?"l":"g");d.textContent=t.dir==="S"?"Corto":"Largo";
+    const su=document.createElement("span");su.className="pill "+(t.setup==="A"?"v":"a");su.textContent=t.setup==="A"?"Setup A":t.setup==="B"?"Setup B":"Fuera de plan";
+    const pl=document.createElement("span");pl.className="muted";pl.style.fontSize=".85rem";pl.textContent=(t.platform==="mt5"?"MetaTrader 5":"TradingView")+" · abierta hace "+fmtDur((Date.now()-Date.parse(t.openedAt||t.created||Date.now()))/60000);
+    h.append(st,d,su);if(t.be){const b=document.createElement("span");b.className="pill w";b.textContent="Breakeven";h.append(b)}h.append(pl);
+    const e=Number(t.entry),s=Number(t.stop),tg=t.target==null?NaN:Number(t.target);const rr=isFinite(tg)?Math.abs(tg-e)/Math.abs(e-s):NaN;
+    const l=document.createElement("div");l.className="tc-l";l.textContent="Entrada "+fmtPx(t.sym,e)+" · Stop "+fmtPx(t.sym,t.be?e:s)+(isFinite(tg)?" · Objetivo "+fmtPx(t.sym,tg)+" ("+rr.toFixed(1).replace(".",",")+"R)":"")+" · Riesgo "+String(t.risk||0).replace(".",",")+"%";
+    const bx=document.createElement("div");bx.className="tc-close";
+    const mk=(txt,cls,fn)=>{const b=document.createElement("button");b.type="button";b.className=cls;b.textContent=txt;b.addEventListener("click",fn);bx.append(b);return b};
+    if(isFinite(tg))mk("Objetivo +"+rr.toFixed(1).replace(".",",")+"R","small",()=>closeTrade(t,"Objetivo"));
+    if(t.be)mk("Breakeven 0R","ghost small",()=>closeTrade(t,"Breakeven"));else mk("Stop −1R","danger small",()=>closeTrade(t,"Stop"));
+    if(!t.be&&t.setup!=="A")mk("Mover a breakeven","ghost small",()=>markBE(t));
+    const inp=document.createElement("input");inp.type="text";inp.inputMode="decimal";inp.placeholder="precio salida";inp.setAttribute("aria-label","Precio de salida de "+t.sym);
+    bx.append(inp);mk(t.setup==="A"?"Salida a este precio":"Cerrar a este precio","ghost small",()=>closeTrade(t,t.setup==="A"?"Salida":"Manual",num(inp.value)));
+    card.append(h,l,bx);box.append(card)});
+}
+async function markBE(t){if(String(t.id).startsWith("local-")||!col){t.be=true;renderCockpit();return}
+  try{await col.doc(t.id).update({be:true});$("openMsg").textContent=t.sym+": stop en breakeven."}catch(e){$("openMsg").textContent="No se pudo guardar."}}
+async function closeTrade(t,why,price){
+  const d=t.dir==="S"?-1:1;const e=Number(t.entry),s=Number(t.stop);let exit=price;
+  if(why==="Objetivo")exit=Number(t.target);else if(why==="Stop")exit=t.be?e:s;else if(why==="Breakeven")exit=e;
+  if(!isFinite(exit)){$("openMsg").textContent="Escribe el precio de salida en la tarjeta de "+t.sym+".";return}
+  const r=Math.round(((exit-e)*d/Math.abs(e-s))*100)/100;
+  const upd={status:"closed",exit,r,why:(why==="Stop"&&t.be)?"Breakeven":why,closedAt:new Date().toISOString(),date:nyNow().date};
+  if(!col||String(t.id).startsWith("local-")){Object.assign(t,upd);render();renderCockpit();$("openMsg").textContent=t.sym+" cerrada: "+fmtR(r)+"R (sin guardar)";return}
+  try{await col.doc(t.id).update(upd);$("openMsg").textContent=t.sym+" cerrada: "+fmtR(r)+"R. Ya está en el diario."}catch(err){$("openMsg").textContent="No se pudo cerrar. Inténtalo otra vez."}
+}
+
+/* checklist antes de entrar */
+function preItems(n){
+  const sym=$("ckSym").value,dir=$("ckDir").value,setup=MKT_A.includes(sym)?"A":"B";
+  const e=num($("ckEntry").value),s=num($("ckStop").value),tg=num($("ckTarget").value),risk=num($("ckRisk2").value);
+  const sideOk=isFinite(e)&&isFinite(s)&&e!==s&&(dir==="L"?s<e:s>e);
+  const rr=sideOk&&isFinite(tg)?(tg-e)*(dir==="L"?1:-1)/Math.abs(e-s):NaN;
+  const openR=openRisk()+(isFinite(risk)?risk:0);const weekday=n.dow>=1&&n.dow<=5;
+  if(setup==="A")return{setup,items:[
+    {id:"a200",label:"Precio por encima de la media de 200 (tabla de PSF A)"},
+    {id:"arsi",label:"RSI(2) por debajo de 10"},
+    {id:"ahora",label:"Entre las 3:45 y las 4:00 pm de un día laborable",auto:weekday&&n.min>=945&&n.min<=960},
+    {id:"adir",label:"Compra con el stop a 2,5 × ATR por debajo de la entrada",auto:dir==="L"&&sideOk},
+    {id:"amax",label:"Como mucho 2 índices abiertos a la vez",auto:openTrades().filter(t=>t.setup==="A").length<2},
+    {id:"arisk",label:"Riesgo abierto total, contando esta, de 3% o menos",auto:openR<=3}]};
+  const bias=(weekData.bias||{})[sym];const z=(weekData.zones||{})[sym];const zoneOk=zoneLive(z)&&z.dir===dir;
+  const news=newsSoon(n,30);
+  return{setup,items:[
+    {id:"bsesgo",label:bias?("Sesgo de la semana a favor ("+(bias==="L"?"solo largos":bias==="S"?"solo cortos":"no operar")+")"):"Sesgo de la semana a favor (aún no lo has rellenado)",auto:bias===dir},
+    {id:"bzona",label:"El precio ha tocado la zona",auto:zoneOk?true:undefined},
+    {id:"bgat",label:"Gatillo de 4H con la vela ya cerrada"},
+    {id:"brr",label:"Stop detrás del swing y objetivo a 2,5R o más"+(isFinite(rr)?" (ahora "+rr.toFixed(1).replace(".",",")+"R)":""),auto:isFinite(rr)&&rr>=2.45},
+    {id:"brisk",label:"Riesgo abierto total, contando esta, de 3% o menos",auto:openR<=3},
+    {id:"bnews",label:news?("Hay noticia a las "+fmtMin(news.m)+": espera"):"Sin noticia fuerte en los próximos 30 min",auto:!news}]};
+}
+function renderPre(n){
+  n=n||nyNow();const {setup,items}=preItems(n);const ul=$("preList");ul.textContent="";let ok=0;
+  $("preTitle").textContent="Checklist antes de entrar · setup "+setup;
+  items.forEach(it=>{const isAuto=typeof it.auto==="boolean";const good=isAuto?it.auto:!!manualChk[it.id];if(good)ok++;
+    const li=document.createElement("li");const b=document.createElement("button");b.type="button";b.className="chk";b.setAttribute("aria-pressed",String(good));b.textContent=good?"✓":"";
+    if(isAuto){b.disabled=true;if(!good){b.style.borderColor="var(--loss)";b.textContent="✕";b.style.color="var(--loss)"}}
+    else b.addEventListener("click",()=>{manualChk[it.id]=!manualChk[it.id];renderPre()});
+    b.setAttribute("aria-label",(isAuto?"Comprobado por la página: ":"Marcar: ")+it.label);
+    const sp=document.createElement("span");sp.textContent=it.label;if(isAuto){const a=document.createElement("span");a.className="auto";a.textContent="AUTO";sp.append(a)}
+    li.append(b,sp);ul.append(li)});
+  const all=ok===items.length;const pp=$("preProg");pp.textContent=ok+" de "+items.length;pp.className="pill "+(all?"g":"w");
+  const btn=$("openBtn");btn.disabled=!all;btn.textContent=all?"Abrir operación":"Abrir operación (faltan "+(items.length-ok)+")";
+}
+["ckSym","ckDir","ckEntry","ckStop","ckTarget","ckRisk2"].forEach(id=>$(id).addEventListener("input",()=>renderPre()));
+$("ckSym").addEventListener("change",()=>{const a=MKT_A.includes($("ckSym").value);$("ckRisk2").value=a?"0.5":"1";if(a)$("ckDir").value="L";Object.keys(manualChk).forEach(k=>delete manualChk[k]);renderPre()});
+function resetTradeForm(){["ckEntry","ckStop","ckTarget","ckNote","alertIn"].forEach(id=>{$(id).value=""});Object.keys(manualChk).forEach(k=>delete manualChk[k]);renderPre()}
+async function openTrade(outOfPlan){
+  const n=nyNow();const sym=$("ckSym").value,dir=$("ckDir").value;const setup=outOfPlan?"O":(MKT_A.includes(sym)?"A":"B");
+  const e=num($("ckEntry").value),s=num($("ckStop").value),tg=num($("ckTarget").value),risk=num($("ckRisk2").value);
+  const msg=$("openMsg");
+  if(!isFinite(e)||!isFinite(s)||e===s){msg.textContent="Pon la entrada y el stop.";return}
+  if(dir==="L"?s>=e:s<=e){msg.textContent="El stop tiene que estar al otro lado de la entrada.";return}
+  const data={status:"open",date:n.date,openedAt:new Date().toISOString(),sym,setup,dir,mode:$("ckMode").value,platform:settings.plat||"tv",entry:e,stop:s,target:isFinite(tg)?tg:null,risk:isFinite(risk)?risk:0,be:false,note:$("ckNote").value.slice(0,200),example:false,created:new Date().toISOString()};
+  if(!col){data.id="local-"+Date.now();trades.unshift(data);render();renderCockpit();msg.textContent="Abierta, pero sin guardar: no hay conexión con tu cuenta.";resetTradeForm();return}
+  try{await col.add(data);msg.textContent=sym+" abierta. Ya está en el diario.";resetTradeForm()}catch(err){msg.textContent="No se pudo guardar. Inténtalo otra vez."}
+}
+$("openBtn").addEventListener("click",()=>openTrade(false));
+$("openOut").addEventListener("click",()=>openTrade(true));
+
+/* leer alertas de TradingView */
+function normSym(s){const x=String(s||"").toUpperCase().replace(/^.*:/,"").replace(/\.SIM$/,"").replace(/[^A-Z0-9]/g,"");return ALIAS[x]||x}
+function parseAlert(raw){
+  const t=String(raw||"").replace(/\s+/g," ").trim();if(!t)return{err:"Pega primero el texto de la alerta."};
+  const SEP="\\s*[·•|\\-–]\\s*",N="([0-9]+(?:[.,][0-9]+)?)";let m;
+  if((m=new RegExp("PSF A"+SEP+"COMPRA (\\S+)"+SEP+"precio "+N+SEP+"stop "+N,"i").exec(t)))return{kind:"open",sym:normSym(m[1]),dir:"L",entry:num(m[2]),stop:num(m[3])};
+  if((m=new RegExp("PSF A"+SEP+"SALIDA (\\S+).*?precio "+N,"i").exec(t)))return{kind:"close",sym:normSym(m[1]),why:"Salida",price:num(m[2])};
+  if((m=new RegExp("PSF B"+SEP+"(\\S+)"+SEP+"(LARGO|CORTO)"+SEP+"entrada "+N+SEP+"stop "+N+SEP+"objetivo "+N,"i").exec(t)))return{kind:"open",sym:normSym(m[1]),dir:/^l/i.test(m[2])?"L":"S",entry:num(m[3]),stop:num(m[4]),target:num(m[5])};
+  if((m=new RegExp("PSF B"+SEP+"(\\S+) toca la zona \\(sesgo (largo|corto)\\)","i").exec(t)))return{kind:"zone",sym:normSym(m[1]),dir:/^l/i.test(m[2])?"L":"S"};
+  if((m=new RegExp("PSF B"+SEP+"(\\S+)"+SEP+"\\+?[0-9.,]+R alcanzado","i").exec(t)))return{kind:"be",sym:normSym(m[1])};
+  if((m=new RegExp("PSF B"+SEP+"(\\S+)"+SEP+"(Objetivo|Stop|Breakeven|Tiempo)","i").exec(t)))return{kind:"close",sym:normSym(m[1]),why:m[2].charAt(0).toUpperCase()+m[2].slice(1).toLowerCase()};
+  return{err:"No reconozco la alerta. Copia el texto completo, que empieza por «PSF A» o «PSF B»."};
+}
+$("alertGo").addEventListener("click",async()=>{
+  const res=parseAlert($("alertIn").value);const out=$("alertMsg");
+  if(res.err){out.textContent=res.err;return}
+  const known=MKT_A.concat(MKT_B);
+  if(!known.includes(res.sym)){out.textContent="Mercado "+res.sym+" fuera del plan.";return}
+  const ot=openTrades().filter(t=>t.sym===res.sym);
+  if(res.kind==="open"){
+    $("ckSym").value=res.sym;$("ckSym").dispatchEvent(new Event("change"));$("ckDir").value=res.dir;
+    $("ckEntry").value=String(res.entry);$("ckStop").value=String(res.stop);$("ckTarget").value=res.target!=null?String(res.target):"";
+    if(MKT_B.includes(res.sym)){manualChk.bgat=true}
+    renderPre();out.textContent="Alerta leída: revisa la checklist y pulsa Abrir operación cuando la orden esté puesta.";return}
+  if(res.kind==="zone"){weekData.zones=weekData.zones||{};weekData.zones[res.sym]={dir:res.dir,at:new Date().toISOString()};saveWeek();renderCockpit();$("alertIn").value="";
+    out.textContent=res.sym+" ha tocado la zona. Vigila el gatillo de 4H durante 24 horas.";return}
+  if(!ot.length){out.textContent="No tienes ninguna operación abierta en "+res.sym+".";return}
+  const t=ot[0];
+  if(res.kind==="be"){await markBE(t);out.textContent=t.sym+": mueve el stop a la entrada ("+fmtPx(t.sym,Number(t.entry))+").";$("alertIn").value="";return}
+  if(res.kind==="close"){
+    if(res.why==="Tiempo"){out.textContent="Cierre por tiempo: escribe el precio de salida en la tarjeta de "+t.sym+".";return}
+    await closeTrade(t,res.why,res.price);$("alertIn").value="";out.textContent="Operación de "+t.sym+" cerrada desde la alerta.";return}
+});
+
+/* importar CSV de FTMO MetriX o MT5 */
+let impRows=[];
+function csvParse(text){
+  const first=(text.split(/\r?\n/).find(l=>l.trim())||"");
+  const delim=[";",",","\t"].map(d=>[d,first.split(d).length]).sort((a,b)=>b[1]-a[1])[0][0];
+  const rows=[];let row=[],f="",q=false;
+  for(let i=0;i<text.length;i++){const ch=text[i];
+    if(q){if(ch==='"'){if(text[i+1]==='"'){f+='"';i++}else q=false}else f+=ch}
+    else{if(ch==='"')q=true;else if(ch===delim){row.push(f);f=""}else if(ch==="\n"){row.push(f);rows.push(row);row=[];f=""}else if(ch!=="\r")f+=ch}}
+  if(f!==""||row.length){row.push(f);rows.push(row)}
+  return rows.filter(r=>r.some(x=>String(x).trim()!==""));
+}
+function moneyNum(s){let x=String(s==null?"":s).replace(/[^0-9,.\-]/g,"");if(x.includes(",")&&x.includes(".")){if(x.lastIndexOf(",")>x.lastIndexOf("."))x=x.replace(/\./g,"").replace(",",".");else x=x.replace(/,/g,"")}else if(x.includes(","))x=x.replace(",",".");return parseFloat(x)}
+function dateOf(s){s=String(s||"");let m=/(\d{4})[.\-\/](\d{1,2})[.\-\/](\d{1,2})/.exec(s);if(m)return m[1]+"-"+m[2].padStart(2,"0")+"-"+m[3].padStart(2,"0");
+  m=/(\d{1,2})([.\-\/])(\d{1,2})\2(\d{4})/.exec(s);if(m){const a=+m[1],b=+m[3];let d,mo;if(m[2]==="/"){mo=a;d=b;if(a>12){d=a;mo=b}}else{d=a;mo=b;if(b>12){mo=a;d=b}}return m[4]+"-"+String(mo).padStart(2,"0")+"-"+String(d).padStart(2,"0")}return null}
+function findCol(h,tests){for(const fn of tests){const i=h.findIndex(fn);if(i>=0)return i}return -1}
+function analyzeCsv(text){
+  const rows=csvParse(text);if(rows.length<2)return{err:"El archivo no tiene filas."};
+  const hi=rows.findIndex(r=>r.some(c=>/symbol|s[ií]mbolo|instrument/i.test(c)));if(hi<0)return{err:"No encuentro la columna del símbolo (Symbol)."};
+  const h=rows[hi].map(c=>String(c).trim().toLowerCase());
+  const iSym=findCol(h,[c=>/symbol|s[ií]mbolo|instrument/.test(c)]);
+  const iType=findCol(h,[c=>/^(type|tipo|side|direction|direcci[oó]n)$/.test(c),c=>/type|tipo|side/.test(c)]);
+  const iOpen=findCol(h,[c=>/open/.test(c)&&/(time|date|fecha)/.test(c),c=>/apertura/.test(c)]);
+  const iClose=findCol(h,[c=>/close/.test(c)&&/(time|date|fecha)/.test(c),c=>/cierre/.test(c)&&/(fecha|hora)/.test(c)]);
+  const iProfit=findCol(h,[c=>/^(profit|net profit|p\/l|pnl|beneficio|result|resultado)$/.test(c),c=>/profit|beneficio|p\/l|pnl/.test(c)]);
+  if(iProfit<0)return{err:"No encuentro la columna del beneficio (Profit)."};
+  const out=[];
+  for(let r=hi+1;r<rows.length;r++){const row=rows[r];const symRaw=String(row[iSym]||"").trim();const p=moneyNum(row[iProfit]);if(!symRaw||!isFinite(p))continue;
+    const typ=String(iType>=0?row[iType]:"").toLowerCase();if(/balance|deposit|credit|withdraw|dep[oó]sito/.test(typ))continue;
+    const dir=/sell|short|venta/.test(typ)?"S":"L";
+    const date=dateOf(iClose>=0?row[iClose]:"")||dateOf(iOpen>=0?row[iOpen]:"")||nyNow().date;
+    const sym=normSym(symRaw);const setup=MKT_A.includes(sym)?"A":MKT_B.includes(sym)?"B":"O";
+    const key=("imp-"+sym+"-"+String(iOpen>=0?row[iOpen]:("r"+r))+"-"+String(row[iProfit])).replace(/[^A-Za-z0-9_\-.~:@+]/g,"").slice(0,180);
+    out.push({sym,dir,date,profit:p,key,setup})}
+  if(!out.length)return{err:"No he encontrado operaciones en el archivo."};
+  return{rows:out};
+}
+function impRefresh(){
+  const btn=$("impGo");if(!impRows.length){btn.disabled=true;return}
+  const have=new Set(trades.map(t=>t.id));const fresh=impRows.filter(r=>!have.has(r.key));
+  const acct=num($("impAcct").value),rk=num($("impRisk").value);const riskUSD=acct*rk/100;
+  const tot=impRows.reduce((s,r)=>s+r.profit,0);const dates=impRows.map(r=>r.date).sort();
+  $("impPrev").textContent=impRows.length+" operaciones del "+dates[0]+" al "+dates[dates.length-1]+" · beneficio total "+tot.toFixed(2)+" $ · "+(isFinite(riskUSD)&&riskUSD>0?"1R = "+riskUSD.toFixed(0)+" $":"pon cuenta y riesgo")+" · nuevas: "+fresh.length;
+  btn.disabled=!(fresh.length&&col&&riskUSD>0);btn.textContent=fresh.length?"Importar "+fresh.length:"Todo importado";
+}
+$("impFile").addEventListener("change",()=>{const f=$("impFile").files[0];impRows=[];if(!f){$("impPrev").textContent="Ningún archivo.";impRefresh();return}
+  const rd=new FileReader();rd.onload=()=>{const res=analyzeCsv(String(rd.result||""));if(res.err){$("impPrev").textContent=res.err;impRows=[];impRefresh();return}impRows=res.rows;impRefresh()};
+  rd.onerror=()=>{$("impPrev").textContent="No se pudo leer el archivo."};rd.readAsText(f)});
+["impAcct","impRisk"].forEach(id=>$(id).addEventListener("input",impRefresh));
+$("impGo").addEventListener("click",async()=>{
+  if(!col||!impRows.length)return;const btn=$("impGo");btn.disabled=true;
+  const acct=num($("impAcct").value),rk=num($("impRisk").value);const riskUSD=acct*rk/100;const have=new Set(trades.map(t=>t.id));
+  const fresh=impRows.filter(r=>!have.has(r.key));let done=0;
+  for(const r of fresh){
+    try{await col.doc(r.key).set({status:"closed",date:r.date,sym:r.sym,setup:r.setup,dir:r.dir,mode:$("impMode").value,r:Math.round(r.profit/riskUSD*100)/100,risk:rk,profit:r.profit,platform:"import",note:"Importada de CSV",example:false,created:new Date().toISOString()});done++;$("impStatus").textContent="Importando… "+done+" de "+fresh.length}
+    catch(e){$("impStatus").textContent=e&&e.code==="quota_exceeded"?"El diario está lleno.":"Se paró en la "+(done+1)+". Pulsa Importar otra vez.";break}}
+  if(done===fresh.length)$("impStatus").textContent=done+" operaciones importadas.";impRefresh();
+});
+
+setInterval(()=>renderCockpit(),20000);
+document.addEventListener("visibilitychange",()=>{if(!document.hidden)renderCockpit()});
+renderCockpit();
+
+function LocalDB(KEY,persistOk){
+  let store={};if(persistOk){try{store=JSON.parse(localStorage.getItem(KEY)||"{}")||{}}catch(e){store={}}}
+  const listeners=new Set();const cl=o=>JSON.parse(JSON.stringify(o));
+  const persist=()=>{if(!persistOk)return;try{localStorage.setItem(KEY,JSON.stringify(store))}catch(e){throw{code:"quota_exceeded",message:"localStorage lleno"}}};
+  const has=p=>Object.prototype.hasOwnProperty.call(store,p);
+  const snapDoc=p=>({id:p.split("/").pop(),exists:has(p),data:()=>has(p)?cl(store[p]):undefined,metadata:{fromCache:false,hasPendingWrites:false}});
+  function fire(l){
+    if(l.type==="doc"){l.cb(snapDoc(l.path));return}
+    const pre=l.path+"/";let docs=Object.keys(store).filter(k=>k.startsWith(pre)&&!k.slice(pre.length).includes("/")).map(snapDoc);
+    if(l.order){const[f,dir]=l.order;docs.sort((a,b)=>{const x=a.data()[f],y=b.data()[f];return(x<y?-1:x>y?1:0)*(dir==="desc"?-1:1)})}
+    if(l.lim)docs=docs.slice(0,l.lim);
+    l.cb({docs,size:docs.length,empty:!docs.length,docChanges:()=>[],metadata:{fromCache:false,hasPendingWrites:false}});
+  }
+  const notify=()=>setTimeout(()=>listeners.forEach(fire),0);
+  function docRef(path){return{id:path.split("/").pop(),path,
+    get:async()=>snapDoc(path),
+    set:async d=>{store[path]=cl(d);persist();notify()},
+    update:async d=>{if(!has(path))throw{code:"invalid_argument",message:"no existe"};store[path]=Object.assign({},store[path],cl(d));persist();notify()},
+    delete:async()=>{delete store[path];persist();notify()},
+    onSnapshot:cb=>{const l={type:"doc",path,cb};listeners.add(l);setTimeout(()=>fire(l),0);return()=>listeners.delete(l)},
+    collection:sub=>colRef(path+"/"+sub)}}
+  function colRef(path,order,lim){const q={path,
+    doc:id=>docRef(path+"/"+(id||(Date.now().toString(36)+Math.random().toString(36).slice(2,8)))),
+    add:async d=>{const r=q.doc();await r.set(d);return r},
+    orderBy:(f,dir)=>colRef(path,[f,dir||"asc"],lim),
+    limit:n=>colRef(path,order,n),
+    onSnapshot:cb=>{const l={type:"col",path,cb,order,lim};listeners.add(l);setTimeout(()=>fire(l),0);return()=>listeners.delete(l)}};return q}
+  window.addEventListener("storage",e=>{if(persistOk&&e.key===KEY){try{store=JSON.parse(e.newValue||"{}")||{}}catch(_){}notify()}});
+  return{doc:docRef,collection:colRef,exportAll:()=>cl(store),importAll:obj=>{Object.keys(obj||{}).forEach(k=>{if(/^data\/users\/local\/journal\//.test(k)&&obj[k]&&typeof obj[k]==="object")store[k]=obj[k]});persist();notify()}};
+}
+let LDB=null;
+(async()=>{
+  let ok=true;try{localStorage.setItem("psf-test","1");localStorage.removeItem("psf-test")}catch(e){ok=false}
+  LDB=LocalDB("psf-diario-v1",ok);
+  jdoc=LDB.doc("data/users/local/journal");col=jdoc.collection("trades");
+  ckAttach();
+  if(!ok)ckStatus("Tu navegador no deja guardar datos (¿modo privado?). Funciona, pero no se guardará nada.");
+  col.orderBy("date","desc").limit(1000).onSnapshot(snap=>{
+    trades=snap.docs.map(d=>Object.assign({id:d.id},d.data()));
+    $("jStatus").textContent=ok?(trades.length===1?"1 operación guardada en este dispositivo":trades.length?trades.length+" operaciones guardadas en este dispositivo":"Diario listo · se guarda en este dispositivo"):"Sin guardar: el navegador lo bloquea";
+    dbReady=true;setDisabled(writing);render();renderCockpit();impRefresh();
+  });
+  /* copia de seguridad */
+  $("bkExport").addEventListener("click",()=>{
+    const data=JSON.stringify({app:"plan-swing",version:1,exported:new Date().toISOString(),data:LDB.exportAll()},null,1);
+    const blob=new Blob([data],{type:"application/json"});const a=document.createElement("a");a.href=URL.createObjectURL(blob);
+    a.download="plan-swing-diario-"+nyNow().date+".json";document.body.append(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove()},1500);
+    $("bkStatus").textContent="Copia descargada. Guárdala en Archivos o en iCloud.";});
+  $("bkFile").addEventListener("change",()=>{const f=$("bkFile").files[0];if(!f)return;const rd=new FileReader();
+    rd.onload=()=>{try{const obj=JSON.parse(String(rd.result||""));if(!obj||obj.app!=="plan-swing"||typeof obj.data!=="object")throw new Error("formato");LDB.importAll(obj.data);$("bkStatus").textContent="Copia cargada: se ha juntado con lo que ya tenías."}catch(e){$("bkStatus").textContent="Ese archivo no es una copia del Plan Swing."}};
+    rd.readAsText(f)});
+})();
+})();
+</script>
+
+</body>
+</html>

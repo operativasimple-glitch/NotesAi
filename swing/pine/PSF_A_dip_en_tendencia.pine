@@ -1,0 +1,159 @@
+//@version=5
+// PSF A · Dip en tendencia
+// Plan Swing Fondeo. Úsalo en gráfico DIARIO de US500, US30 o US100 (feed OANDA).
+// Señal: precio por encima de la media de 200 y RSI(2) por debajo de 10.
+// Entrada antes del cierre (3:50-3:58 pm Nueva York). Stop 2,5 x ATR(14).
+// Salida: primer cierre por encima de la media de 5, o a las 7 sesiones.
+// Alertas: crea UNA alerta con "Cualquier llamada a la función alert()".
+// El escáner vigila los tres índices a la vez, sea cual sea el gráfico.
+indicator("PSF A · Dip en tendencia", shorttitle="PSF A", overlay=true, max_labels_count=200, max_lines_count=100)
+
+// ───────── Parámetros
+grpR = "Reglas"
+lenTrend = input.int(200, "Media de tendencia", minval=20, group=grpR)
+lenExit  = input.int(5, "Media de salida", minval=2, group=grpR)
+lenRsi   = input.int(2, "RSI periodos", minval=2, group=grpR)
+rsiMax   = input.float(10.0, "RSI por debajo de", minval=1.0, maxval=50.0, group=grpR)
+lenAtr   = input.int(14, "ATR periodos", minval=2, group=grpR)
+atrMult  = input.float(2.5, "Stop = ATR x", minval=0.5, step=0.1, group=grpR)
+maxDays  = input.int(7, "Sesiones máximas", minval=1, group=grpR)
+
+grpW = "Ventana de alertas (hora de Nueva York)"
+winFrom = input.int(1545, "Desde (HHMM)", minval=0, maxval=2359, group=grpW)
+winTo   = input.int(1558, "Hasta (HHMM)", minval=0, maxval=2359, group=grpW)
+
+grpS = "Escáner"
+sym1 = input.symbol("OANDA:SPX500USD", "Índice 1", group=grpS)
+sym2 = input.symbol("OANDA:US30USD", "Índice 2", group=grpS)
+sym3 = input.symbol("OANDA:NAS100USD", "Índice 3", group=grpS)
+
+grpV = "Vista"
+showMAs   = input.bool(true, "Medias de 200 y 5", group=grpV)
+showTable = input.bool(true, "Tabla del escáner", group=grpV)
+tblPos    = input.string("Abajo a la derecha", "Posición de la tabla", options=["Arriba a la derecha", "Abajo a la derecha", "Abajo a la izquierda", "Arriba a la izquierda"], group=grpV)
+
+grpC = "Colores"
+cMA200 = input.color(color.new(color.gray, 20), "Media 200", group=grpC)
+cMA5   = input.color(color.new(color.orange, 20), "Media 5", group=grpC)
+cBuy   = input.color(color.new(color.green, 10), "Señal de compra", group=grpC)
+cExit  = input.color(color.new(color.teal, 10), "Salida", group=grpC)
+cStop  = input.color(color.new(color.red, 10), "Stop", group=grpC)
+
+// ───────── Cálculo diario
+f_daily() =>
+    s200 = ta.sma(close, lenTrend)
+    s5   = ta.sma(close, lenExit)
+    r    = ta.rsi(close, lenRsi)
+    a    = ta.atr(lenAtr)
+    sig  = close > s200 and r < rsiMax
+    bs   = ta.barssince(sig)
+    [close, s200, s5, r, a, sig, bs]
+
+[cD, s200D, s5D, rD, aD, sigD, bsD] = request.security(syminfo.tickerid, "D", f_daily())
+[c1, t1, e1, r1, a1, g1, b1] = request.security(sym1, "D", f_daily())
+[c2, t2, e2, r2, a2, g2, b2] = request.security(sym2, "D", f_daily())
+[c3, t3, e3, r3, a3, g3, b3] = request.security(sym3, "D", f_daily())
+
+plot(showMAs ? s200D : na, "Media 200", color=cMA200, linewidth=2)
+plot(showMAs ? s5D : na, "Media 5", color=cMA5, linewidth=1)
+
+// ───────── Operación simulada en el gráfico (solo velas cerradas, gráfico diario)
+var bool  inPos   = false
+var float stopLvl = na
+var int   held    = 0
+var line  stopLn  = na
+
+if barstate.isconfirmed and timeframe.isdaily
+    bool exitedNow = false
+    if inPos
+        held += 1
+        bool exStop = low <= stopLvl
+        bool exRule = close > s5D
+        bool exTime = held >= maxDays
+        if exStop or exRule or exTime
+            string why = exStop ? "Stop" : exRule ? "Salida" : "Tiempo"
+            label.new(bar_index, high, why, style=label.style_label_down, color=exStop ? cStop : cExit, textcolor=color.white, size=size.tiny)
+            if not na(stopLn)
+                line.set_x2(stopLn, bar_index)
+            inPos := false
+            exitedNow := true
+        else
+            if not na(stopLn)
+                line.set_x2(stopLn, bar_index + 1)
+    if not inPos and not exitedNow and sigD
+        inPos   := true
+        held    := 0
+        stopLvl := close - atrMult * aD
+        label.new(bar_index, low, "A ▲", style=label.style_label_up, color=cBuy, textcolor=color.white, size=size.tiny)
+        stopLn  := line.new(bar_index, stopLvl, bar_index + 1, stopLvl, color=cStop, style=line.style_dashed, width=1)
+
+// ───────── Alertas del escáner (tiempo real, dentro de la ventana)
+string NY = "America/New_York"
+int nowMin  = hour(timenow, NY) * 60 + minute(timenow, NY)
+int fromMin = int(winFrom / 100) * 60 + winFrom % 100
+int toMin   = int(winTo / 100) * 60 + winTo % 100
+int dowNY   = dayofweek(timenow, NY)
+bool inWindow = barstate.isrealtime and dowNY >= dayofweek.monday and dowNY <= dayofweek.friday and nowMin >= fromMin and nowMin <= toMin
+int todayNY = year(timenow, NY) * 10000 + month(timenow, NY) * 100 + dayofmonth(timenow, NY)
+
+f_name(string s) =>
+    str.replace_all(str.replace_all(s, "OANDA:", ""), "TVC:", "")
+
+f_eval(string s, float c, float t, float e, float r, float a, bool g, int bs, int sentBuy, int sentExit) =>
+    string msg = ""
+    int nb = sentBuy
+    int nx = sentExit
+    int since = nz(bs, 9999)
+    if inWindow and not na(c)
+        if g and sentBuy != todayNY
+            msg := "PSF A · COMPRA " + f_name(s) + " · precio " + str.tostring(c, "#.##") + " · stop " + str.tostring(c - atrMult * a, "#.##") + " · RSI(2) " + str.tostring(r, "#.#")
+            nb := todayNY
+        else if not g and since >= 1 and since <= maxDays and (c > e or since == maxDays) and sentExit != todayNY
+            msg := "PSF A · SALIDA " + f_name(s) + (c > e ? " · cierra por encima de la media de 5" : " · séptima sesión, cierre por tiempo") + " · precio " + str.tostring(c, "#.##")
+            nx := todayNY
+    [msg, nb, nx]
+
+varip int sentB1 = 0
+varip int sentX1 = 0
+varip int sentB2 = 0
+varip int sentX2 = 0
+varip int sentB3 = 0
+varip int sentX3 = 0
+
+[m1, nb1, nx1] = f_eval(sym1, c1, t1, e1, r1, a1, g1, b1, sentB1, sentX1)
+[m2, nb2, nx2] = f_eval(sym2, c2, t2, e2, r2, a2, g2, b2, sentB2, sentX2)
+[m3, nb3, nx3] = f_eval(sym3, c3, t3, e3, r3, a3, g3, b3, sentB3, sentX3)
+sentB1 := nb1
+sentX1 := nx1
+sentB2 := nb2
+sentX2 := nx2
+sentB3 := nb3
+sentX3 := nx3
+if m1 != ""
+    alert(m1, alert.freq_all)
+if m2 != ""
+    alert(m2, alert.freq_all)
+if m3 != ""
+    alert(m3, alert.freq_all)
+
+// ───────── Tabla del escáner
+string tPos = tblPos == "Arriba a la derecha" ? position.top_right : tblPos == "Abajo a la derecha" ? position.bottom_right : tblPos == "Abajo a la izquierda" ? position.bottom_left : position.top_left
+var table tb = table.new(tPos, 4, 4, bgcolor=color.new(chart.bg_color, 0), border_color=color.new(chart.fg_color, 80), border_width=1, frame_color=color.new(chart.fg_color, 70), frame_width=1)
+
+f_row(int row, string s, float c, float t, float r, bool g) =>
+    string st = na(c) ? "sin datos" : g ? "SEÑAL" : c > t ? "en tendencia" : "bajo la 200"
+    color stc = g ? cBuy : (not na(c) and c > t) ? chart.fg_color : cStop
+    table.cell(tb, 0, row, f_name(s), text_color=chart.fg_color, text_size=size.small, text_halign=text.align_left)
+    float pct = (c / t - 1) * 100
+    table.cell(tb, 1, row, na(t) ? "-" : (pct >= 0 ? "+" : "") + str.tostring(pct, "#.0") + "%", text_color=chart.fg_color, text_size=size.small)
+    table.cell(tb, 2, row, na(r) ? "-" : str.tostring(r, "#.0"), text_color=chart.fg_color, text_size=size.small)
+    table.cell(tb, 3, row, st, text_color=stc, text_size=size.small)
+
+if showTable and barstate.islast
+    table.cell(tb, 0, 0, "PSF A", text_color=chart.fg_color, text_size=size.small, text_halign=text.align_left)
+    table.cell(tb, 1, 0, "vs 200", text_color=chart.fg_color, text_size=size.small)
+    table.cell(tb, 2, 0, "RSI(2)", text_color=chart.fg_color, text_size=size.small)
+    table.cell(tb, 3, 0, "estado", text_color=chart.fg_color, text_size=size.small)
+    f_row(1, sym1, c1, t1, r1, g1)
+    f_row(2, sym2, c2, t2, r2, g2)
+    f_row(3, sym3, c3, t3, r3, g3)

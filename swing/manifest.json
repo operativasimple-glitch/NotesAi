@@ -1,0 +1,31 @@
+{
+  "name": "Plan Swing Fondeo",
+  "short_name": "Plan Swing",
+  "description": "Cabina diaria, diario de operaciones e indicadores para hacer swing con una cuenta de fondeo.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0D141A",
+  "theme_color": "#0E5C70",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}
