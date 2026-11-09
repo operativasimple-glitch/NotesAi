@@ -13,9 +13,11 @@ const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SE
 
 const APP = 'https://operativasimple-glitch.github.io/NotesAi/radar/';
 const HL = 'https://api.hyperliquid.xyz/info';
-const ETH_RPCS = ['https://ethereum-rpc.publicnode.com', 'https://eth.drpc.org'];
+// RPC públicos y gratuitos que permiten buscar transferencias por cartera (eth_getLogs solo por topics)
+const ETH_RPCS = ['https://eth.drpc.org', 'https://gateway.tenderly.co/public/mainnet', 'https://rpc.mevblocker.io'];
 const TRANSFER = '0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef';
-const PUSH_HOSTS = /(^|\.)(push\.apple\.com|fcm\.googleapis\.com|push\.services\.mozilla\.com|notify\.windows\.com)$/;
+// servicios de push de Apple, Google (Chrome/Android), Mozilla y Microsoft
+const PUSH_HOSTS = /(^|\.)(push\.apple\.com|fcm\.googleapis\.com|jmt17\.google\.com|push\.services\.mozilla\.com|notify\.windows\.com)$/;
 const CORS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'content-type, authorization, apikey, x-client-info',
@@ -165,14 +167,16 @@ async function hl(body: unknown): Promise<any> {
 let rpcIdx = 0;
 async function rpc(method: string, params: unknown[]): Promise<any> {
   let last: unknown = null;
+  const start = rpcIdx;
   for (let i = 0; i < ETH_RPCS.length; i++) {
-    const url = ETH_RPCS[(rpcIdx + i) % ETH_RPCS.length];
+    const k = (start + i) % ETH_RPCS.length;
     try {
-      const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+      const r = await fetch(ETH_RPCS[k], { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
       const j = await r.json();
       if (j.error) throw new Error(j.error.message || 'rpc');
+      rpcIdx = k; // nos quedamos con el que funciona
       return j.result;
-    } catch (e) { last = e; rpcIdx++; }
+    } catch (e) { last = e; }
   }
   throw last;
 }
@@ -182,7 +186,7 @@ async function pool<T>(items: T[], n: number, fn: (x: T) => Promise<void>) {
   await Promise.all(Array.from({ length: Math.min(n, items.length) }, run));
 }
 
-type Ev = { address: string; chain: string; title: string; body: string; kind: string };
+type Ev = { address: string; chain: string; title: string; body: string; kind: string; id?: number };
 type Pos = { szi: number; entry: number; usd: number; lev: number | null; liq: number | null; pnl: number };
 
 function diffHL(address: string, old: Record<string, Pos>, now: Record<string, Pos>): Ev[] {
@@ -218,8 +222,9 @@ async function checkHL(address: string, state: any): Promise<Ev[]> {
       lev: p.leverage ? p.leverage.value : null, liq: p.liquidationPx == null ? null : +p.liquidationPx
     };
   }
-  const evs = state && state.pos ? diffHL(address, state.pos, now) : [];
-  await db.from('rb_state').upsert({ address, chain: 'hl', data: { pos: now, acct: +(s.marginSummary?.accountValue || 0) }, updated_at: new Date().toISOString() });
+  const fresh = state && state.pos && Date.now() - (state.t || 0) < 15 * 60e3;
+  const evs = fresh ? diffHL(address, state.pos, now) : [];
+  await db.from('rb_state').upsert({ address, chain: 'hl', data: { pos: now, acct: +(s.marginSummary?.accountValue || 0), t: Date.now() }, updated_at: new Date().toISOString() });
   return evs;
 }
 
@@ -265,13 +270,14 @@ function priceOf(symbol: string, mids: Record<string, string>): number | null {
 }
 
 async function checkETH(address: string, state: any, latest: number, mids: Record<string, string>): Promise<Ev[]> {
-  const from = state && state.block ? state.block + 1 : 0;
-  if (!from) { // primera vez: empezamos a mirar desde ahora
-    await db.from('rb_state').upsert({ address, chain: 'eth', data: { block: latest }, updated_at: new Date().toISOString() });
+  const fresh = state && state.block && Date.now() - (state.t || 0) < 60 * 60e3;
+  const from = fresh ? state.block + 1 : 0;
+  if (!from) { // primera vez (o datos viejos): empezamos a mirar desde ahora
+    await db.from('rb_state').upsert({ address, chain: 'eth', data: { block: latest, t: Date.now() }, updated_at: new Date().toISOString() });
     return [];
   }
   if (from > latest) return [];
-  const to = Math.min(latest, from + 400);
+  const to = Math.min(latest, from + 99); // los RPC gratuitos no dejan buscar en rangos grandes
   const pad = '0x' + '0'.repeat(24) + address.slice(2);
   const range = { fromBlock: '0x' + from.toString(16), toBlock: '0x' + to.toString(16) };
   const [outs, ins] = await Promise.all([
@@ -319,7 +325,7 @@ async function checkETH(address: string, state: any, latest: number, mids: Recor
       evs.push({ address, chain: 'eth', title: 'recibe ' + i.map(p => p.sym).join(' + '), body: 'Recibe ' + txt(i) + link, kind: 'buy' });
     }
   }
-  await db.from('rb_state').upsert({ address, chain: 'eth', data: { block: to }, updated_at: new Date().toISOString() });
+  await db.from('rb_state').upsert({ address, chain: 'eth', data: { block: to, t: Date.now() }, updated_at: new Date().toISOString() });
   return evs;
 }
 
@@ -364,7 +370,9 @@ async function check(): Promise<Record<string, unknown>> {
     // guardar y avisar: el título lleva el nombre que cada móvil le puso a la cartera
     let sent = 0;
     if (evs.length) {
-      await db.from('rb_events').insert(evs.map(e => ({ ...e, url: APP + '#w=' + e.address + (e.chain === 'eth' ? '&c=eth' : '') })));
+      const { data: ins } = await db.from('rb_events')
+        .insert(evs.map(e => ({ ...e, url: APP + '#w=' + e.address + (e.chain === 'eth' ? '&c=eth' : '') }))).select('id');
+      (ins || []).forEach((r, i) => { if (evs[i]) evs[i].id = r.id; });
       const devIds = [...new Set(evs.flatMap(e => [...targets.get(e.chain + ':' + e.address)!.devs.keys()]))];
       const { data: devs } = await db.from('rb_devices').select('id,endpoint,p256dh,auth,fails').in('id', devIds);
       const devMap = new Map((devs || []).map(d => [d.id, d as Device]));
@@ -378,13 +386,18 @@ async function check(): Promise<Record<string, unknown>> {
               title: '🐋 ' + label + ' ' + e.title, body: e.body,
               url: APP + '#w=' + e.address + (e.chain === 'eth' ? '&c=eth' : ''),
               tag: 'rb-' + e.address.slice(2, 10) + '-' + Date.now() + '-' + Math.random().toString(36).slice(2, 6),
-              address: e.address, chain: e.chain, kind: e.kind
+              address: e.address, chain: e.chain, kind: e.kind, sid: e.id ? 's' + e.id : undefined
             });
             if (st >= 200 && st < 300) sent++;
           });
         }
       }
       await pool(jobs, 6, async j => j());
+    }
+    const last = +((await getCfg('cleanup_at')) || 0);
+    if (Date.now() - last > 24 * 3600e3) {
+      await db.from('rb_config').upsert({ key: 'cleanup_at', value: String(Date.now()) });
+      await db.from('rb_events').delete().lt('created_at', new Date(Date.now() - 14 * 86400e3).toISOString());
     }
     Object.assign(report, { targets: targets.size, events: evs.length, sent, errors, ms: Date.now() - t0 });
     return report;

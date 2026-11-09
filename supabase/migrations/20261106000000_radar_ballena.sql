@@ -82,17 +82,7 @@ select cron.schedule(
   $$
 );
 
--- Limpieza diaria: historial de la tarea programada y avisos de más de 14 días.
-select cron.schedule(
-  'rb-cleanup',
-  '17 4 * * *',
-  $$
-  delete from cron.job_run_details
-   where end_time < now() - interval '2 days'
-     and jobid in (select jobid from cron.job where jobname like 'rb-%');
-  delete from public.rb_events where created_at < now() - interval '14 days';
-  $$
-);
+-- La limpieza de avisos antiguos (más de 14 días) la hace la propia función rb una vez al día.
 
 -- Evita que dos revisiones se pisen si una tarda más de un minuto.
 create or replace function public.rb_try_lock(secs int) returns boolean

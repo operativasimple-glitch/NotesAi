@@ -236,6 +236,23 @@ const OKX = 'https://www.okx.com/api/v5';
 const FNG_URL = 'https://api.alternative.me/fng/?limit=31';
 const GATE = 'https://api.gateio.ws/api/v4';
 const GEM = 'https://generativelanguage.googleapis.com/v1beta';
+// Servidor propio (Supabase) que vigila las carteras 24/7 y manda los avisos con la app cerrada.
+const SRV = 'https://tdgorosrvhilownrkvls.supabase.co/functions/v1/rb';
+
+// Carteras famosas. Las atribuciones son de analistas on-chain (Arkham, Lookonchain, Etherscan),
+// no están confirmadas por los interesados.
+const FAMOUS = [
+  { addr: '0xb317d2bc2d3d2df5fa441b5bae0ab9d8b07283ae', chain: 'hl', label: 'Ballena «insider» (Trump)',
+    desc: 'Ganó unos 190 M$ con cortos abiertos justo antes del anuncio de aranceles de Trump (oct. 2025). Arkham la llamó «insider»; no hay vínculo confirmado con Trump. Ahora está vacía: te avisamos si vuelve.' },
+  { addr: '0x5be9a4959308a0d0c7bc0870e319314d8d957dbb', chain: 'eth', label: 'World Liberty (familia Trump)',
+    desc: 'Multisig de World Liberty Financial, el proyecto cripto de la familia Trump (etiqueta de Etherscan). Te avisamos de sus compras y ventas de tokens en Ethereum.' },
+  { addr: '0x020ca66c30bec2c4fe3861a94e4db4a498a35872', chain: 'hl', label: 'Machi Big Brother',
+    desc: 'Trader famoso de Hyperliquid por sus largos muy apalancados en ETH (cartera identificada por Lookonchain).' },
+  { addr: '0x5078c2fbea2b2ad61bc840bc023e35fce56bedb6', chain: 'hl', label: 'James Wynn',
+    desc: 'Famoso por sus apuestas de 40x en BTC (cartera identificada por Lookonchain; él ha negado que sea suya).' }
+];
+const FAMOUS_BY = {};
+FAMOUS.forEach(f => { FAMOUS_BY[f.addr] = f; });
 
 const ALL_COINS = ['BTC', 'ETH', 'SOL', 'HYPE', 'XRP', 'DOGE', 'BNB', 'SUI', 'AVAX', 'LINK', 'ADA', 'LTC', 'ENA', 'AAVE'];
 const DEF_COINS = ['BTC', 'ETH', 'SOL', 'HYPE', 'XRP', 'DOGE'];
@@ -390,9 +407,10 @@ SEED.forEach(s => { SEED_NAME[s.a] = s.n; });
 
 function labelOf(a) {
   const s = ST.saved.find(x => x.addr === a);
-  return s ? s.label : SEED_NAME[a] || short(a);
+  return s ? s.label : FAMOUS_BY[a] ? FAMOUS_BY[a].label : SEED_NAME[a] || short(a);
 }
 function isSaved(a) { return ST.saved.some(x => x.addr === a); }
+function chainOf(a) { const s = ST.saved.find(x => x.addr === a); return s && s.chain ? s.chain : FAMOUS_BY[a] ? FAMOUS_BY[a].chain : 'hl'; }
 
 /* ---------- red ---------- */
 async function hl(body) {
@@ -531,6 +549,7 @@ async function loadWhales() {
 /* carteras seguidas: detecta cambios de posición y avisa */
 async function loadSaved() {
   for (const s of ST.saved) {
+    if (s.chain === 'eth') continue;
     let st;
     try { st = parseCH(await hl({ type: 'clearinghouseState', user: s.addr })); } catch (e) { continue; }
     ST.whales[s.addr] = st;
@@ -555,7 +574,7 @@ function diffPositions(s, old, now) {
     else if (o && n && Math.sign(o) !== Math.sign(n)) txt = 'gira a ' + side(n) + ' en ' + c + ' (' + usd(Math.abs(n) * px) + ')';
     else if (o && n && Math.abs(n) > Math.abs(o) * 1.1) txt = 'aumenta su ' + side(n) + ' en ' + c + ' a ' + usd(Math.abs(n) * px);
     else if (o && n && Math.abs(n) < Math.abs(o) * 0.9) txt = 'reduce su ' + side(n) + ' en ' + c + ' a ' + usd(Math.abs(n) * px);
-    if (txt) ev.push([s.label + ' ' + txt, n > o ? 'buy' : 'sell']);
+    if (txt && !PUSH.device) ev.push([s.label + ' ' + txt, n > o ? 'buy' : 'sell']);
   });
   // muchos cambios a la vez: se guardan todos pero solo sale un aviso
   ev.forEach((e, i) => addAlert(s.addr, e[0], e[1], ev.length > 2 && i > 0));
@@ -949,28 +968,68 @@ async function drawLiqMap() {
 }
 
 /* ---------- pestaña Carteras ---------- */
+function pushCard() {
+  const p = pushSupport();
+  let h = '<div class="card"><h2>🔔 Avisos con la app cerrada</h2>';
+  if (PUSH.device) {
+    h += '<p class="small" style="margin:0"><b class="up">Activados en este móvil.</b> El servidor revisa cada minuto las ' + ST.saved.length + ' carteras que sigues y te avisa aunque la app esté cerrada.</p>' +
+      '<div class="row" style="margin-top:10px"><button class="btn sec grow" data-act="pushTest">Enviar aviso de prueba</button><button class="btn sec" data-act="pushOff">Desactivar</button></div>';
+  } else if (p === 'install') {
+    h += '<p class="small" style="margin:0">En iPhone los avisos solo funcionan con la app instalada:</p><ol class="small" style="padding-left:20px;margin:8px 0">' +
+      '<li>Abre esta web en <b>Safari</b>.</li><li>Toca <b>Compartir</b> (el cuadrado con la flecha).</li><li>Elige <b>«Añadir a pantalla de inicio»</b>.</li><li>Abre Radar Ballena desde el icono y vuelve aquí.</li></ol>';
+  } else if (p === 'denied') {
+    h += '<p class="small" style="margin:0">Las notificaciones están bloqueadas. Actívalas en <b>Ajustes del iPhone → Notificaciones → Radar Ballena</b> y vuelve aquí.</p>';
+  } else if (p === 'no') {
+    h += '<p class="small" style="margin:0">Este navegador no admite avisos. En iPhone necesitas iOS 16.4 o posterior y la app añadida a la pantalla de inicio.</p>';
+  } else {
+    h += '<p class="small" style="margin:0">Te avisamos en el móvil cuando una cartera que sigues abre, cierra o cambia una posición, <b>aunque tengas la app cerrada</b>.</p>' +
+      '<button class="btn" style="width:100%;margin-top:10px" data-act="pushOn"' + (PUSH.busy ? ' disabled' : '') + '>' + (PUSH.busy ? 'Activando…' : 'Activar avisos 24/7') + '</button>';
+  }
+  return h + '</div>';
+}
+function famousCard() {
+  return '<div class="card"><h2>⭐ Famosos</h2><div class="list">' + FAMOUS.map(f => {
+    const on = isSaved(f.addr);
+    return '<div class="item" style="align-items:flex-start"><div class="grow"><button class="iconbtn" style="padding:0;color:var(--tx);font-weight:700;text-align:left" data-act="wallet" data-addr="' + f.addr + '" data-chain="' + f.chain + '">' + esc(f.label) + ' ›</button>' +
+      '<div class="who" style="margin-top:2px">' + esc(f.desc) + '</div></div>' +
+      '<button class="chip' + (on ? ' on' : '') + '" data-act="famous" data-addr="' + f.addr + '">' + (on ? 'Siguiendo ✓' : 'Seguir') + '</button></div>';
+  }).join('') + '</div><p class="hint">Quién está detrás de cada cartera lo dicen analistas on-chain (Arkham, Lookonchain, Etherscan); no lo han confirmado los interesados. Lo que hace Trump con su dinero personal no es público en tiempo real.</p></div>';
+}
 function renderWallets() {
-  let h = '<div class="card"><h2>Seguir una cartera</h2>' +
+  let h = pushCard() + famousCard() + '<div class="card"><h2>Seguir una cartera</h2>' +
     '<input class="txt" id="addAddr" placeholder="Dirección 0x… de Hyperliquid" autocomplete="off" autocapitalize="off" spellcheck="false">' +
     '<input class="txt" id="addName" placeholder="Nombre (opcional)" style="margin-top:8px">' +
     '<div class="row" style="margin-top:10px"><button class="btn" data-act="addWallet">Seguir</button><span class="grow"></span><button class="btn sec" data-act="tab" data-tab="whales" data-sub="top">Ver top carteras</button></div>' +
-    '<p class="hint">Sin límite y gratis. Mientras la app está abierta te avisa cuando una cartera abre, cierra o cambia una posición, o hace una orden grande.</p></div>';
+    '<p class="hint">Sin límite y gratis. Te avisa cuando una cartera abre, cierra o cambia una posición (con la app cerrada si activas los avisos 24/7) y, con la app abierta, también de sus órdenes grandes.</p></div>';
   h += '<div class="card"><h2>Carteras seguidas (' + ST.saved.length + ')</h2>' + (ST.saved.length ? '<div class="list">' + ST.saved.map(s => {
     const w = ST.whales[s.addr];
     const pnl = w ? w.pos.reduce((a, p) => a + p.pnl, 0) : 0;
+    if (s.chain === 'eth') return '<button class="item" data-act="wallet" data-addr="' + s.addr + '" data-chain="eth"><div class="grow"><b class="ell">' + esc(s.label) + '</b><div class="who">' + short(s.addr) + ' · Ethereum</div></div><div class="when">tokens</div></button>';
     return '<button class="item" data-act="wallet" data-addr="' + s.addr + '"><div class="grow"><b class="ell">' + esc(s.label) + '</b><div class="who">' + short(s.addr) + ' · ' + (w ? w.pos.length + ' posiciones' : 'cargando…') + '</div></div>' +
       '<div style="text-align:right"><div class="num" style="font-weight:700">' + (w ? usd(w.acct) : '—') + '</div><div class="small num ' + cls(pnl) + '">' + (w && w.pos.length ? usd(pnl) : '') + '</div></div></button>';
   }).join('') + '</div>' : '<div class="empty">Todavía no sigues ninguna. Pega una dirección arriba o elige una del top.</div>') + '</div>';
   h += '<div class="card"><h2>Avisos' + (ST.alerts.length ? '<button class="more" data-act="clearAlerts">Borrar</button>' : '') + '</h2>' +
-    (ST.alerts.length ? '<div class="list">' + ST.alerts.slice(0, 60).map(a => '<button class="item" data-act="wallet" data-addr="' + esc(a.addr) + '"><span class="tag ' + (a.kind === 'buy' ? 'buy' : 'sell') + '">' + (a.kind === 'buy' ? '▲' : '▼') + '</span><div class="grow small">' + esc(a.text) + '</div><div class="when">' + ago(a.t) + '</div></button>').join('') + '</div>'
-      : '<div class="empty">Aquí aparecerán los movimientos de las carteras que sigues.</div>') +
-    ('Notification' in window && Notification.permission === 'default' ? '<button class="btn sec" style="margin-top:10px;width:100%" data-act="notif">Activar notificaciones del sistema</button>' : '') + '</div>';
+    (ST.alerts.length ? '<div class="list">' + ST.alerts.slice(0, 60).map(a => '<button class="item" data-act="wallet" data-addr="' + esc(a.addr) + '" data-chain="' + (a.chain || 'hl') + '"><span class="tag ' + (a.kind === 'buy' ? 'buy' : 'sell') + '">' + (a.kind === 'buy' ? '▲' : '▼') + '</span><div class="grow small">' + esc(a.text) + '</div><div class="when">' + ago(a.t) + '</div></button>').join('') + '</div>'
+      : '<div class="empty">Aquí aparecerán los movimientos de las carteras que sigues.</div>') + '</div>';
   $('tab-wallets').innerHTML = h;
 }
 
-async function openWallet(addr) {
+function openEthWallet(addr) {
+  const f = FAMOUS_BY[addr];
+  const evs = ST.alerts.filter(a => a.addr === addr).slice(0, 30);
+  openSheet(esc(labelOf(addr)),
+    '<div class="row small mut num"><span class="ell grow">' + addr + '</span><button class="chip" data-act="copy" data-v="' + addr + '">Copiar</button></div>' +
+    (f ? '<p class="small">' + esc(f.desc) + '</p>' : '<p class="small">Cartera de Ethereum: te avisamos de sus compras, ventas y envíos de tokens.</p>') +
+    (isSaved(addr) ? '<button class="btn danger" style="width:100%" data-act="unfollow" data-addr="' + addr + '" data-chain="eth">Dejar de seguir</button>'
+      : '<button class="btn" style="width:100%" data-act="follow" data-addr="' + addr + '" data-chain="eth">Seguir ⭐</button>') +
+    '<div class="card"><h2>Últimos movimientos avisados</h2>' + (evs.length ? '<div class="list">' + evs.map(a => '<div class="item"><span class="tag ' + (a.kind === 'buy' ? 'buy' : 'sell') + '">' + (a.kind === 'buy' ? '▲' : '▼') + '</span><div class="grow small">' + esc(a.text) + '</div><div class="when">' + ago(a.t) + '</div></div>').join('') + '</div>'
+      : '<div class="empty">Todavía no hay movimientos. El servidor los registra desde que la sigues con los avisos 24/7 activados.</div>') + '</div>' +
+    '<p class="hint" style="text-align:center"><a href="https://etherscan.io/address/' + addr + '" target="_blank" rel="noopener">Ver todo en Etherscan ↗</a></p>');
+}
+async function openWallet(addr, chain) {
   if (!isAddr(addr)) return;
   addr = addr.toLowerCase();
+  if ((chain || chainOf(addr)) === 'eth') { openEthWallet(addr); return; }
   openSheet(esc(labelOf(addr)), '<div class="empty">Cargando cartera…</div>');
   const token = sheetToken;
   let st = null, fills = [];
@@ -1004,11 +1063,13 @@ async function openWallet(addr) {
     '<p class="hint" style="text-align:center"><a href="https://hypurrscan.io/address/' + addr + '" target="_blank" rel="noopener">Ver en el explorador de Hyperliquid ↗</a></p>';
 }
 
-function follow(addr, label) {
+function follow(addr, label, chain) {
   if (!isAddr(addr)) { toast('Esa dirección no es válida (0x + 40 caracteres).'); return false; }
   addr = addr.toLowerCase();
   if (isSaved(addr)) { toast('Ya la sigues.'); return false; }
-  ST.saved.push({ addr, label: (label || '').trim() || SEED_NAME[addr] || short(addr) });
+  const fam = FAMOUS_BY[addr];
+  ST.saved.push({ addr, chain: chain || (fam ? fam.chain : 'hl'), label: (label || '').trim() || (fam ? fam.label : '') || SEED_NAME[addr] || short(addr) });
+  syncSoon();
   LS.set('rb_saved', ST.saved);
   const w = ST.whales[addr];
   if (w) { const now = {}; w.pos.forEach(p => { now[p.coin] = p.szi; }); ST.savedPos[addr] = now; LS.set('rb_savedpos', ST.savedPos); }
@@ -1018,6 +1079,7 @@ function follow(addr, label) {
 }
 function unfollow(addr) {
   ST.saved = ST.saved.filter(s => s.addr !== addr);
+  syncSoon();
   delete ST.savedPos[addr];
   LS.set('rb_saved', ST.saved);
   LS.set('rb_savedpos', ST.savedPos);
@@ -1278,7 +1340,7 @@ document.addEventListener('click', e => {
     case 'goLiqMap': u.liqView = 'map'; u.liqCoin = d.coin; closeSheet(); setTab('liq'); break;
     case 'goPos': u.whaleView = 'pos'; u.posCoin = d.coin; closeSheet(); setTab('whales'); break;
     case 'whalePos': u.whaleView = 'pos'; setTab('whales'); break;
-    case 'wallet': openWallet(d.addr); break;
+    case 'wallet': openWallet(d.addr, d.chain); break;
     case 'whaleView': u.whaleView = d.v; renderWhales(); break;
     case 'wCoin': u.wCoin = d.v; renderWhales(); break;
     case 'wSide': u.wSide = d.v; renderWhales(); break;
@@ -1296,15 +1358,18 @@ document.addEventListener('click', e => {
       break;
     }
     case 'addWallet': if (follow($('addAddr').value.trim(), $('addName').value)) { $('addAddr').value = ''; $('addName').value = ''; renderWallets(); } break;
-    case 'follow': { const n = $('followName'); if (follow(d.addr, n ? n.value : '')) openWallet(d.addr.toLowerCase()); break; }
-    case 'unfollow': unfollow(d.addr); openWallet(d.addr); break;
+    case 'follow': { const n = $('followName'); if (follow(d.addr, n ? n.value : '', d.chain)) openWallet(d.addr.toLowerCase(), d.chain); break; }
+    case 'unfollow': unfollow(d.addr); openWallet(d.addr, d.chain); break;
+    case 'famous': if (isSaved(d.addr)) unfollow(d.addr); else follow(d.addr); renderWallets(); break;
+    case 'pushOn': enablePush(); break;
+    case 'pushOff': disablePush(); break;
+    case 'pushTest':
+      srv({ action: 'test', device: PUSH.device }).then(r => toast(r.ok ? 'Aviso de prueba enviado' : 'No se pudo enviar (' + (r.status || r.error) + ')'), e => toast(e.message));
+      break;
     case 'copy':
       try { navigator.clipboard.writeText(d.v).then(() => toast('Dirección copiada'), () => toast(d.v)); } catch (err) { toast(d.v); }
       break;
     case 'clearAlerts': ST.alerts = []; LS.set('rb_alerts', []); renderWallets(); break;
-    case 'notif':
-      try { Notification.requestPermission().then(() => renderWallets()); } catch (err) { toast('Tu navegador no permite notificaciones aquí.'); }
-      break;
     case 'quick': ask(d.v); break;
     case 'ask': ask($('askin').value); break;
     case 'clearChat': ST.chat = []; LS.set('rb_chat', []); renderAI(); break;
@@ -1377,7 +1442,8 @@ const TASKS = {
   liqs: { every: 30e3, fn: loadLiqs },
   sparks: { every: 5 * 60e3, fn: loadSparks },
   whales: { every: 3 * 60e3, fn: loadWhales },
-  saved: { every: 45e3, fn: loadSaved }
+  saved: { every: 45e3, fn: loadSaved },
+  events: { every: 60e3, fn: loadServerEvents }
 };
 const taskNext = {}, taskBusy = {};
 async function runTask(k) {
@@ -1397,8 +1463,140 @@ document.addEventListener('visibilitychange', () => {
   if (!document.hidden) { wsConnect(); tick(); dirty(); }
 });
 
+/* ---------- avisos 24/7 (push desde el servidor) ---------- */
+const PUSH = { device: LS.raw('rb_dev'), busy: false };
+const isIOS = () => /iPhone|iPad|iPod/.test(navigator.userAgent) || (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const standalone = () => (window.matchMedia && matchMedia('(display-mode: standalone)').matches) || navigator.standalone === true;
+function pushSupport() {
+  if (isIOS() && !standalone()) return 'install';
+  if (!('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) return 'no';
+  if (Notification.permission === 'denied') return 'denied';
+  return 'ok';
+}
+async function srv(body) {
+  const r = await fetch(SRV, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (j.gone) setDevice('');
+  if (!r.ok && !j.gone) throw new Error(j.error || 'Servidor ' + r.status);
+  return j;
+}
+function setDevice(id) {
+  PUSH.device = id || '';
+  LS.setRaw('rb_dev', PUSH.device);
+  if (ST.tab === 'wallets') renderWallets();
+}
+function b64uToBytes(s) {
+  const t = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(t + '==='.slice((t.length + 3) % 4));
+  return Uint8Array.from(bin, c => c.charCodeAt(0));
+}
+async function enablePush() {
+  if (PUSH.busy) return;
+  // en iPhone el permiso hay que pedirlo justo al tocar el botón, antes de cualquier otra espera
+  let perm;
+  try { perm = await Notification.requestPermission(); } catch (e) { perm = 'denied'; }
+  if (perm !== 'granted') { toast('Sin permiso para notificaciones'); renderWallets(); return; }
+  PUSH.busy = true; renderWallets();
+  try {
+    const reg = await navigator.serviceWorker.register('sw.js');
+    await navigator.serviceWorker.ready;
+    const cfg = await srv({ action: 'config' });
+    let sub = await reg.pushManager.getSubscription();
+    if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64uToBytes(cfg.vapid) });
+    const r = await srv({ action: 'register', sub: sub.toJSON(), ua: navigator.userAgent });
+    setDevice(r.device);
+    LS.setRaw('rb_evsince', String(Date.now()));
+    await syncFollows();
+    const t = await srv({ action: 'test', device: PUSH.device });
+    toast(t.ok ? '✅ Avisos activados: te acaba de llegar uno de prueba' : 'Activado, pero el aviso de prueba falló (' + t.status + ')');
+  } catch (e) {
+    toast('No se pudieron activar: ' + e.message);
+  }
+  PUSH.busy = false; renderWallets();
+}
+async function disablePush() {
+  try { if (PUSH.device) await srv({ action: 'unregister', device: PUSH.device }); } catch (e) {}
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    const sub = reg && await reg.pushManager.getSubscription();
+    if (sub) await sub.unsubscribe();
+  } catch (e) {}
+  setDevice('');
+  toast('Avisos 24/7 desactivados');
+}
+async function syncFollows() {
+  if (!PUSH.device) return;
+  await srv({ action: 'follows', device: PUSH.device, follows: ST.saved.map(s => ({ address: s.addr, chain: s.chain || 'hl', label: s.label })) });
+}
+let syncT = null;
+function syncSoon() { clearTimeout(syncT); syncT = setTimeout(() => syncFollows().catch(() => {}), 800); }
+const evSeen = new Set(ST.alerts.filter(a => a.sid).map(a => a.sid));
+function addServerEvent(e, quiet) {
+  if (e.sid && evSeen.has(e.sid)) return false;
+  if (e.sid) evSeen.add(e.sid);
+  ST.alerts.unshift({ addr: e.address, chain: e.chain, text: labelOf(e.address) + ' ' + e.title + ' — ' + e.body, kind: e.kind, t: e.t || Date.now(), sid: e.sid });
+  ST.alerts.sort((a, b) => b.t - a.t);
+  ST.alerts = ST.alerts.slice(0, 150);
+  if (ST.tab !== 'wallets') ST.unread++;
+  LS.set('rb_alerts', ST.alerts); LS.set('rb_unread', ST.unread);
+  updBadge();
+  if (!quiet) toast('🐋 ' + labelOf(e.address) + ' ' + e.title);
+  return true;
+}
+async function loadServerEvents() {
+  if (!PUSH.device) return;
+  const since = +LS.raw('rb_evsince') || Date.now() - 48 * 3600e3;
+  const r = await srv({ action: 'events', device: PUSH.device, since });
+  let newest = since;
+  (r.events || []).forEach(e => {
+    const t = Date.parse(e.created_at);
+    newest = Math.max(newest, t);
+    addServerEvent({ sid: 's' + e.id, address: e.address, chain: e.chain, title: e.title, body: e.body, kind: e.kind, t }, true);
+  });
+  LS.setRaw('rb_evsince', String(newest));
+}
+function openFromHash() {
+  const m = location.hash.match(/w=(0x[0-9a-fA-F]{40})/);
+  if (!m) return;
+  const chain = /c=eth/.test(location.hash) ? 'eth' : 'hl';
+  try { history.replaceState(null, '', location.pathname + location.search); } catch (e) {}
+  setTab('wallets');
+  openWallet(m[1], chain);
+}
+async function initPush() {
+  if (!('serviceWorker' in navigator)) return;
+  try { await navigator.serviceWorker.register('sw.js'); } catch (e) { return; }
+  navigator.serviceWorker.addEventListener('message', ev => {
+    const m = ev.data || {};
+    if (m.type === 'rb-push' && m.data && m.data.address) {
+      addServerEvent({ sid: m.data.sid, address: m.data.address, chain: m.data.chain, title: m.data.title.replace(/^🐋\s*/, '').replace(labelOf(m.data.address) + ' ', ''), body: m.data.body, kind: m.data.kind }, false);
+      if (ST.tab === 'wallets') renderWallets();
+    }
+    if (m.type === 'rb-open' && m.url) { location.hash = m.url.split('#')[1] || ''; openFromHash(); }
+  });
+  // si iOS borró la suscripción, se vuelve a pedir activar; si cambió, se actualiza en el servidor
+  if (PUSH.device && 'PushManager' in window) {
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (!sub || Notification.permission !== 'granted') setDevice('');
+      else {
+        const r = await srv({ action: 'register', sub: sub.toJSON(), ua: navigator.userAgent });
+        if (r.device && r.device !== PUSH.device) setDevice(r.device);
+        await syncFollows();
+      }
+    } catch (e) {}
+  }
+}
+
 /* ---------- arranque ---------- */
 (function init() {
+  // la primera vez se siguen los famosos (se pueden quitar en Carteras)
+  if (!LS.get('rb_famous_seeded', false)) {
+    FAMOUS.forEach(f => { if (!isSaved(f.addr)) ST.saved.push({ addr: f.addr, chain: f.chain, label: f.label }); });
+    LS.set('rb_saved', ST.saved);
+    LS.set('rb_famous_seeded', true);
+  }
   if (CFG.coins.indexOf(ST.ui.posCoin) < 0) ST.ui.posCoin = CFG.coins[0];
   if (CFG.coins.indexOf(ST.ui.liqCoin) < 0) ST.ui.liqCoin = CFG.coins[0];
   updBadge();
@@ -1408,6 +1606,9 @@ document.addEventListener('visibilitychange', () => {
   tick();
   setInterval(tick, 5000);
   setInterval(dirty, 20000); // refresca los "hace X min"
+  initPush();
+  openFromHash();
+  window.addEventListener('hashchange', openFromHash);
 })();
 </script>
 </body>
