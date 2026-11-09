@@ -1,13 +1,13 @@
 //@version=5
-// PSF B · Swing macro
-// Plan Swing Fondeo. Úsalo en gráfico de 4H de EURUSD, USDJPY o XAUUSD (feed OANDA).
+// PSF B · Swing macro · v2
+// Gráfico de 4H de EURUSD, USDJPY o XAUUSD (feed OANDA).
 // 1) Sesgo: tendencia diaria (media de 100 y su pendiente) + bono a 10 años (cambio en 20 días) + VIX.
 //    Suma >= +2: solo largos. Suma <= -2: solo cortos. Si no, no se opera.
 // 2) Zona: la vela de 4H toca la media de 20 diaria (± 0,25 ATR diario).
-// 3) Gatillo: en las 6 velas siguientes, cierre de 4H por encima del máximo (o por debajo del mínimo) de las 5 anteriores.
-// Stop: extremo de las últimas 6 velas ± 0,1 ATR de 4H. Objetivo 2,5R. Breakeven a +1,5R. Máximo 60 velas.
-// Alertas: una alerta por gráfico con "Cualquier llamada a la función alert()". Se evalúa al cierre de cada vela.
-indicator("PSF B · Swing macro", shorttitle="PSF B", overlay=true, max_labels_count=300, max_lines_count=300)
+// 3) Gatillo: en las 6 velas siguientes, cierre de 4H más allá del máximo/mínimo de las 5 anteriores.
+// SL: extremo de las últimas 6 velas ± 0,1 ATR de 4H. TP: 2,5R. Breakeven a +1,5R. Máximo 60 velas.
+// Alertas: una alerta por gráfico con «Cualquier llamada a la función alert()». Se evalúa al cierre de vela.
+indicator("PSF B · Swing macro", shorttitle="PSF B", overlay=true, max_labels_count=300, max_lines_count=300, max_boxes_count=200)
 
 // ───────── Parámetros
 grpS = "Sesgo"
@@ -23,30 +23,34 @@ grpZ = "Zona y gatillo"
 zoneK    = input.float(0.25, "Margen de la zona (x ATR diario)", minval=0.0, step=0.05, group=grpZ)
 touchWin = input.int(6, "Velas de 4H para el gatillo", minval=1, group=grpZ)
 trigLen  = input.int(5, "Ruptura de las últimas N velas", minval=2, group=grpZ)
-stopLen  = input.int(6, "Stop: extremo de las últimas N velas", minval=2, group=grpZ)
-stopBuf  = input.float(0.1, "Margen del stop (x ATR de 4H)", minval=0.0, step=0.05, group=grpZ)
+stopLen  = input.int(6, "SL: extremo de las últimas N velas", minval=2, group=grpZ)
+stopBuf  = input.float(0.1, "Margen del SL (x ATR de 4H)", minval=0.0, step=0.05, group=grpZ)
 
 grpG = "Gestión"
-rrTarget = input.float(2.5, "Objetivo (R)", minval=0.5, step=0.1, group=grpG)
+rrTarget = input.float(2.5, "TP (R)", minval=0.5, step=0.1, group=grpG)
 beAt     = input.float(1.5, "Breakeven a (R)", minval=0.1, step=0.1, group=grpG)
-minRisk  = input.float(0.3, "Stop mínimo (x ATR diario)", minval=0.0, step=0.05, group=grpG)
-maxRisk  = input.float(1.5, "Stop máximo (x ATR diario)", minval=0.1, step=0.05, group=grpG)
+minRisk  = input.float(0.3, "SL mínimo (x ATR diario)", minval=0.0, step=0.05, group=grpG)
+maxRisk  = input.float(1.5, "SL máximo (x ATR diario)", minval=0.1, step=0.05, group=grpG)
 maxBars  = input.int(60, "Velas máximas en la operación", minval=1, group=grpG)
 
+grpAl = "Alertas"
+testAlert = input.bool(false, "Enviar alerta de prueba", tooltip="Actívalo, crea una alerta con «Cualquier llamada a la función alert()» y espera unos segundos. Si te llega el aviso, las alertas funcionan. Después borra esa alerta y desactívalo.", group=grpAl)
+
 grpV = "Vista"
-showZone  = input.bool(true, "Banda de la media de 20 diaria", group=grpV)
+showZone  = input.bool(true, "Zona (media de 20 diaria)", group=grpV)
 showWeek  = input.bool(true, "Máximo y mínimo de la semana anterior", group=grpV)
 showTable = input.bool(true, "Tabla de sesgo", group=grpV)
 tblPos    = input.string("Arriba a la derecha", "Posición de la tabla", options=["Arriba a la derecha", "Abajo a la derecha", "Abajo a la izquierda", "Arriba a la izquierda"], group=grpV)
+extendR   = input.int(8, "Velas a la derecha para las etiquetas", minval=1, maxval=50, group=grpV)
 
 grpC = "Colores"
-cLong   = input.color(color.new(color.green, 10), "Largos y objetivo", group=grpC)
-cShort  = input.color(color.new(color.red, 10), "Cortos y stop", group=grpC)
-zoneTr  = input.int(85, "Transparencia de la zona (0-100)", minval=0, maxval=100, group=grpC)
-cZoneLn = input.color(color.new(color.blue, 75), "Borde de la zona", group=grpC)
-cS20    = input.color(color.new(color.gray, 30), "Media 20 diaria", group=grpC)
-cWeek   = input.color(color.new(color.gray, 55), "Semana anterior", group=grpC)
-cEntry  = input.color(color.new(color.gray, 0), "Entrada y breakeven", group=grpC)
+cLong   = input.color(#22AB94, "Largo y TP", group=grpC)
+cShort  = input.color(#F23645, "Corto y SL", group=grpC)
+cEntry  = input.color(#2962FF, "Entrada y cabecera", group=grpC)
+cZone   = input.color(#7E57C2, "Zona", group=grpC)
+cS20    = input.color(#B2B5BE, "Media 20 diaria", group=grpC)
+cWeek   = input.color(#787B86, "Semana anterior", group=grpC)
+fillTr  = input.int(85, "Transparencia de cajas y zona", minval=0, maxval=100, group=grpC)
 
 // ───────── Datos diarios y semanales (vela anterior cerrada, sin repintar)
 [dClose, dS20, dS100, dS100p, dAtr] = request.security(syminfo.tickerid, "D", [close[1], ta.sma(close, 20)[1], ta.sma(close, 100)[1], ta.sma(close, 100)[21], ta.atr(14)[1]], lookahead=barmerge.lookahead_on)
@@ -60,17 +64,17 @@ string quote = syminfo.currency
 int autoType = base == "XAU" ? 4 : (base == "USD" and (quote == "JPY" or quote == "CHF")) ? 2 : base == "USD" ? 3 : 1
 int mt = mktType == "XXX/USD (EURUSD, GBPUSD)" ? 1 : mktType == "USD/JPY o USD/CHF" ? 2 : mktType == "USD/CAD" ? 3 : mktType == "Oro (XAUUSD)" ? 4 : autoType
 
-int trendS = (dClose > dS100 and dS100 > dS100p) ? 1 : (dClose < dS100 and dS100 < dS100p) ? -1 : 0
-float dy   = y0 - y20
-int usd    = dy > yThr ? 1 : dy < -yThr ? -1 : 0
-int ratesS = (mt == 2 or mt == 3) ? usd : -usd
+int trendS  = (dClose > dS100 and dS100 > dS100p) ? 1 : (dClose < dS100 and dS100 < dS100p) ? -1 : 0
+float dy    = y0 - y20
+int usd     = dy > yThr ? 1 : dy < -yThr ? -1 : 0
+int ratesS  = (mt == 2 or mt == 3) ? usd : -usd
 int riskOff = vixPrev > vixHi ? 1 : vixPrev < vixLo ? -1 : 0
-int riskS  = (mt == 3 or mt == 4) ? riskOff : -riskOff
-int score  = trendS + ratesS + riskS
+int riskS   = (mt == 3 or mt == 4) ? riskOff : -riskOff
+int score   = trendS + ratesS + riskS
 int autoBias = score >= 2 ? 1 : score <= -2 ? -1 : 0
 int bias = biasMode == "Automático" ? autoBias : biasMode == "Solo largos" ? 1 : biasMode == "Solo cortos" ? -1 : 0
 
-// ───────── Zona, gatillo y stop
+// ───────── Zona, gatillo y SL
 float atr4 = ta.atr(14)
 bool zoneL = low <= dS20 + zoneK * dAtr and close > dS20 - dAtr
 bool zoneS = high >= dS20 - zoneK * dAtr and close < dS20 + dAtr
@@ -85,27 +89,41 @@ bool okS = riskSh >= minRisk * dAtr and riskSh <= maxRisk * dAtr
 bool newTL = zoneL and not zoneL[1]
 bool newTS = zoneS and not zoneS[1]
 
-// ───────── Dibujo de zona y niveles
-pU = plot(showZone and bias != 0 ? dS20 + zoneK * dAtr : na, "Zona superior", color=cZoneLn, style=plot.style_linebr)
-pD = plot(showZone and bias != 0 ? dS20 - zoneK * dAtr : na, "Zona inferior", color=cZoneLn, style=plot.style_linebr)
-fill(pU, pD, color=bias == 1 ? color.new(cLong, zoneTr) : color.new(cShort, zoneTr), title="Zona")
+// ───────── Zona y niveles de referencia
+pU = plot(showZone and bias != 0 ? dS20 + zoneK * dAtr : na, "Zona superior", color=color.new(cZone, 50), style=plot.style_linebr)
+pD = plot(showZone and bias != 0 ? dS20 - zoneK * dAtr : na, "Zona inferior", color=color.new(cZone, 50), style=plot.style_linebr)
+fill(pU, pD, color=color.new(cZone, fillTr), title="Zona")
 plot(showZone ? dS20 : na, "Media 20 diaria", color=cS20, style=plot.style_linebr)
 plot(showWeek ? wHigh : na, "Máximo semana anterior", color=cWeek, style=plot.style_stepline)
 plot(showWeek ? wLow : na, "Mínimo semana anterior", color=cWeek, style=plot.style_stepline)
 
-// ───────── Operación simulada (solo velas cerradas)
-var int   pos    = 0
-var float ent    = na
-var float stp    = na
-var float tgt    = na
-var float rUnit  = na
-var bool  armed  = false
-var int   entBar = na
-var int   lastTL = na
-var int   lastTS = na
-var line  lE = na
-var line  lS = na
-var line  lT = na
+f_px(float v) =>
+    str.tostring(v, format.mintick)
+f_r(float v) =>
+    (v >= 0 ? "+" : "") + str.replace_all(str.tostring(v, "#.0"), ".", ",") + "R"
+f_dur(int m) =>
+    m >= 60 ? str.tostring(int(m / 60)) + " h " + str.tostring(m % 60) + " min" : str.tostring(m) + " min"
+
+// ───────── Operación (velas cerradas) con caja de riesgo/beneficio
+var int    pos    = 0
+var float  ent    = na
+var float  stp    = na
+var float  tgt    = na
+var float  rUnit  = na
+var bool   armed  = false
+var int    entBar = na
+var int    lastTL = na
+var int    lastTS = na
+var box    bxR = na
+var box    bxW = na
+var line   lE  = na
+var line   lS  = na
+var line   lT  = na
+var label  lbE = na
+var label  lbS = na
+var label  lbT = na
+var string lastTxt = "-"
+var int    lastBar = na
 
 string tk = syminfo.ticker
 
@@ -116,27 +134,43 @@ if barstate.isconfirmed
         bool hitStop = pos == 1 ? low <= curStop : high >= curStop
         bool hitTgt  = pos == 1 ? high >= tgt : low <= tgt
         bool timeUp  = bar_index - entBar >= maxBars
-        string why = hitStop ? (armed ? "Breakeven" : "Stop") : hitTgt ? "Objetivo" : timeUp ? "Tiempo" : ""
+        string why = hitStop ? (armed ? "BE" : "SL") : hitTgt ? "TP" : timeUp ? "Tiempo" : ""
         if why != ""
-            label.new(bar_index, pos == 1 ? high : low, why, style=pos == 1 ? label.style_label_down : label.style_label_up, color=why == "Objetivo" ? cLong : why == "Stop" ? cShort : color.new(color.gray, 10), textcolor=color.white, size=size.tiny)
-            if not na(lE)
-                line.set_x2(lE, bar_index)
-                line.set_x2(lS, bar_index)
-                line.set_x2(lT, bar_index)
-            alert("PSF B · " + tk + " · " + why + " · cierra la operación si sigue abierta", alert.freq_once_per_bar_close)
+            float rr = why == "TP" ? rrTarget : why == "SL" ? -1.0 : why == "BE" ? 0.0 : (close - ent) * pos / rUnit
+            label.new(bar_index, pos == 1 ? high : low, why + " " + f_r(rr), style=pos == 1 ? label.style_label_down : label.style_label_up, color=rr > 0 ? cLong : rr < 0 ? cShort : color.gray, textcolor=color.white, size=size.small)
+            box.set_right(bxR, bar_index)
+            box.set_right(bxW, bar_index)
+            line.set_x2(lE, bar_index)
+            line.set_x2(lS, bar_index)
+            line.set_x2(lT, bar_index)
+            label.delete(lbE)
+            label.delete(lbS)
+            label.delete(lbT)
+            alert("PSF B · " + tk + " · " + (why == "TP" ? "Objetivo" : why == "SL" ? "Stop" : why == "BE" ? "Breakeven" : "Tiempo") + " · cierra la operación si sigue abierta", alert.freq_once_per_bar_close)
+            lastTxt := why + " " + f_r(rr)
+            lastBar := bar_index
             pos := 0
             exitedNow := true
         else
             if not armed and (pos == 1 ? high >= ent + beAt * rUnit : low <= ent - beAt * rUnit)
                 armed := true
-                alert("PSF B · " + tk + " · +" + str.tostring(beAt) + "R alcanzado · mueve el stop a " + str.tostring(ent, format.mintick), alert.freq_once_per_bar_close)
-                if not na(lS)
-                    line.set_x2(lS, bar_index)
-                lS := line.new(bar_index, ent, bar_index + 1, ent, color=cEntry, style=line.style_dashed, width=1)
-            if not na(lE)
-                line.set_x2(lE, bar_index + 1)
-                line.set_x2(lS, bar_index + 1)
-                line.set_x2(lT, bar_index + 1)
+                alert("PSF B · " + tk + " · +" + str.tostring(beAt) + "R alcanzado · mueve el stop a " + f_px(ent), alert.freq_once_per_bar_close)
+                line.set_y1(lS, ent)
+                line.set_y2(lS, ent)
+                line.set_color(lS, color.gray)
+                label.set_y(lbS, ent)
+                label.set_text(lbS, "SL en breakeven " + f_px(ent))
+                label.set_color(lbS, color.gray)
+                box.set_bgcolor(bxR, color.new(color.gray, fillTr))
+            int xr = bar_index + extendR
+            box.set_right(bxR, xr)
+            box.set_right(bxW, xr)
+            line.set_x2(lE, xr)
+            line.set_x2(lS, xr)
+            line.set_x2(lT, xr)
+            label.set_x(lbE, xr)
+            label.set_x(lbS, xr)
+            label.set_x(lbT, xr)
     if pos == 0 and not exitedNow
         if zoneL
             lastTL := bar_index
@@ -156,35 +190,58 @@ if barstate.isconfirmed
             entBar := bar_index
             lastTL := na
             lastTS := na
-            lE := line.new(bar_index, ent, bar_index + 1, ent, color=cEntry, width=1)
-            lS := line.new(bar_index, stp, bar_index + 1, stp, color=cShort, style=line.style_dashed, width=1)
-            lT := line.new(bar_index, tgt, bar_index + 1, tgt, color=cLong, style=line.style_dashed, width=1)
-            label.new(bar_index, goL ? low : high, goL ? "B ▲" : "B ▼", style=goL ? label.style_label_up : label.style_label_down, color=goL ? cLong : cShort, textcolor=color.white, size=size.tiny)
-            alert("PSF B · " + tk + (goL ? " · LARGO" : " · CORTO") + " · entrada " + str.tostring(ent, format.mintick) + " · stop " + str.tostring(stp, format.mintick) + " · objetivo " + str.tostring(tgt, format.mintick), alert.freq_once_per_bar_close)
+            int xr = bar_index + extendR
+            bxR := box.new(bar_index, math.max(ent, stp), xr, math.min(ent, stp), border_color=color.new(cShort, 60), bgcolor=color.new(cShort, fillTr))
+            bxW := box.new(bar_index, math.max(ent, tgt), xr, math.min(ent, tgt), border_color=color.new(cLong, 60), bgcolor=color.new(cLong, fillTr))
+            lE  := line.new(bar_index, ent, xr, ent, color=cEntry, width=2)
+            lS  := line.new(bar_index, stp, xr, stp, color=cShort, width=1)
+            lT  := line.new(bar_index, tgt, xr, tgt, color=cLong, width=1)
+            lbT := label.new(xr, tgt, "TP " + f_px(tgt) + " · " + f_r(rrTarget), style=label.style_label_left, color=cLong, textcolor=color.white, size=size.small)
+            lbE := label.new(xr, ent, "Entrada " + f_px(ent), style=label.style_label_left, color=cEntry, textcolor=color.white, size=size.small)
+            lbS := label.new(xr, stp, "SL " + f_px(stp) + " · -1R", style=label.style_label_left, color=cShort, textcolor=color.white, size=size.small)
+            label.new(bar_index, goL ? low : high, goL ? "B ▲ LARGO" : "B ▼ CORTO", style=goL ? label.style_label_up : label.style_label_down, color=goL ? cLong : cShort, textcolor=color.white, size=size.small)
+            alert("PSF B · " + tk + (goL ? " · LARGO" : " · CORTO") + " · entrada " + f_px(ent) + " · stop " + f_px(stp) + " · objetivo " + f_px(tgt), alert.freq_once_per_bar_close)
+            lastTxt := (goL ? "LARGO " : "CORTO ") + f_px(ent)
+            lastBar := bar_index
         else if (bias == 1 and newTL) or (bias == -1 and newTS)
-            alert("PSF B · " + tk + " toca la zona (" + (bias == 1 ? "sesgo largo" : "sesgo corto") + ") · precio " + str.tostring(close, format.mintick) + " · espera el gatillo en 4H", alert.freq_once_per_bar_close)
+            alert("PSF B · " + tk + " toca la zona (" + (bias == 1 ? "sesgo largo" : "sesgo corto") + ") · precio " + f_px(close) + " · espera el gatillo en 4H", alert.freq_once_per_bar_close)
 
-// ───────── Tabla de sesgo
+if testAlert and barstate.isrealtime
+    alert("PSF B · PRUEBA · " + tk + " · si te llega este aviso, las alertas funcionan", alert.freq_once_per_bar)
+
+// ───────── Tabla
 string tPos = tblPos == "Arriba a la derecha" ? position.top_right : tblPos == "Abajo a la derecha" ? position.bottom_right : tblPos == "Abajo a la izquierda" ? position.bottom_left : position.top_left
-var table tb = table.new(tPos, 2, 7, bgcolor=color.new(chart.bg_color, 0), border_color=color.new(chart.fg_color, 80), border_width=1, frame_color=color.new(chart.fg_color, 70), frame_width=1)
+var table tb = table.new(tPos, 2, 9, bgcolor=color.new(chart.bg_color, 0), border_color=color.new(chart.fg_color, 85), border_width=1, frame_color=color.new(chart.fg_color, 70), frame_width=1)
+varip bool merged = false
 
 f_sig(int v) =>
-    v > 0 ? "+" + str.tostring(v) : str.tostring(v)
+    v > 0 ? "▲ +" + str.tostring(v) : v < 0 ? "▼ " + str.tostring(v) : "· 0"
 
-f_put(int row, string k, string v, color c) =>
+f_put(int row, string k, string v, color bg, color tc) =>
     table.cell(tb, 0, row, k, text_color=chart.fg_color, text_size=size.small, text_halign=text.align_left)
-    table.cell(tb, 1, row, v, text_color=c, text_size=size.small, text_halign=text.align_right)
+    table.cell(tb, 1, row, v, text_color=tc, bgcolor=bg, text_size=size.small, text_halign=text.align_right)
 
 if showTable and barstate.islast
+    if not merged
+        table.merge_cells(tb, 0, 0, 1, 0)
+        merged := true
+    color biasBg  = bias == 1 ? cLong : bias == -1 ? cShort : color.new(color.gray, 40)
     string biasTxt = bias == 1 ? "SOLO LARGOS" : bias == -1 ? "SOLO CORTOS" : "NO OPERAR"
-    color biasCol  = bias == 1 ? cLong : bias == -1 ? cShort : chart.fg_color
     bool tLn = not na(lastTL) and bar_index - lastTL <= touchWin - 1
     bool tSn = not na(lastTS) and bar_index - lastTS <= touchWin - 1
-    string est = pos != 0 ? "en operación" : (bias == 1 and tLn) or (bias == -1 and tSn) ? "zona tocada: espera gatillo" : bias != 0 ? "esperando zona" : "-"
-    f_put(0, "PSF B · " + tk, "", chart.fg_color)
-    f_put(1, "Tendencia", f_sig(trendS), chart.fg_color)
-    f_put(2, "Tipos (10 años, 20 d: " + (dy >= 0 ? "+" : "") + str.tostring(dy, "#.00") + ")", f_sig(ratesS), chart.fg_color)
-    f_put(3, "Riesgo (VIX " + str.tostring(vixPrev, "#.0") + ")", f_sig(riskS), chart.fg_color)
-    f_put(4, "Total", f_sig(score), chart.fg_color)
-    f_put(5, biasMode == "Automático" ? "Sesgo" : "Sesgo (manual)", biasTxt, biasCol)
-    f_put(6, "Estado", est, chart.fg_color)
+    bool zoneNow = (bias == 1 and tLn) or (bias == -1 and tSn)
+    string est = pos != 0 ? (pos == 1 ? "en LARGO" : "en CORTO") + (armed ? " · SL en BE" : "") : zoneNow ? "zona tocada: espera gatillo" : bias != 0 ? "esperando la zona" : "-"
+    color estBg = pos != 0 ? cEntry : zoneNow ? cZone : color.new(chart.bg_color, 0)
+    color estTc = pos != 0 or zoneNow ? color.white : chart.fg_color
+    int left = int(math.max(0, (time_close - timenow) / 60000))
+    string nextTxt = barstate.isrealtime and left > 0 ? "en " + f_dur(left) : "mercado cerrado"
+    string lastAgo = na(lastBar) ? "" : " · hace " + str.tostring(bar_index - lastBar) + " velas"
+    table.cell(tb, 0, 0, "PSF B · " + tk + " · 4H", text_color=color.white, bgcolor=cEntry, text_size=size.small, text_halign=text.align_left)
+    f_put(1, "Tendencia diaria", f_sig(trendS), color.new(chart.bg_color, 0), chart.fg_color)
+    f_put(2, "Tipos (10 años, 20 d: " + (dy >= 0 ? "+" : "") + str.tostring(dy, "#.00") + ")", f_sig(ratesS), color.new(chart.bg_color, 0), chart.fg_color)
+    f_put(3, "Riesgo (VIX " + str.tostring(vixPrev, "#.0") + ")", f_sig(riskS), color.new(chart.bg_color, 0), chart.fg_color)
+    f_put(4, "Total", str.tostring(score), color.new(chart.bg_color, 0), chart.fg_color)
+    f_put(5, biasMode == "Automático" ? "Sesgo" : "Sesgo (manual)", biasTxt, biasBg, color.white)
+    f_put(6, "Estado", est, estBg, estTc)
+    f_put(7, "Próximo cierre de vela", nextTxt, color.new(chart.bg_color, 0), chart.fg_color)
+    f_put(8, "Última señal", lastTxt + lastAgo, color.new(chart.bg_color, 0), chart.fg_color)

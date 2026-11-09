@@ -13,11 +13,11 @@ App gratis para seguir el mercado cripto desde el móvil, sin servidor y sin sus
 Fuentes públicas: Hyperliquid, OKX, Gate.io y alternative.me. No es consejo financiero.
 
 ## Plan Swing (`swing/`)
-Plan de swing trading con cuenta de fondeo (FTMO US), pensado para usarlo cada día desde el iPad:
+App de swing trading con cuenta de fondeo (FTMO US), para el ordenador, el iPad o el móvil:
 
-- **Hoy**: cabina que cambia sola con la hora de Nueva York: qué toca ahora, pasos del día con checklist, sesgo de la semana, noticias fuertes y checklist antes de entrar.
-- **Diario**: abre y cierra operaciones (o pega las alertas de TradingView) y calcula el R, el acierto, la peor racha y si estás listo para pagar el challenge. Importa el CSV de FTMO MetriX.
-- **TradingView**: los indicadores PSF A (dip en índices) y PSF B (swing macro en EURUSD, USDJPY y oro), con el código en `swing/pine/` y en la propia página.
-- **Plan**: firma, reglas, backtest 2005–2026, contexto macro y calculadoras de challenge y de lotaje.
+- **Hoy**: un aviso grande que cambia solo con la hora de Nueva York (qué toca ahora y cuenta atrás), pasos del día, sesgo de la semana, noticias, riesgo abierto y posiciones con entrada, SL y TP. Pega las alertas de TradingView y la app abre, mueve a breakeven o cierra la operación, y apunta cada alerta para que sepas que llegan.
+- **Journal** al estilo TradeZella: P&L, acierto, profit factor, R medio y drawdown, curva de resultados, calendario de P&L con totales semanales, resultados por setup, por día y por mercado, y tabla de operaciones con etiquetas, valoración y notas. Importa el CSV de FTMO MetriX o MT5 y exporta a CSV.
+- **TradingView**: los indicadores PSF A (dip en índices) y PSF B (swing macro en EURUSD, USDJPY y oro) dibujan la entrada, el SL y el TP y traen una alerta de prueba. El código está en `swing/pine/` y en la propia app.
+- **Plan** y **Herramientas**: reglas de la cuenta, setups, backtest 2005–2026, simulador del challenge y tamaño de posición.
 
 Los datos se guardan en el navegador del dispositivo, con copia de seguridad descargable. No es consejo financiero.
