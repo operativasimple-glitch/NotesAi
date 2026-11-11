@@ -135,6 +135,9 @@ class FakeKalshiPublic:
         self.asked.append(list(tickers))
         return [self.by_ticker[t] for t in tickers if t in self.by_ticker]
 
+    def recent_trades(self, limit=1000):
+        return list(getattr(self, "recent", []))
+
     def trades(self, ticker, min_ts=None, max_ts=None, max_pages=5):
         self.asked.append(("trades", ticker))
         return list(getattr(self, "public_trades", {}).get(ticker, []))

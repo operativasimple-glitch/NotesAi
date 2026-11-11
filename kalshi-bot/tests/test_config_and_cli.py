@@ -44,7 +44,8 @@ def test_example_config_loads_with_defaults(clean_env):
     assert s.env == "demo" and s.base_url.startswith("https://external-api.demo.kalshi.co")
     assert s.strategy_name == "favorites" and s.strategy_params["min_price"] == 0.88
     assert s.engine.series[:5] == ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
-    assert "KXHIGHMIA" in s.engine.series and len(s.engine.series) == 12
+    assert {"KXHIGHMIA", "KXHIGHTDAL", "KXNCAAWBGAME"} <= set(s.engine.series) and len(s.engine.series) == 27
+    assert s.engine.max_markets == 40 and s.engine.favorites_first
     assert s.engine.closing_within_hours == 0 and s.engine.max_hours_to_close == 6
     assert s.engine.max_markets_per_event == 1 and s.engine.poll_interval == 5
     # Sin config.toml, los valores por defecto son los mismos que los del ejemplo.

@@ -20,7 +20,7 @@
     return node;
   }
 
-  const ORDER = ['kali', 'herrera', 'nube', 'vigia', 'radar', 'cronista', 'probadora', 'mentora', 'notaria', 'tendera', 'contable',
+  const ORDER = ['kali', 'herrera', 'nube', 'vigia', 'radar', 'cronista', 'probadora', 'mentora', 'notaria', 'tendera', 'combinadora', 'contable',
     'investigadora', 'tormenta', 'claude', 'piloto', 'dinero', 'codicia', 'miedo'];
   const DEFAULT_BOTS = [
     { id: 'kali', name: 'Kali', color: '#f2c94c', home: 'mercado' },
@@ -33,6 +33,7 @@
     { id: 'mentora', name: 'Mentora', color: '#a3e635', home: 'incubadora' },
     { id: 'notaria', name: 'Notaria', color: '#d946ef', home: 'incubadora' },
     { id: 'tendera', name: 'Tendera', color: '#0d9488', home: 'incubadora' },
+    { id: 'combinadora', name: 'Combinadora', color: '#f59e0b', home: 'incubadora' },
     { id: 'contable', name: 'Contable', color: '#475569', home: 'incubadora' },
     { id: 'investigadora', name: 'Investigadora', color: '#dcd8ee', home: 'consejo' },
     { id: 'tormenta', name: 'Cazatormentas', color: '#2a78d6', home: 'consejo' },
@@ -53,7 +54,7 @@
     archivo: ['Archivo', 'Cronista escribe el diario del pueblo y cuelga las noticias en el tablón.'],
     forja: ['Forja', 'La Herrera repasa el dinero real de Kali: qué liga, ciudad y precio gana o pierde, y qué ajuste del panel lo cambiaría.'],
     pruebas: ['Pruebas', 'La Probadora juega de mentira los partidos como Kali, pero de cuatro maneras a la vez, para ver cuál gana más.'],
-    incubadora: ['Incubadora', 'Aquí se prueban otras maneras de ganar, distintas de la de Kali, con 25 $ de mentira cada una. Cuando una demuestre durante semanas que gana (y no por suerte), te lo dirá: solo entonces podría operar en paralelo con Kali, si tú quieres.'],
+    incubadora: ['Incubadora', 'Aquí se prueban otras maneras de ganar, distintas de la de Kali (también las combinadas), con 25 $ de mentira cada una. Cuando una demuestre durante semanas que gana (y no por suerte), te lo dirá: solo entonces podría operar en paralelo con Kali, si tú quieres.'],
   };
   const ROOM_OWNER = {
     mercado: 'kali', boveda: 'kali', forja: 'herrera', observatorio: 'nube', laboratorio: 'radar', archivo: 'cronista',
@@ -459,6 +460,8 @@
         text: 'Aún no se puede juzgar: le faltan 28 operaciones y 9 días. De momento va +$0,31.', rule: 'Tramos de hoy ya decididos por lo medido (con 1° de margen) · compra si cuesta 98¢ o menos' },
       { id: 'tendera', name: 'Tendera', color: '#0d9488', ops: 9, wins: 5, losses: 4, pnl: -0.42, days: 5, luck: 0.83, drawdown: 0.04, worst_day: -0.61, equity: 24.58, open: 4, state: 'aprendiendo', label: 'Aprendiendo',
         text: 'Aún no se puede juzgar: le faltan 31 operaciones y 9 días. De momento va −$0,42.', rule: 'Tramos de mañana (y de hoy antes de las 10) con 4¢ o más de hueco · 2 contratos a cada lado' },
+      { id: 'combinadora', name: 'Combinadora', color: '#f59e0b', ops: 6, wins: 3, losses: 3, pnl: -0.58, days: 5, luck: 0.66, drawdown: 0.03, worst_day: -1.12, equity: 24.42, open: 1, state: 'aprendiendo', label: 'Aprendiendo',
+        text: 'Aún no se puede juzgar: le faltan 34 operaciones y 9 días. De momento va −$0,58.', rule: 'Combinadas de 2–4 favoritos de partidos distintos, entre 30 y 90¢ · solo si cuestan menos que sus patas' },
       { id: 'contable', name: 'Contable', color: '#475569', ops: 0, wins: 0, losses: 0, pnl: 0, days: 5, luck: null, drawdown: 0, worst_day: 0, equity: 25, open: 0, state: 'aprendiendo', label: 'Aprendiendo',
         text: 'Aún no se puede juzgar: le faltan 40 operaciones y 9 días. Todavía no se ha decidido ninguna.', rule: 'Todos los tramos de un evento a la vez · solo si sale ganando 1¢ o más seguro, con comisiones' },
     ].map((r) => ({ ...r, start: 25, in_play: 0, paused: false, roi: 0, progress: Math.round((Math.min(1, r.ops / 40) * 0.5 + Math.min(1, r.days / 14) * 0.5) * 1000) / 1000,
@@ -466,6 +469,7 @@
     const about = {
       notaria: 'La máxima del día solo puede subir. Cuando lo ya medido decide un tramo de temperatura, su NO vale 1 $ seguro. Si alguien aún lo vende a 98¢ o menos, lo compra de mentira.',
       tendera: 'En los tramos de temperatura de mañana deja una orden de compra y otra de venta 1¢ mejores que las de los demás, y gana la diferencia cuando le compran y le venden.',
+      combinadora: 'En Kalshi el precio de una combinada lo pone un creador de mercado y quien las compra no suele ganar. Ella mira las de 2 a 4 favoritos que otra gente acaba de comprar y solo se apunta, de mentira, a las que cuestan menos que sus patas por separado.',
       contable: 'Si comprar el SÍ de todos los tramos de un día cuesta menos de 1 $ con comisiones, eso es dinero gratis y lo compra de mentira. Lo normal es no encontrar nada.',
     };
     const extra = {
@@ -481,6 +485,12 @@
         last: [{ key: 'D-DEN', name: 'Máxima en Denver · 64° a 65°', result: 'perdida', pnl: -0.37 }],
         activity: 'tiene órdenes en 3 tramos de mañana', status: 'Aprendiendo · −$0,42 en 9 operaciones', mood: 'sad',
       },
+      combinadora: {
+        research: ['Hoy ha mirado 41 combinadas de favoritos que alguien compró: de media costaban un 3,2 % más que sus patas por separado.', '2 salían más baratas que sus patas, con la comisión.'],
+        open: [{ key: 'D-CMB', name: 'Combinada · Boston + no Pittsburgh', held: [{ ticker: 'D-CMB', side: 'SÍ', count: 5, price: 0.53 }], note: 'cuesta 53¢ y sus 2 patas por separado valen 56¢' }],
+        last: [{ key: 'D-CMB2', name: 'Combinada · Denver + Dallas + no Utah', result: 'perdida', pnl: -2.14 }],
+        activity: 'compara combinadas con sus patas · 41 hoy', status: 'Aprendiendo · −$0,58 en 6 operaciones', mood: 'ok',
+      },
       contable: {
         research: ['Hoy ha sumado los tramos de 112 eventos a la vez.', 'Ningún atajo: lo más cerca fue «Máxima en Miami (14 oct)» (el SÍ de todos), donde faltaban 2¢.'],
         open: [], last: [],
@@ -490,8 +500,8 @@
     bots.push({
       id: 'mentora', name: 'Mentora', role: 'Dirige la Incubadora: prueba otras estrategias de mentira', home: 'incubadora',
       color: '#a3e635', mood: 'ok', updated_at: now,
-      about: 'En la Incubadora, tres estrategias distintas a la de Kali juegan cada una con 25 $ de mentira y las mismas reglas de riesgo que el bot. La Mentora dice, con números, si alguna gana de verdad o solo ha tenido suerte.',
-      status: 'Incubadora · 3 estrategias aprendiendo de mentira',
+      about: 'En la Incubadora, cuatro estrategias distintas a la de Kali juegan cada una con 25 $ de mentira y las mismas reglas de riesgo que el bot. La Mentora dice, con números, si alguna gana de verdad o solo ha tenido suerte.',
+      status: 'Incubadora · 4 estrategias aprendiendo de mentira',
       activity: act('lleva el marcador · va mejor Notaria (+$0,31)'),
       detail: {
         board: rows,
@@ -506,7 +516,7 @@
       const x = extra[r.id];
       bots.push({
         id: r.id, name: r.name, color: r.color, home: 'incubadora', updated_at: now, mood: x.mood, about: about[r.id],
-        role: { notaria: 'Compra lo que el termómetro ya ha decidido', tendera: 'Compra barato y vende caro en los tramos de mañana', contable: 'Busca dinero gratis: tramos que no suman 1 $' }[r.id],
+        role: { notaria: 'Compra lo que el termómetro ya ha decidido', tendera: 'Compra barato y vende caro en los tramos de mañana', combinadora: 'Compra combinadas solo cuando salen baratas', contable: 'Busca dinero gratis: tramos que no suman 1 $' }[r.id],
         status: x.status, activity: act(x.activity),
         detail: { strategy: true, summary: r, rule: r.rule, research: x.research, open: x.open, last: x.last },
       });
@@ -2480,6 +2490,7 @@
     },
     notaria: strategyDetail,
     tendera: strategyDetail,
+    combinadora: strategyDetail,
     contable: strategyDetail,
     claude(b) {
       const d = b.detail || {};

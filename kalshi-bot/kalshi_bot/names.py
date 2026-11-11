@@ -18,6 +18,19 @@ CITIES = {
     "AUS": "Austin",
     "DEN": "Denver",
     "PHIL": "Filadelfia",
+    "TSFO": "San Francisco",
+    "TPHX": "Phoenix",
+    "TATL": "Atlanta",
+    "TSEA": "Seattle",
+    "TBOS": "Boston",
+    "TDAL": "Dallas",
+    "TDC": "Washington",
+    "TLV": "Las Vegas",
+    "THOU": "Houston",
+    "TMIN": "Mineápolis",
+    "TOKC": "Oklahoma City",
+    "TNOLA": "Nueva Orleans",
+    "TSATX": "San Antonio",
 }
 
 

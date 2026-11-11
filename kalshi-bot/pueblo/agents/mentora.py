@@ -1,7 +1,7 @@
 """La Mentora, en la Incubadora: prueba de mentira otras maneras de ganar y dice si alguna vale.
 
-Kali compra favoritos y espera. En la Incubadora, tres estrategias distintas (la Notaria, la
-Tendera y la Contable: ver `incubator.strategies`) juegan cada una con 25 $ de mentira y las mismas
+Kali compra favoritos y espera. En la Incubadora, cuatro estrategias distintas (la Notaria, la
+Tendera, la Combinadora y la Contable: ver `incubator.strategies`) juegan cada una con 25 $ de mentira y las mismas
 reglas de riesgo que el bot. Cada 5 minutos la Mentora:
 
   1. trae de Kalshi los mercados de temperatura de las 7 ciudades y los de los partidos, y de Nube
@@ -24,7 +24,8 @@ from typing import Optional
 from zoneinfo import ZoneInfo
 
 from ..incubator.ledger import START, Ledger, dec, describe, new_account
-from ..incubator.strategies import STRATEGIES, Data, short
+from ..autopsy import yes_price
+from ..incubator.strategies import COMBO_MAX, COMBO_MIN, STRATEGIES, Data, combo_legs, short
 from ..incubator.verdict import MAX_LUCK, MIN_DAYS, MIN_OPS, luck, summary
 from ..names import cents, money, plural
 from ..sources.kalshi_public import KalshiPublic
@@ -44,7 +45,7 @@ class Mentora(Agent):
     name = "Mentora"
     role = "Dirige la Incubadora: prueba otras estrategias de mentira"
     about = (
-        "En la Incubadora, tres estrategias distintas a la de Kali juegan cada una con 25 $ de mentira y las mismas "
+        "En la Incubadora, cuatro estrategias distintas a la de Kali juegan cada una con 25 $ de mentira y las mismas "
         "reglas de riesgo que el bot. La Mentora lleva sus cuentas y dice, con números, si alguna gana de verdad o "
         "solo ha tenido suerte. Ninguna toca dinero real: para operar en paralelo con Kali haría falta tu permiso "
         "y un presupuesto."
@@ -117,7 +118,42 @@ class Mentora(Agent):
             raise RuntimeError("Kalshi no contesta")
         rows = (self.peer("nube").get("detail") or {}).get("cities") or []
         cities = {r["key"]: r for r in rows if r.get("key")}
-        return Data(now=when, today=today, weather=weather, games=games, cities=cities, trades=self._trades)
+        return Data(
+            now=when, today=today, weather=weather, games=games, cities=cities, trades=self._trades,
+            combos=self._combos(),
+        )  # fmt: skip
+
+    def _combos(self) -> list:
+        """Combinadas de 2 a 4 ganadores que alguien acaba de comprar, con el precio actual de sus patas."""
+        try:
+            bought: dict = {}
+            for t in self.kalshi.recent_trades(1000):
+                ticker = t.get("ticker") or ""
+                side = t.get("taker_outcome_side") or t.get("taker_side")
+                paid = yes_price(t)
+                if ticker.startswith("KXMVE") and side == "yes" and paid is not None and COMBO_MIN <= paid <= COMBO_MAX:
+                    bought.setdefault(ticker, paid)
+            if not bought:
+                return []
+            shaped = {}
+            for m in self.kalshi.markets_by_ticker(list(bought)[:60]):
+                legs = combo_legs(m)
+                if legs:
+                    shaped[m["ticker"]] = (m, legs)
+            wanted = sorted({t for _, legs in shaped.values() for t, _ in legs})
+            leg_markets = {m["ticker"]: m for m in self.kalshi.markets_by_ticker(wanted[:120])} if wanted else {}
+            return [
+                {
+                    "ticker": ticker,
+                    "price": bought[ticker],
+                    "market": m,
+                    "legs": [(leg_markets.get(t) or {"ticker": t}, side) for t, side in legs],
+                }
+                for ticker, (m, legs) in shaped.items()
+            ]
+        except Exception as exc:  # noqa: BLE001 - sin combinadas esta vuelta; las demás estrategias siguen
+            log.warning("La Mentora no pudo ver las combinadas: %s", exc)
+            return []
 
     def _trades(self, ticker: str, min_ts: int, max_ts: int) -> list:
         return self.kalshi.trades(ticker, min_ts=min_ts, max_ts=max_ts, max_pages=2)

@@ -15,6 +15,8 @@ log = logging.getLogger(__name__)
 # En deportes el cierre oficial llega hasta ~3 días después del partido: se pide
 # a la API un margen y se filtra después por el fin previsto (Market.ends_at).
 CLOSE_BUFFER_HOURS = 72
+# Con `favorites_first`, un mercado "tiene favorito" si un lado se paga a esto o más.
+NEAR_FAVORITE = Decimal("0.80")
 # Lo que una regla por serie puede cambiar (ver MarketFilter.series_rules).
 RULE_KEYS = ("min_hours_to_close", "max_hours_to_close", "max_markets_per_event")
 
@@ -33,6 +35,9 @@ class MarketFilter:
     # Ajustes propios por prefijo de serie, p. ej. el clima (abre la víspera y tiene
     # varios tramos de temperatura por día): {"KXHIGH": {"max_hours_to_close": 12}}.
     series_rules: dict = field(default_factory=dict)
+    # Primero los mercados donde un lado ya cotiza como favorito (para la estrategia de favoritos:
+    # un partido igualado ocupa sitio y no se va a comprar); dentro de cada grupo, por volumen.
+    favorites_first: bool = False
 
     @property
     def searches(self) -> bool:
@@ -62,6 +67,13 @@ def passes(market: Market, flt: MarketFilter, now: datetime) -> bool:
     return market.volume_24h >= flt.min_volume_24h
 
 
+def has_favorite(market: Market) -> bool:
+    """True si un lado del mercado se paga a 80¢ o más."""
+    if market.yes_bid is not None and market.yes_bid >= NEAR_FAVORITE:
+        return True
+    return market.yes_ask is not None and Decimal(1) - market.yes_ask >= NEAR_FAVORITE
+
+
 def discover(client, flt: MarketFilter, now: datetime, *, exclude: Iterable = (), pages: int = 5) -> list:
     """Mercados activos que cumplen el filtro, de más a menos volumen."""
     found: dict = {}
@@ -84,6 +96,8 @@ def discover(client, flt: MarketFilter, now: datetime, *, exclude: Iterable = ()
     skip = set(exclude)
     candidates = [m for m in found.values() if m.ticker not in skip and passes(m, flt, now)]
     candidates.sort(key=lambda m: m.volume_24h, reverse=True)
+    if flt.favorites_first:
+        candidates.sort(key=lambda m: not has_favorite(m))  # orden estable: conserva el de volumen
     selected: list = []
     per_event: dict = {}
     for market in candidates:

@@ -1,7 +1,7 @@
 """Las estrategias de la Incubadora: maneras de ganar distintas de la de Kali.
 
 Kali compra favoritos (88–97¢) y espera a que se decidan. Aquí se prueban, con dinero de mentira,
-otras tres que podrían operar a la vez que ella sin pisarse:
+otras cuatro que podrían operar a la vez que ella sin pisarse:
 
   Notaria   compra lo que el termómetro ya ha decidido. La máxima del día solo puede subir: si en
             Chicago ya van 81°, el tramo «78° a 79°» no puede ganar y su NO vale 1 $ seguro. Si
@@ -13,6 +13,11 @@ otras tres que podrían operar a la vez que ella sin pisarse:
             venta 1¢ mejores que las de los demás y gana la diferencia cuando le compran y le venden.
             Para saber si se las habrían llenado mira las operaciones públicas de Kalshi: si alguien
             vendió a su precio de compra o más barato, esa venta se la habría llevado ella.
+  Combinadora  compra combinadas (parlays) solo cuando salen baratas. En Kalshi las combinadas se
+            piden a un creador de mercado, que pone el precio. Ella mira las que otra gente acaba de
+            comprar de verdad, de 2 a 4 ganadores de partidos distintos, todos favoritos, y calcula lo
+            que valen sus patas por separado (multiplicando sus precios). Solo compra, al mismo precio
+            y pagando la comisión, las que cuestan menos que eso.
   Contable  busca dinero gratis. Los tramos de temperatura de un día (o los dos equipos de un
             partido) se reparten 1 $: solo uno gana. Si comprar el SÍ de todos cuesta menos de 1 $
             con comisiones, o el NO de todos menos de lo que se cobra seguro, lo compra.
@@ -51,6 +56,8 @@ class Data:
     games: list = field(default_factory=list)  # mercados de partidos abiertos
     cities: dict = field(default_factory=dict)  # lo que mide Nube: ciudad → fila
     trades: Optional[Callable] = None  # operaciones públicas: (ticker, min_ts, max_ts) → lista
+    # Combinadas que alguien acaba de comprar: [{"ticker", "price", "market", "legs": [(mercado, lado)]}]
+    combos: list = field(default_factory=list)
 
 
 def ask_of(market: dict, side: str) -> Optional[Decimal]:
@@ -573,8 +580,136 @@ class Contable:
         return "suma los tramos de cada evento"
 
 
+# --- Combinadora: combinadas que cuestan menos que sus patas ---------------------------------------
+
+COMBO_MIN, COMBO_MAX = Decimal("0.30"), Decimal("0.90")  # ni billetes de lotería ni casi decididas
+COMBO_LEGS = (2, 4)
+COMBO_LEG_MIN = Decimal("0.55")  # cada pata, un favorito
+COMBO_LEG_SPREAD = Decimal("0.06")
+COMBO_CONTRACTS = 5
+WINNER = re.compile(r"(GAME|MATCH|FIGHT)$")
+
+
+def combo_legs(market: dict) -> Optional[list]:
+    """[(ticker de la pata, "yes" | "no")] si es una combinada de 2 a 4 ganadores de partidos distintos."""
+    legs = market.get("mve_selected_legs") or []
+    if not COMBO_LEGS[0] <= len(legs) <= COMBO_LEGS[1]:
+        return None
+    out, events = [], set()
+    for leg in legs:
+        ticker, side = leg.get("market_ticker") or "", leg.get("side")
+        event = leg.get("event_ticker") or ticker.rsplit("-", 1)[0]
+        if side not in SIDES or not WINNER.search(ticker.split("-", 1)[0]) or event in events:
+            return None
+        events.add(event)
+        out.append((ticker, side))
+    return out
+
+
+def leg_value(market: dict, side: str) -> Optional[Decimal]:
+    """Lo que vale ahora esa pata (el punto medio entre compra y venta), o None si no hay precio fiable."""
+    if market.get("result") in SIDES:  # ya decidida
+        return ONE if market["result"] == side else ZERO
+    bid, ask = price(market, "yes_bid"), price(market, "yes_ask")
+    if bid is None or ask is None or ask - bid > COMBO_LEG_SPREAD:
+        return None
+    mid = (bid + ask) / 2
+    return mid if side == "yes" else ONE - mid
+
+
+def combo_name(legs: list) -> str:
+    parts = []
+    for market, side in legs:
+        who = market.get("yes_sub_title") or market.get("ticker", "?").rsplit("-", 1)[-1]
+        parts.append(who if side == "yes" else f"no {who}")
+    return "Combinada · " + " + ".join(parts)
+
+
+class Combinadora:
+    id = "combinadora"
+    name = "Combinadora"
+    color = "#f59e0b"
+    role = "Compra combinadas solo cuando salen baratas"
+    about = (
+        "Una combinada paga más porque tienen que salir todas sus patas. En Kalshi el precio lo pone un creador "
+        "de mercado y, con 10.000 compras reales medidas, quien las compra no gana: sale a cero antes de la "
+        "comisión. Ella mira las combinadas de 2 a 4 favoritos que otra gente acaba de comprar y solo se apunta, "
+        "de mentira, a las que cuestan menos que sus patas por separado."
+    )
+    rule = "Combinadas de 2–4 favoritos de partidos distintos, entre 30 y 90¢ · solo si cuestan menos que sus patas"
+
+    def step(self, ledger: Ledger, data: Data, mem: dict) -> list:
+        stats = _stats(mem, data.today)
+        busy = mem.setdefault("busy", {})  # partido → combinada abierta que lo lleva
+        for event in [e for e, key in busy.items() if not ledger.position(key)]:
+            del busy[event]
+        events = []
+        for combo in data.combos:
+            ticker, paid, market = combo["ticker"], dec(combo.get("price")), combo.get("market") or {}
+            legs = combo.get("legs") or []
+            if not COMBO_MIN <= paid <= COMBO_MAX or ticker in (mem.get("seen") or []):
+                continue
+            values = [leg_value(m, side) for m, side in legs]
+            if not legs or any(v is None or v < COMBO_LEG_MIN for v in values):
+                continue
+            fair = ONE
+            for v in values:
+                fair *= v
+            _remember(mem, "seen", ticker, keep=600)
+            stats["seen"] = int(stats.get("seen") or 0) + 1
+            stats["extra"] = float(stats.get("extra") or 0) + float(paid / fair - 1)
+            unit = paid + fee(1, paid, TAKER)
+            if paid + fee(COMBO_CONTRACTS, paid, TAKER) / COMBO_CONTRACTS > fair:
+                continue  # cuesta más que sus patas: lo normal
+            stats["cheap"] = int(stats.get("cheap") or 0) + 1
+            leg_events = [m.get("event_ticker") or m.get("ticker", "").rsplit("-", 1)[0] for m, _ in legs]
+            if ledger.position(ticker) or any(e in busy for e in leg_events):
+                continue  # ya tiene dinero en alguno de esos partidos
+            count = ledger.affordable(ticker, unit, COMBO_CONTRACTS)
+            if not count:
+                continue
+            name = combo_name(legs)
+            worth = cents(fair.quantize(Decimal("0.001")))
+            why = f"cuesta {cents(paid)} y sus {len(legs)} patas por separado valen {worth}"
+            ledger.buy(
+                ticker, ticker, "yes", count, paid, fee(count, paid, TAKER),
+                name=name, ends=ends_of(market), when=data.now, note=why,
+            )  # fmt: skip
+            for event in leg_events:
+                busy[event] = ticker
+            stats["bought"] = int(stats.get("bought") or 0) + 1
+            events.append(
+                {"kind": "buy", "ticker": ticker, "name": name, "side": "SÍ", "count": count, "price": float(paid),
+                 "why": why, "legs": len(legs)}
+            )  # fmt: skip
+        return events
+
+    def research(self, mem: dict) -> list:
+        stats = mem.get("stats") or {}
+        seen, cheap = int(stats.get("seen") or 0), int(stats.get("cheap") or 0)
+        if not seen:
+            return ["Hoy todavía no ha visto combinadas de 2 a 4 favoritos con precios fiables en sus patas."]
+        extra = float(stats.get("extra") or 0) / seen
+        how = (
+            f"costaban un {abs(round(extra * 100, 1))} % {'más' if extra >= 0 else 'menos'} que sus patas por separado"
+        ).replace(".", ",")
+        if cheap:
+            verdict = f"{plural(cheap, 'salía más barata', 'salían más baratas')} que sus patas, con la comisión."
+        else:
+            verdict = "Ninguna salía más barata que sus patas con la comisión: comprarlas sería pagar de más."
+        looked = plural(seen, "combinada", "combinadas")
+        return [f"Hoy ha mirado {looked} de favoritos que alguien compró: de media {how}.", verdict]
+
+    def doing(self, mem: dict, events: list) -> str:
+        if events:
+            e = events[0]
+            return f"compra una combinada de {e['legs']} a {round(e['price'] * 100)}¢"
+        seen = int((mem.get("stats") or {}).get("seen") or 0)
+        return f"compara combinadas con sus patas · {seen} hoy" if seen else "busca combinadas baratas"
+
+
 def short(name: str) -> str:
-    return str(name or "").replace("Máxima en ", "")
+    return str(name or "").replace("Máxima en ", "").replace("Combinada · ", "")
 
 
-STRATEGIES = (Notaria(), Tendera(), Contable())
+STRATEGIES = (Notaria(), Tendera(), Combinadora(), Contable())

@@ -42,12 +42,19 @@ from .risk import RiskLimits
 
 log = logging.getLogger(__name__)
 
-# Donde la prueba con datos reales dio ventaja (ver INVESTIGACION.md): partidos (quién gana)
-# y temperatura máxima diaria en 7 ciudades. El clima no depende de las restricciones a los
-# contratos deportivos que tienen algunos estados.
-GAME_SERIES = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
-WEATHER_SERIES = ["KXHIGHLAX", "KXHIGHNY", "KXHIGHCHI", "KXHIGHMIA", "KXHIGHAUS", "KXHIGHDEN", "KXHIGHPHIL"]
+# Donde la simulación minuto a minuto de seis semanas salió mejor (INVESTIGACION.md, noviembre de
+# 2026): partidos de ligas de EE. UU. (con el baloncesto universitario) esperando a que el favorito
+# se asiente, y la temperatura máxima diaria de 20 ciudades, donde Kalshi no cobra comisión de maker.
+# Fuera quedan el fútbol y los e-sports (pierden) y el tenis (sale a cero). El clima no depende de
+# las restricciones a los contratos deportivos que tienen algunos estados.
+GAME_SERIES = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME", "KXNCAAMBGAME", "KXNCAAWBGAME"]
+WEATHER_SERIES = [
+    "KXHIGHLAX", "KXHIGHNY", "KXHIGHCHI", "KXHIGHMIA", "KXHIGHAUS", "KXHIGHDEN", "KXHIGHPHIL",
+    "KXHIGHTSFO", "KXHIGHTPHX", "KXHIGHTATL", "KXHIGHTSEA", "KXHIGHTBOS", "KXHIGHTDAL", "KXHIGHTDC",
+    "KXHIGHTLV", "KXHIGHTHOU", "KXHIGHTMIN", "KXHIGHTOKC", "KXHIGHTNOLA", "KXHIGHTSATX",
+]  # fmt: skip
 DEFAULT_SERIES = GAME_SERIES + WEATHER_SERIES
+DEFAULT_MAX_MARKETS = 40  # con más ligas y ciudades, 20 se quedaban cortos
 # El clima abre la víspera y cierra a medianoche (hora local), con varios tramos de
 # temperatura por día: se miran varios tramos, porque el favorito casi nunca es el más
 # negociado (dónde apostar lo limita max_positions_per_event), y solo en las últimas 12 horas:
@@ -475,7 +482,7 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
         tickers=_list(markets.get("tickers"), "tickers"),
         series=_list(markets.get("series", DEFAULT_SERIES), "series"),
         events=_list(markets.get("events"), "events"),
-        max_markets=_num(markets.get("max_markets", 20), "max_markets", int),
+        max_markets=_num(markets.get("max_markets", DEFAULT_MAX_MARKETS), "max_markets", int),
         min_hours_to_close=_num(markets.get("min_hours_to_close", 0), "min_hours_to_close"),
         max_hours_to_close=_num(markets.get("max_hours_to_close", 6), "max_hours_to_close"),
         min_volume_24h=_dec(markets.get("min_volume_24h", 1000), "min_volume_24h"),
@@ -507,6 +514,8 @@ def load_settings(config_path: Optional[str] = None, overrides: Optional[dict] =
         raise ConfigError("Se requiere 0 < min_price < max_price < 1")
 
     strategy_name = str(strategy.get("name", "favorites"))
+    # Con la estrategia de favoritos se miran primero los mercados que ya tienen un favorito claro.
+    engine.favorites_first = strategy_name == "favorites"
     params = dict(strategy.get("params") or {})
     if strategy_name == "fair_value" and not params.get("fair_values_file"):
         params["fair_values_file"] = str(data_dir / "fair_values.csv")

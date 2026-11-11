@@ -15,6 +15,12 @@ que sería vender lo que tiene a lo poco que vale ya. Se queda con lo que tenía
 el final, que con datos reales sale mejor que vender cuando un favorito cae, y nunca
 deshace así lo que compres tú a mano.
 
+No compra al favorito nada más cruzar el precio mínimo: espera a que lleve `settle_minutes`
+minutos seguidos por encima. Con el histórico minuto a minuto de seis semanas (noviembre de
+2026, ver INVESTIGACION.md), comprar en el momento del cruce salía a −1 %: muchas veces es un
+salto que se da la vuelta. Esperando 20 minutos, las mismas ligas salían a +2 %, en las dos
+mitades del periodo y en cada liga de equipos por separado.
+
 Salidas antes de tiempo (opcionales, 0 = desactivadas): si el favorito se hunde
 hasta `stop_loss`, o si ya se puede vender a `take_profit` o más, el bot vende
 toda la posición al mejor precio que haya en ese momento. Solo se aplican a
@@ -35,6 +41,10 @@ Parámetros ([strategy.params] en config.toml):
   max_position   contratos máximos por mercado
   max_spread     ignora libros con un spread mayor (poco líquidos)
   improve        true: mejora en un tick la mejor oferta; false: se pone a la cola
+  settle_minutes minutos seguidos que el favorito debe llevar por encima de min_price
+                 antes de comprarlo (0 = compra en cuanto lo ve)
+  settle_skip_series  series donde no se espera ("KXHIGH": en el clima no hay saltos de
+                 marcador y esperar no mejoró nada)
   stop_loss      vende si el favorito cae a este precio (0 = nunca)
   take_profit    vende si ya se puede cobrar este precio (0 = espera al final)
   take_profit_series  series donde se aplica take_profit ("KXHIGH"; vacío = todas)
@@ -43,6 +53,7 @@ Parámetros ([strategy.params] en config.toml):
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 
@@ -52,6 +63,8 @@ from .base import MarketContext, Strategy
 
 # Margen para reconocer una posición del bot por su precio medio de compra.
 ENTRY_TOLERANCE = Decimal("0.05")
+# Si pasa más que esto sin ver un mercado, no se sabe qué hizo el precio: la espera empieza de nuevo.
+SETTLE_GAP = timedelta(minutes=2)
 
 
 def series_prefixes(value) -> tuple:
@@ -60,7 +73,7 @@ def series_prefixes(value) -> tuple:
     Vacía → () = todas las series.
     """
     if value is not None and not isinstance(value, (str, list, tuple)):
-        raise ValueError('favorites: take_profit_series debe ser una lista de series, p. ej. ["KXHIGH"]')
+        raise ValueError('favorites: las series deben ser una lista, p. ej. ["KXHIGH"]')
     items = value.split(",") if isinstance(value, str) else list(value or [])
     return tuple(dict.fromkeys(str(item).strip().upper() for item in items if str(item).strip()))
 
@@ -76,6 +89,20 @@ class FavoritesStrategy(Strategy):
         {"key": "max_position", "label": "Contratos máximos por mercado", "default": "20", "type": "number"},
         {"key": "max_spread", "label": "Spread máximo del mercado", "default": "0.04", "type": "price"},
         {"key": "improve", "label": "Mejorar en un tick la mejor oferta", "default": True, "type": "bool"},
+        {
+            "key": "settle_minutes",
+            "label": "Minutos que debe llevar de favorito",
+            "default": "20",
+            "type": "number",
+            "help": "No compra en cuanto cruza el precio mínimo: espera a que aguante. 0 = compra al momento.",
+        },
+        {
+            "key": "settle_skip_series",
+            "label": "No esperar en estas series",
+            "default": "KXHIGH",
+            "type": "list",
+            "help": "KXHIGH = temperatura máxima: ahí no hay saltos de marcador y esperar no mejoró nada.",
+        },
         {
             "key": "stop_loss",
             "label": "Vender si el favorito cae a",
@@ -107,6 +134,10 @@ class FavoritesStrategy(Strategy):
         self.max_position = self.dec("max_position", "20")
         self.max_spread = self.dec("max_spread", "0.04")
         self.improve = str(self.params.get("improve", True)).lower() not in ("false", "0", "no")
+        self.settle_minutes = self.dec("settle_minutes", "20")
+        self.settle_skip_series = series_prefixes(self.params.get("settle_skip_series", "KXHIGH"))
+        # mercado → (lado favorito, desde cuándo lo es sin interrupción, última vez visto)
+        self._favorite: dict = {}
         self.stop_loss = self.dec("stop_loss", "0")
         self.take_profit = self.dec("take_profit", "0")
         self.take_profit_series = series_prefixes(self.params.get("take_profit_series", "KXHIGH"))
@@ -116,6 +147,8 @@ class FavoritesStrategy(Strategy):
             raise ValueError("favorites: el precio de corte debe estar entre 0 y el precio mínimo del favorito")
         if self.take_profit and not (self.max_price < self.take_profit < ONE):
             raise ValueError("favorites: el precio de cobro debe estar entre el precio máximo a pagar y 1")
+        if not (ZERO <= self.settle_minutes <= 240):
+            raise ValueError("favorites: los minutos de espera deben estar entre 0 y 240")
 
     def wants_exits(self) -> bool:
         return bool(self.stop_loss or self.take_profit)
@@ -157,14 +190,42 @@ class FavoritesStrategy(Strategy):
         intent = sell(price, held, tif=IOC, reason=reason)
         return replace(intent, closes=True) if intent else None
 
+    def settled(self, ticker: str, bid: Optional[Decimal], ask: Optional[Decimal], now: datetime) -> bool:
+        """True si el favorito lleva `settle_minutes` seguidos por encima del precio mínimo.
+
+        Se llama en cada vuelta con el libro del mercado: lleva la cuenta de desde cuándo un lado
+        cotiza como favorito. Si el precio baja del mínimo, cambia de lado o el bot deja de ver el
+        mercado un par de minutos, la cuenta empieza de nuevo.
+        """
+        if bid is not None and bid >= self.min_price:
+            side = "yes"
+        elif ask is not None and ONE - ask >= self.min_price:
+            side = "no"
+        else:
+            self._favorite.pop(ticker, None)
+            return False
+        seen = self._favorite.get(ticker)
+        if seen is None or seen[0] != side or now - seen[2] > SETTLE_GAP:
+            since = now
+        else:
+            since = seen[1]
+        self._favorite[ticker] = (side, since, now)
+        if len(self._favorite) > 500:  # mercados que ya no se miran
+            for old in [t for t, v in self._favorite.items() if now - v[2] > SETTLE_GAP]:
+                del self._favorite[old]
+        if self.settle_skip_series and ticker.upper().startswith(self.settle_skip_series):
+            return True
+        return now - since >= timedelta(minutes=float(self.settle_minutes))
+
     def on_market(self, ctx: MarketContext) -> list:
         leave = self.exit_intent(ctx)
         if leave is not None:
             return [leave]
-        if ctx.exit_only:
-            return []
         book = ctx.book_ex_own
         bid, ask = book.best_bid, book.best_ask
+        settled = self.settled(ctx.ticker, bid, ask, ctx.now)  # la cuenta sigue aunque ahora no se compre
+        if ctx.exit_only:
+            return []
         if (bid is not None and bid > self.max_price) or (ask is not None and ONE - ask > self.max_price):
             ctx.why_not = "decided"  # el favorito ya cotiza por encima del precio máximo: queda poco que ganar
             return []
@@ -184,6 +245,9 @@ class FavoritesStrategy(Strategy):
             if room <= 0:
                 ctx.why_not = "position_cap"
                 return []
+            if not settled:
+                ctx.why_not = "settling"
+                return []
             price = ctx.tick_above(bid) if self.improve else bid
             if price is None or price >= ask:
                 price = bid
@@ -202,6 +266,9 @@ class FavoritesStrategy(Strategy):
             room = self.max_position + ctx.position
             if room <= 0:
                 ctx.why_not = "position_cap"
+                return []
+            if not settled:
+                ctx.why_not = "settling"
                 return []
             yes_price = ctx.tick_below(ask) if self.improve else ask
             if yes_price is None or yes_price <= bid:

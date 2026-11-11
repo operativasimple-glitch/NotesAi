@@ -320,7 +320,7 @@ def test_errors_back_off_and_recover():
 
 def test_one_bet_per_event():
     # Dos tramos del mismo día con favorito: solo se apuesta en uno.
-    strategy = FavoritesStrategy({})
+    strategy = FavoritesStrategy({"settle_minutes": 0})
     a, b = "KXHIGHNY-26OCT08-B66.5", "KXHIGHNY-26OCT08-B68.5"
     bot, fake, _ = setup(strategy)
     for t in (a, b):
@@ -372,7 +372,7 @@ def test_intent_helpers_round_to_ticks():
 
 
 def favorites_with_exits():
-    return FavoritesStrategy({"stop_loss": "0.50", "take_profit": "0.99"})
+    return FavoritesStrategy({"settle_minutes": 0, "stop_loss": "0.50", "take_profit": "0.99"})
 
 
 def test_exits_still_work_in_the_last_minutes():
@@ -419,7 +419,9 @@ def test_positions_outside_the_list_are_watched_only_to_exit():
 
 
 def test_weather_take_profit_watches_only_weather_positions(caplog):
-    strategy = FavoritesStrategy({"take_profit": "0.99"})  # cobrar a 99¢, por defecto solo en el clima
+    strategy = FavoritesStrategy(
+        {"settle_minutes": 0, "take_profit": "0.99"}
+    )  # cobrar a 99¢, por defecto solo en el clima
     bot, fake, clock = setup(strategy, series=["KXHIGHNY", "KXMLBGAME"], max_hours_to_close=6)
     tomorrow = (NOW + timedelta(hours=30)).isoformat()
     weather = make_market("KXHIGHNY-26OCT09-B66.5", close_time=tomorrow)
@@ -464,7 +466,9 @@ def test_weather_take_profit_watches_only_weather_positions(caplog):
 
 def test_take_profit_sells_fractional_leftovers():
     # Kalshi deja operar fracciones: una venta a 99¢ llenada a medias deja, p. ej., 0,85 NO.
-    bot, fake, _ = setup(FavoritesStrategy({"take_profit": "0.99"}), series=["KXHIGHMIA"], max_hours_to_close=6)
+    bot, fake, _ = setup(
+        FavoritesStrategy({"settle_minutes": 0, "take_profit": "0.99"}), series=["KXHIGHMIA"], max_hours_to_close=6
+    )
     crumb = make_market("KXHIGHMIA-26OCT09-B87.5", close_time=(NOW + timedelta(hours=30)).isoformat())
     fake.markets[crumb.ticker] = crumb
     fake.books[crumb.ticker] = make_book(crumb.ticker, asks=[("0.01", 50)])
@@ -480,7 +484,7 @@ def cancel_reasons(caplog):
 
 def test_each_cancel_says_why(caplog):
     # El panel enseña el motivo junto a «Cancelada»: retirar una orden no cuesta nada, pero hay que entenderlo.
-    bot, fake, clock = setup(FavoritesStrategy({}))
+    bot, fake, clock = setup(FavoritesStrategy({"settle_minutes": 0}))
     fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.93", 50)])
     with caplog.at_level(logging.INFO, logger="kalshi_bot.engine"):
         bot.tick()  # compra SÍ a 91¢
@@ -503,7 +507,7 @@ def test_each_cancel_says_why(caplog):
 
 
 def test_a_fractional_fill_keeps_the_order_in_the_queue():
-    bot, fake, clock = setup(FavoritesStrategy({}))
+    bot, fake, clock = setup(FavoritesStrategy({"settle_minutes": 0}))
     fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.93", 50)])
     bot.tick()
     ((order_id, order),) = fake.orders.items()
@@ -522,7 +526,7 @@ def test_a_fractional_fill_keeps_the_order_in_the_queue():
 
 
 def test_after_you_cancel_a_bot_order_it_stops_buying_there():
-    bot, fake, clock = setup(FavoritesStrategy({}))
+    bot, fake, clock = setup(FavoritesStrategy({"settle_minutes": 0}))
     fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.93", 50)])
     bot.tick()
     (order_id,) = fake.orders
@@ -536,7 +540,7 @@ def test_after_you_cancel_a_bot_order_it_stops_buying_there():
 
 def test_markets_on_another_exchange_shard_are_skipped_after_one_refusal(caplog):
     # Kalshi reparte los mercados en partes (shards) con saldo propio; por la API no lo mueve solo.
-    bot, fake, clock = setup(FavoritesStrategy({}))
+    bot, fake, clock = setup(FavoritesStrategy({"settle_minutes": 0}))
     fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.93", 50)])
     tries = []
 
@@ -558,7 +562,7 @@ def test_markets_on_another_exchange_shard_are_skipped_after_one_refusal(caplog)
 
 def test_each_loop_says_why_it_is_not_buying():
     # El panel enseña, bajo «Bot activo», dónde tiene dinero el bot y por qué no compra en el resto.
-    bot, fake, clock = setup(FavoritesStrategy({}))
+    bot, fake, clock = setup(FavoritesStrategy({"settle_minutes": 0}))
     decided, unsure, wide, soon = "KXTEST-A", "KXTEST-B", "KXTEST-C", "KXTEST-D"
     books = {
         T: make_book(T, bids=[("0.90", 50)], asks=[("0.93", 50)]),  # favorito: compra
@@ -585,7 +589,9 @@ def test_each_loop_says_why_it_is_not_buying():
 
 def test_daily_loss_pause_stops_buying_but_not_exits():
     limits = RiskLimits(max_daily_loss_pct=D("0.25"), max_order_contracts=D("10"), max_session_loss=D("0"))
-    bot, fake, clock = setup(FavoritesStrategy({"order_size": 5, "max_position": 5}), limits=limits)
+    bot, fake, clock = setup(
+        FavoritesStrategy({"settle_minutes": 0, "order_size": 5, "max_position": 5}), limits=limits
+    )
     later = (NOW + timedelta(days=3)).isoformat().replace("+00:00", "Z")
     fake.markets[T] = make_market(T, close_time=later)  # que siga abierto al día siguiente
     bot._markets_refreshed_at = None
@@ -612,7 +618,7 @@ def test_daily_loss_pause_stops_buying_but_not_exits():
 
 def test_balance_caps_size_the_bet_in_the_engine():
     limits = RiskLimits(max_market_pct=D("0.15"), max_order_contracts=D("10"), max_session_loss=D("0"))
-    bot, fake, _ = setup(FavoritesStrategy({"order_size": 10, "max_position": 20}), limits=limits)
+    bot, fake, _ = setup(FavoritesStrategy({"settle_minutes": 0, "order_size": 10, "max_position": 20}), limits=limits)
     fake.books[T] = make_book(T, bids=[("0.90", 50)], asks=[("0.92", 50)])
     fake.balance = Balance(D("20"), D("0"))
     bot.tick()

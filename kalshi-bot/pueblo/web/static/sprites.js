@@ -251,6 +251,13 @@
       }
       paint(g, ['...gggggggggg...', '..vvvvvvvvvvvv..'], { g: '#166534', v: '#4ade80' }, view === 'side' ? 1 : 0, 3);
     },
+    combinadora(g) {
+      // Tres eslabones de cadena encima de la cabeza.
+      for (const x of [4, 7, 10]) {
+        R(g, x, 1, 3, 3, '#b45309');
+        P(g, x + 1, 2, '#fde68a');
+      }
+    },
     contable(g, view) {
       // Gafas y un lápiz detrás de la oreja.
       R(g, 12, 0, 1, 4, '#facc15');
@@ -989,7 +996,7 @@
   // Dónde se pone cada uno (en casillas del pueblo).
   const SPOTS = {
     nube: [2, 4], vigia: [6, 4], radar: [10, 4], cronista: [2, 9], kali: [11, 9],
-    mentora: [8, 4], notaria: [7, 4], tendera: [9, 4], contable: [11, 4],
+    mentora: [8, 4], notaria: [7, 4], tendera: [9, 4], contable: [11, 4], combinadora: [8, 5],
     mailbox: [8, 12], plaza: [6, 9], board: [7, 6], home: [6, 13], lab: [2, 13], arena: [11, 13],
   };
 

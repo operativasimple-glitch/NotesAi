@@ -102,6 +102,19 @@ const CITIES = {
   AUS: "Austin",
   DEN: "Denver",
   PHIL: "Filadelfia",
+  TSFO: "San Francisco",
+  TPHX: "Phoenix",
+  TATL: "Atlanta",
+  TSEA: "Seattle",
+  TBOS: "Boston",
+  TDAL: "Dallas",
+  TDC: "Washington",
+  TLV: "Las Vegas",
+  THOU: "Houston",
+  TMIN: "Mineápolis",
+  TOKC: "Oklahoma City",
+  TNOLA: "Nueva Orleans",
+  TSATX: "San Antonio",
 };
 const MONTHS = { JAN: "ene", FEB: "feb", MAR: "mar", APR: "abr", MAY: "may", JUN: "jun", JUL: "jul", AUG: "ago", SEP: "sept", OCT: "oct", NOV: "nov", DEC: "dic" };
 
@@ -526,6 +539,7 @@ const SCAN_LABELS = {
   wide_spread: "con poca liquidez",
   empty_book: "sin ofertas",
   position_cap: "en el tope de contratos",
+  settling: ["favorito reciente (espera a que aguante)", "favoritos recientes (espera a que aguanten)"],
   other_side: "con lo tuyo del otro lado",
   closing: "a punto de cerrar",
   inactive: ["cerrado o en pausa", "cerrados o en pausa"],

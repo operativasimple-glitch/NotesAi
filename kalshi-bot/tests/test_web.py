@@ -91,7 +91,11 @@ def panel(tmp_path, monkeypatch):
         books={T: make_book(T, bids=[("0.90", 50)], asks=[("0.92", 50)])},
         authenticated=False,
     )
-    write_overrides(tmp_path, {"markets": {"series": ["KXTEST"]}})  # en vez de las series de partidos
+    # En vez de las series de partidos, y comprando al momento (sin esperar a que el favorito se asiente).
+    write_overrides(
+        tmp_path,
+        {"markets": {"series": ["KXTEST"]}, "strategy": {"name": "favorites", "params": {"settle_minutes": 0}}},
+    )
 
     def factory(settings, signer):
         fake.authenticated = signer is not None

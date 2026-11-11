@@ -31,7 +31,7 @@ GAME = "KXMLBGAME-26OCT081905LADSD-LAD"
 
 
 def fav(**params):
-    return FavoritesStrategy(params)
+    return FavoritesStrategy({"settle_minutes": 0, **params})
 
 
 def test_buys_yes_favorite_improving_one_tick():
@@ -58,6 +58,52 @@ def test_never_pays_more_than_max_price():
     assert summary(fav().on_market(ctx_for(book)))[0][1] == D("0.97")
     book = make_book(T, bids=[("0.01", 50)], asks=[("0.03", 50)])
     assert summary(fav().on_market(ctx_for(book)))[0][1] == D("0.03")  # NO a 97¢ como mucho
+
+
+def at(book, minutes, position=0):
+    ctx = ctx_for(book, position=position)
+    ctx.now = NOW + timedelta(minutes=minutes)
+    return ctx
+
+
+def test_waits_until_the_favorite_has_held_its_price():
+    # Por defecto no compra al favorito nada más cruzar 88¢: espera a que lleve 20 minutos por encima.
+    s = FavoritesStrategy({})
+    book = make_book(T, bids=[("0.90", 50)], asks=[("0.92", 50)])
+    first = at(book, 0)
+    assert s.on_market(first) == [] and first.why_not == "settling"
+    assert s.on_market(at(book, 1)) == [] and s.on_market(at(book, 2)) == []
+    # Cae por debajo del mínimo: la cuenta empieza de nuevo cuando vuelve.
+    assert s.on_market(at(make_book(T, bids=[("0.80", 50)], asks=[("0.82", 50)]), 3)) == []
+    for minute in range(4, 24):
+        assert s.on_market(at(book, minute)) == [], minute
+    assert summary(s.on_market(at(book, 24))) == [(BID, D("0.91"), D("10"), GTC, True)]
+    # Mientras está por encima del máximo o con poca liquidez sigue contando como favorito.
+    s = FavoritesStrategy({"settle_minutes": 5})
+    for minute, quote in enumerate(
+        (("0.98", "0.99"), ("0.90", "0.96"), ("0.98", "0.99"), ("0.90", "0.96"), ("0.97", "0.99"))
+    ):
+        assert s.on_market(at(make_book(T, bids=[(quote[0], 5)], asks=[(quote[1], 5)]), minute)) == []
+    assert s.on_market(at(book, 5))[0].price == D("0.91")
+    # Si cambia el lado favorito, o el bot deja de ver el mercado unos minutos, vuelve a esperar.
+    no_book = make_book(T, bids=[("0.05", 50)], asks=[("0.08", 50)])
+    assert s.on_market(at(no_book, 6)) == []
+    for minute in range(7, 11):
+        assert s.on_market(at(no_book, minute)) == []
+    assert s.on_market(at(no_book, 11))[0].side == ASK
+    assert s.on_market(at(no_book, 30)) == []  # 19 minutos sin verlo: no se sabe qué hizo el precio
+    with pytest.raises(ValueError):
+        FavoritesStrategy({"settle_minutes": 500})
+    # En el clima no espera (no hay saltos de marcador), salvo que se quite de la lista.
+    weather = make_book(WEATHER, bids=[("0.90", 50)], asks=[("0.92", 50)])
+
+    def weather_ctx():
+        ctx = ctx_for(weather)
+        ctx.market = make_market(WEATHER)
+        return ctx
+
+    assert FavoritesStrategy({}).on_market(weather_ctx())[0].price == D("0.91")
+    assert FavoritesStrategy({"settle_skip_series": ""}).on_market(weather_ctx()) == []
 
 
 def test_skips_wide_spreads_and_prices_outside_the_band():
@@ -240,6 +286,24 @@ def test_markets_end_at_the_expected_end_when_it_comes_first():
 
 
 # --- escáner -------------------------------------------------------------------------
+
+
+def test_discovery_can_put_markets_with_a_clear_favorite_first():
+    # Con muchas ligas, los partidos igualados ocupaban el sitio de los que sí tienen favorito.
+    def one(ticker, bid, ask, volume):
+        event = ticker.rsplit("-", 1)[0]
+        return make_market(ticker, event_ticker=event, yes_bid_dollars=bid, yes_ask_dollars=ask, volume_24h_fp=volume)
+
+    even, yes_fav, no_fav = (
+        one("KXA-EV1-X", "0.50", "0.52", "9000"),
+        one("KXA-EV2-X", "0.85", "0.87", "2000"),
+        one("KXA-EV3-X", "0.10", "0.12", "5000"),
+    )
+    fake = FakeKalshi(markets=[even, yes_fav, no_fav])
+    by_volume = discover(fake, MarketFilter(series=["KXA"], max_markets=2), NOW)
+    assert [m.ticker for m in by_volume] == ["KXA-EV1-X", "KXA-EV3-X"]
+    first = discover(fake, MarketFilter(series=["KXA"], max_markets=2, favorites_first=True), NOW)
+    assert [m.ticker for m in first] == ["KXA-EV3-X", "KXA-EV2-X"]
 
 
 def test_scan_markets_finds_favorites_and_wide_spreads():

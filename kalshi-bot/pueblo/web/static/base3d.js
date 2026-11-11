@@ -30,7 +30,7 @@ export const ROOMS = {
   incubadora: { col: 3, row: 1, name: 'Incubadora', glow: '#a3e635', floor: '#e3f2d3' },
 };
 // Las estrategias de la Incubadora, cada una con su cápsula (en este orden, de izquierda a derecha).
-const PODS = [['notaria', '#d946ef'], ['tendera', '#0d9488'], ['contable', '#475569']];
+const PODS = [['notaria', '#d946ef'], ['tendera', '#0d9488'], ['combinadora', '#f59e0b'], ['contable', '#475569']];
 
 // Dónde se pone cada uno en una sala: [x, z, mira hacia x, mira hacia z] (relativo al centro).
 const SPOTS = {
@@ -44,7 +44,7 @@ const SPOTS = {
   puente: [[0.0, -1.3, 0.0, -2.2], [2.0, -1.4, 2.0, -2.3], [-1.4, -0.8, -2.3, -2.3], [-0.8, 1.0, 0, -2.2], [0.8, 1.2, 0, -2.2], [1.8, 0.5, 2.0, -2.3]],
   boveda: [[-1.1, -1.1, -2.1, -2.1], [0.8, -1.4, 0.8, -2.3], [0.2, 0.6, -2.1, -2.1], [1.6, 1.0, 0.8, -2.3], [-1.0, 1.4, -2.1, -2.1], [-1.9, 0.0, -2.1, -2.1]],
   // La Mentora delante de su pantalla y cada estrategia delante de su cápsula.
-  incubadora: [[-1.45, -0.7, -2.25, -2.25], [-0.6, -0.95, -0.3, -2.35], [0.7, -0.95, 1.0, -2.35], [2.0, -0.95, 2.3, -2.35], [0.6, 1.1, 0.6, -2.35], [1.9, 0.5, 1.9, -2.35]],
+  incubadora: [[-1.45, -0.7, -2.25, -2.25], [-0.75, -0.95, -0.5, -2.35], [0.25, -0.95, 0.5, -2.35], [1.25, -0.95, 1.5, -2.35], [2.25, -0.95, 2.5, -2.35], [0.6, 1.2, 0.6, -2.35], [1.9, 0.9, 1.9, -2.35]],
 };
 // Los asientos del Consejo, alrededor de la mesa redonda.
 for (let i = 0; i < 9; i++) {
@@ -52,7 +52,7 @@ for (let i = 0; i < 9; i++) {
   SPOTS.consejo.push([Math.cos(a) * 1.85, Math.sin(a) * 1.85, 0, 0]);
 }
 // Quién tiene sitio fijo (su "mesa") cuando está en su sala.
-const DESK = { kali: 0, nube: 0, radar: 0, cronista: 0, vigia: 0, investigadora: 0, probadora: 0, herrera: 0, mentora: 0, notaria: 1, tendera: 2, contable: 3 };
+const DESK = { kali: 0, nube: 0, radar: 0, cronista: 0, vigia: 0, investigadora: 0, probadora: 0, herrera: 0, mentora: 0, notaria: 1, tendera: 2, combinadora: 3, contable: 4 };
 const MAIL_SPOT = 1; // en el Puente, la terminal con tus mensajes
 const BOARD_SPOT = 2; // en el Archivo, el tablón del diario
 // Para no atravesar muebles: círculos que se rodean al caminar.
@@ -381,6 +381,15 @@ function accessory(id, head, color) {
     visor.position.set(0, top - 0.04, 0.12);
     g.add(visor);
     g.add(cyl(0.235, 0.235, 0.05, mat('#166534'), 0, top - 0.07, 0, 24));
+  } else if (id === 'combinadora') {
+    // Tres eslabones de cadena: una combinada son varias apuestas enganchadas.
+    const link = mat('#fbbf24', { metalness: 0.6, roughness: 0.3, emissive: '#5a3d00', emissiveIntensity: 0.4 });
+    for (let i = 0; i < 3; i++) {
+      const ring = mesh(new THREE.TorusGeometry(0.055, 0.016, 8, 18), link, false);
+      ring.position.set(-0.09 + i * 0.09, top + 0.09, 0);
+      ring.rotation.y = i % 2 ? Math.PI / 2 : 0;
+      g.add(ring);
+    }
   } else if (id === 'contable') {
     // Gafas redondas y un lápiz detrás de la oreja.
     const rim = mat('#cbd5e1', { metalness: 0.5, roughness: 0.4 });
@@ -1112,22 +1121,22 @@ export class Base {
         roughness: 0.05, metalness: 0.1, depthWrite: false,
       });
       PODS.forEach(([bot, color], i) => {
-        const x = -0.3 + i * 1.3;
+        const x = -0.5 + i * 1.0;
         const z = -2.35;
-        add(cyl(0.38, 0.43, 0.28, mat('#3a3360'), x, 0, z, 28));
+        add(cyl(0.33, 0.38, 0.28, mat('#3a3360'), x, 0, z, 28));
         const ringMat = new THREE.MeshStandardMaterial({ color: '#a3e635', emissive: '#a3e635', emissiveIntensity: 1.6 });
-        const ring = mesh(new THREE.TorusGeometry(0.37, 0.025, 8, 44), ringMat, false);
+        const ring = mesh(new THREE.TorusGeometry(0.32, 0.025, 8, 44), ringMat, false);
         ring.rotation.x = Math.PI / 2;
         ring.position.set(x, 0.29, z);
         add(ring);
-        const dome = new THREE.Mesh(new THREE.SphereGeometry(0.36, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2), glass);
+        const dome = new THREE.Mesh(new THREE.SphereGeometry(0.31, 24, 16, 0, Math.PI * 2, 0, Math.PI / 2), glass);
         dome.scale.y = 1.7;
         dome.position.set(x, 0.28, z);
         dome.renderOrder = 2;
         add(dome);
         const cap = mesh(new THREE.TorusGeometry(0.1, 0.018, 8, 24), glowMat(color, 1.2), false);
         cap.rotation.x = Math.PI / 2;
-        cap.position.set(x, 0.28 + 0.36 * 1.7, z);
+        cap.position.set(x, 0.28 + 0.31 * 1.7, z);
         add(cap);
         const plant = new THREE.Group();
         plant.position.set(x, 0.28, z);
@@ -1149,7 +1158,7 @@ export class Base {
         light.position.set(x, 0.8, z);
         add(light);
         // Luz de cultivo encima, en la pared.
-        const bar = box(0.85, 0.05, 0.08, glowMat('#d9f99d', 1.8), x, 1.3, -2.86);
+        const bar = box(0.7, 0.05, 0.08, glowMat('#d9f99d', 1.8), x, 1.3, -2.86);
         bar.castShadow = false;
         add(bar);
         this.pods[bot] = { plant, ringMat, light, grow: 0.5, target: 0.5 };
@@ -2230,17 +2239,17 @@ function drawIncubator(ctx, w, h, data) {
   ctx.fillStyle = '#d9f99d';
   ctx.font = `700 ${h * 0.11}px ${FONT}`;
   ctx.fillText('INCUBADORA · DE MENTIRA', w * 0.05, h * 0.15);
-  const rows = ((data && data.incubator && data.incubator.board) || []).slice(0, 3);
+  const rows = ((data && data.incubator && data.incubator.board) || []).slice(0, 4);
   const tint = { lista: '#4ade80', descartada: '#8a8fa3', dudosa: '#fbbf24', arriesgada: '#fb923c' };
   rows.forEach((r, i) => {
-    const y = h * (0.35 + i * 0.22);
+    const y = h * (0.33 + i * 0.175);
     ctx.fillStyle = r.color || '#a3e635';
     ctx.beginPath();
     ctx.arc(w * 0.075, y - h * 0.035, h * 0.03, 0, Math.PI * 2);
     ctx.fill();
     ctx.fillStyle = '#f0fdf4';
-    ctx.font = `700 ${h * 0.095}px ${TEXT}`;
-    ctx.fillText(fitText(ctx, r.name, w * 0.42), w * 0.12, y);
+    ctx.font = `700 ${h * 0.085}px ${TEXT}`;
+    ctx.fillText(fitText(ctx, r.name, w * 0.5), w * 0.12, y);
     ctx.textAlign = 'right';
     const pnl = Number(r.pnl);
     ctx.fillStyle = !r.ops ? '#a7b8a0' : pnl > 0 ? '#7dffb2' : pnl < 0 ? '#ff9b94' : '#ffffff';
@@ -2249,9 +2258,9 @@ function drawIncubator(ctx, w, h, data) {
     // Barra: cuánto le falta para que se pueda juzgar (operaciones y días).
     const bw = w * 0.83;
     ctx.fillStyle = 'rgba(255,255,255,0.12)';
-    ctx.fillRect(w * 0.12, y + h * 0.035, bw, h * 0.04);
+    ctx.fillRect(w * 0.12, y + h * 0.03, bw, h * 0.03);
     ctx.fillStyle = tint[r.state] || '#a3e635';
-    ctx.fillRect(w * 0.12, y + h * 0.035, bw * clamp(Number(r.progress) || 0, 0, 1), h * 0.04);
+    ctx.fillRect(w * 0.12, y + h * 0.03, bw * clamp(Number(r.progress) || 0, 0, 1), h * 0.03);
   });
   if (!rows.length) {
     ctx.fillStyle = '#a7b8a0';

@@ -66,6 +66,7 @@ class EngineConfig:
     max_markets_per_event: int = 0  # 0 = sin límite
     exclude_series: list = field(default_factory=list)
     series_rules: dict = field(default_factory=dict)  # ajustes propios por prefijo de serie
+    favorites_first: bool = False  # mirar primero los mercados que ya tienen un favorito claro
     refresh_markets_minutes: float = 5.0
 
     def market_filter(self) -> MarketFilter:
@@ -80,6 +81,7 @@ class EngineConfig:
             max_markets_per_event=self.max_markets_per_event,
             exclude_series=list(self.exclude_series),
             series_rules={k: dict(v) for k, v in self.series_rules.items()},
+            favorites_first=self.favorites_first,
         )
 
 

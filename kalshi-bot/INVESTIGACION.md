@@ -11,6 +11,10 @@
 - **Comprobado con datos reales de Kalshi (octubre 2026):** comprar el favorito a 88–97¢ como maker
   en los partidos dio **+3,9 % tras comisiones en 878 partidos**, con un margen de error que no llega a
   cero (+2,2 % a +5,6 %). Detalle en la sección siguiente.
+- **Noviembre de 2026:** ese +3,9 % ya no existe; comprar en cuanto aparece el favorito da −0,9 %.
+  Esperar a que el favorito **aguante 20 minutos** lo devuelve a **+2,3 %** en las ligas elegidas, y el
+  clima sigue en +1,2 %. Las combinadas no tienen ventaja. Detalle en
+  [Noviembre de 2026](#noviembre-de-2026-el-mercado-ha-cambiado).
 - **Lo más parecido a "el truco"** es ponerse en el lado contrario de quienes compran longshots:
   - comprar el lado **favorito** (88–97¢);
   - con **órdenes limitadas que esperan en el libro** (maker), que pagan la cuarta parte de comisión;
@@ -30,6 +34,77 @@ El bot incluye ahora:
   compruebes antes de arriesgar dinero;
 - un **barrido de series** que compara las series activas y te dice en cuáles están ganando los
   favoritos.
+
+## Noviembre de 2026: el mercado ha cambiado
+
+Repetido con datos minuto a minuto de las 6 semanas hasta el 10 de noviembre de 2026 (comisiones
+incluidas; una orden maker cuenta como llena solo si en el minuto siguiente se opera a ese precio o
+peor). El análisis está en el repositorio `codex` (`kalshi_sim/favscan.py` y `kalshi_sim/combos.py`).
+
+**Lo que hacía el bot ya no gana.** En sus 5 ligas, comprar el favorito en cuanto llega a 88–97¢ dio
+**−0,94 %** (957 apuestas, 102 fallos). La ventaja de octubre (+3,9 %) se ha ido: hay más dinero y más
+bots en Kalshi, y los favoritos que aparecen de golpe (un gol, una canasta al final) se dan la vuelta
+más de lo que dice su precio.
+
+**Lo que sí gana: esperar a que el favorito aguante.** Comprar solo cuando un lado lleva **20 minutos
+seguidos** a 88¢ o más dio **+1,87 %** (495 apuestas) y salió positivo en las dos mitades del periodo
+(+0,4 % y +3,7 %). Esperar 10 minutos (+0,8 %) o 40 (+1,0 %) da menos; subir el suelo a 92¢, +0,5 %.
+
+| Liga | Como antes | Esperando 20 min |
+| --- | --- | --- |
+| NFL | −1,4 % | +0,3 % |
+| Fútbol universitario (NCAAF) | −1,8 % | +1,4 % |
+| NBA | +1,4 % | +1,9 % |
+| NHL | −1,5 % | +2,8 % |
+| MLB | +4,1 % | +7,0 % (solo 12) |
+| Baloncesto universitario masculino | −0,2 % | +3,1 % |
+| Baloncesto universitario femenino (sin comisión maker) | +4,3 % | +4,0 % |
+| Tenis ATP / WTA | −0,6 % / −1,9 % | +2,4 % / +1,4 % |
+
+Con NFL, NCAAF, NBA, NHL y el baloncesto universitario (masculino y femenino) esperando 20 minutos:
+**721 apuestas, 26 fallos, +2,29 %**. Por semanas: +0,9, −0,2, −4,6, +4,1, +3,6 y +4,0 %. Gana, pero
+una semana mala existe.
+
+Pierden y se quedan fuera: fútbol europeo (−5,8 %) y americano (−6,0 %), UFC y e-sports (−1,6 %),
+Euroliga y críquet (−1,8 %). Challenger e ITF quedan en cero (+0,15 %).
+
+**El clima sigue ganando, sin esperar** (Kalshi no cobra comisión maker en esas series): las 7 ciudades
+de siempre +1,5 %, otras 13 ciudades +1,0 %, las 20 juntas **+1,16 % en 814 apuestas**. Allí esperar
+empeora (+0,2 % a los 20 min), porque la temperatura no da vuelcos de golpe. Las mejores: Dallas,
+Washington, Denver, Houston, Oklahoma City, Chicago y Atlanta; las peores, Mineápolis (−6,5 %), Phoenix
+(−4,3 %) y Miami (−3,1 %).
+
+**Lo que cambia en el bot:**
+
+- `settle_minutes = 20`: solo compra un favorito que lleva 20 minutos seguidos a su precio. Si cambia de
+  lado, baja del mínimo o el bot deja de verlo más de 2 minutos, vuelve a contar. No se aplica al clima
+  (`settle_skip_series = ["KXHIGH"]`).
+- Ligas: MLB, NFL, NHL, NBA, NCAAF y baloncesto universitario masculino y femenino.
+- Clima: 20 ciudades (las 7 de antes y 13 nuevas).
+- Mira 40 mercados en vez de 20, y pone primero los que ya tienen un favorito claro.
+
+### Combinadas (parlays): siguen sin compensar
+
+Kalshi vende combinadas (mercados `KXMVE…`) que se compran por RFQ: pides precio y los creadores de
+mercado te lo dan ([docs](https://docs.kalshi.com/getting_started/rfqs)). Desde agosto de 2026 también
+pagan comisión maker ([Bitcoin.com News](https://news.bitcoin.com/igaming/kalshis-parlay-maker-fee-brought-26-million-four-weeks/)).
+
+Se miraron **10.202 operaciones reales ya liquidadas**, tomadas al azar por hora (sin elegir las más
+caras ni las más negociadas):
+
+- Quien compró combinadas ganó **+5,0 % antes de comisiones, −1,2 % después** (margen de ±6,7 %).
+- Solo con ganadores de partido: +2,7 % tras comisiones, con un margen de ±10 %: no se distingue de cero.
+- De 2 a 4 patas, solo ganadores: +0,6 %.
+- Quien vendió (apostó en contra): −5,6 %.
+
+En las casas de apuestas el margen de una combinada es del 10–15 %
+([Sportico](https://www.sportico.com/business/sports-betting/2026/kalshi-parlays-retail-bettor-losses-rfq-1234894471/), [SI](https://www.si.com/betting/prediction-market/kalshi/who-is-really-winning-on-kalshi-parlays-according-to-the-data)); en Kalshi es menor, pero la comisión taker (hasta un 7 %) se lo
+come. **Conclusión: no hay ventaja fiable comprando combinadas, y el bot no las compra con dinero real.**
+
+Para seguir midiéndolo sin riesgo, en la Incubadora hay una estrategia nueva, la **Combinadora**: con
+dinero de mentira compra solo combinadas de 2 a 4 ganadores de partido, de 30 a 90¢, cuando su precio
+(con comisión) está por debajo del producto de los precios de sus patas, nunca dos en el mismo partido.
+Si con el tiempo pasa el veredicto de la Mentora, se podrá hablar de dinero real.
 
 ## Prueba con datos reales de Kalshi (7 de octubre de 2026)
 

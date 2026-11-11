@@ -202,6 +202,9 @@ Es una base en 3D donde cada vecino va a la sala de lo que está haciendo de ver
     compra. Usa la segunda lectura más alta del día y deja 1° de margen.
   - **Tendera:** deja órdenes de compra y venta 1¢ mejores que las de los demás en los tramos de mañana y gana
     la diferencia. Para saber si se las habrían llenado mira las operaciones públicas de Kalshi.
+  - **Combinadora:** prueba las combinadas (parlays). Compra de mentira combinadas de 2 a 4 ganadores de
+    partido solo cuando cuestan menos que el producto de los precios de sus patas, comisión incluida. Con
+    datos reales, comprar combinadas no ha dado ventaja (−1,2 % tras comisiones), por eso solo juega aquí.
   - **Contable:** busca dinero gratis: los tramos de un día (o los dos equipos de un partido) que, comprados
     todos, cuestan menos de lo que se cobra seguro.
   - La Mentora lleva el marcador y el **veredicto**. Una estrategia solo queda «lista» con al menos 40
@@ -238,9 +241,12 @@ Resumen de [INVESTIGACION.md](INVESTIGACION.md):
   - deja órdenes de compra *post-only* (nunca paga comisión de taker) en el lado favorito, SÍ o NO;
   - solo entre 88¢ y 97¢ y sin cruzar el spread;
   - 10 contratos por orden;
-  - en los partidos (MLB, NFL, NHL, NBA y universitario) que terminan en las próximas 6 h, uno por
-    partido, hasta 15 min antes del final previsto;
-  - y en la temperatura máxima diaria de 7 ciudades (mira hasta 4 tramos por día y apuesta en uno). Si tu estado bloquea los
+  - en los partidos (MLB, NFL, NHL, NBA, fútbol americano universitario y baloncesto universitario masculino
+    y femenino) que terminan en las próximas 6 h, uno por partido, hasta 15 min antes del final previsto, y
+    **solo cuando el favorito lleva 20 minutos seguidos a su precio** (`settle_minutes`; en noviembre de 2026
+    comprar en cuanto aparece daba −0,9 % y esperando, +2,3 %);
+  - y en la temperatura máxima diaria de 20 ciudades (mira hasta 4 tramos por día y apuesta en uno; aquí no
+    espera, porque en el clima esperar no mejora). Si tu estado bloquea los
     contratos deportivos, quita los partidos en **Ajustes → Mercados**: el clima sigue funcionando.
 - **No cambia de bando**: si en un mercado ya tiene NO y el favorito pasa a ser el SÍ (o al revés), no compra el
   nuevo favorito. En Kalshi eso vendería primero lo que tiene, a lo poco que vale ya, y con una previsión que
@@ -422,7 +428,7 @@ Lo primero: **Ajustes → Probar conexión**. Dice qué paso falla y qué hacer.
   el reloj del servidor va desfasado.
 - **No conecta con Kalshi**: el servidor debe estar en una región de EE. UU.
 - **"No hay mercados que seguir"**: por defecto el bot sigue los partidos que terminan en las próximas
-  6 h y la temperatura máxima de 7 ciudades. Revisa **Ajustes → Mercados** (o `[markets]`).
+  6 h y la temperatura máxima de 20 ciudades. Revisa **Ajustes → Mercados** (o `[markets]`).
 - **"Kalshi pide ir más despacio" (HTTP 429)**: demasiadas peticiones seguidas. No pasa nada: el bot espera,
   repite la petición y baja solo su ritmo (a la mitad, sin bajar de 1 por segundo); luego lo va recuperando,
   un 25 % por cada minuto sin avisos. El bot y el panel comparten ese límite. Con API key, los datos de

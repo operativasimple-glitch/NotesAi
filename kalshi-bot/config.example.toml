@@ -17,17 +17,22 @@ log_dir = "logs"                 # aquí van bot.log y journal.jsonl
 timezone = "America/Chicago"     # tu hora: cuándo empieza el día para la pérdida máxima del día
 
 [markets]
-# Por defecto, donde la prueba con datos reales dio ventaja (ver INVESTIGACION.md):
-#   - partidos, quién gana: +3,9 % tras comisiones en 878 partidos;
-#   - temperatura máxima en 7 ciudades: +4,1 % en 470 días. No depende de las restricciones a
-#     los contratos deportivos de algunos estados (si te los bloquean, quita los partidos).
+# Por defecto, donde la simulación minuto a minuto de seis semanas salió mejor (INVESTIGACION.md,
+# noviembre de 2026):
+#   - partidos de ligas de EE. UU., con el baloncesto universitario, esperando a que el favorito se
+#     asiente: +2,3 % tras comisiones en 721 partidos;
+#   - temperatura máxima en 20 ciudades, donde Kalshi no cobra comisión de maker: +1,2 % en 814 días.
+#     No depende de las restricciones a los contratos deportivos de algunos estados.
+# Fuera quedan el fútbol y los e-sports (pierden) y el tenis (sale a cero).
 series = [
-    "KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME",
+    "KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME", "KXNCAAMBGAME", "KXNCAAWBGAME",
     "KXHIGHLAX", "KXHIGHNY", "KXHIGHCHI", "KXHIGHMIA", "KXHIGHAUS", "KXHIGHDEN", "KXHIGHPHIL",
+    "KXHIGHTSFO", "KXHIGHTPHX", "KXHIGHTATL", "KXHIGHTSEA", "KXHIGHTBOS", "KXHIGHTDAL", "KXHIGHTDC",
+    "KXHIGHTLV", "KXHIGHTHOU", "KXHIGHTMIN", "KXHIGHTOKC", "KXHIGHTNOLA", "KXHIGHTSATX",
 ]
 max_hours_to_close = 6           # partidos que terminan en las próximas 6 h (el clima tiene su regla abajo)
 min_hours_to_close = 0           # el riesgo deja de operar 15 min antes del final previsto
-max_markets = 20                 # como mucho, los N de más volumen
+max_markets = 40                 # como mucho N: primero los que ya tienen favorito, por volumen
 max_markets_per_event = 1        # uno por evento: cada partido tiene dos mercados que son la misma apuesta
 min_volume_24h = 1000            # volumen mínimo en las últimas 24 h (contratos)
 exclude_series = []              # series a evitar
@@ -82,6 +87,8 @@ order_size = 10                  # contratos por orden
 max_position = 20                # contratos máximos por mercado
 max_spread = 0.04                # ignorar mercados con más de 4¢ de spread
 improve = true                   # mejorar en un tick la mejor oferta (sin cruzar)
+settle_minutes = 20              # no compra al cruzar el mínimo: espera a que lleve 20 min de favorito (0 = al momento)
+settle_skip_series = ["KXHIGH"]  # ...salvo en el clima, donde no hay saltos de marcador
 # Cobrar antes de tiempo (0 = esperar siempre a la liquidación, lo que mejor resultado dio con
 # datos reales; ver INVESTIGACION.md):
 stop_loss = 0                    # p. ej. 0.30: vender si el favorito cae a 30¢

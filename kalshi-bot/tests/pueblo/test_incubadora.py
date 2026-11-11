@@ -307,3 +307,86 @@ def test_a_strategy_that_breaks_does_not_stop_the_others():
     mentora.tick(NOW.timestamp())
     assert world.bot("rota")["mood"] == "sick" and "se ha roto" in world.bot("rota")["status"]
     assert world.bot("notaria")["detail"]["summary"]["open"] == 1
+
+
+# --- la Combinadora --------------------------------------------------------------------------------
+
+
+def leg(ticker, team, bid, ask, **extra):
+    return {
+        "ticker": ticker,
+        "event_ticker": ticker.rsplit("-", 1)[0],
+        "yes_sub_title": team,
+        "yes_bid_dollars": bid,
+        "yes_ask_dollars": ask,
+        **extra,
+    }
+
+
+def combo(ticker, legs, close="2026-10-14T06:00:00Z"):
+    picked = [{"market_ticker": m["ticker"], "event_ticker": m["event_ticker"], "side": side} for m, side in legs]
+    return {"ticker": ticker, "mve_selected_legs": picked, "close_time": close, "status": "active"}
+
+
+def test_the_combo_buyer_only_takes_combos_cheaper_than_their_legs():
+    a = leg("KXNBAGAME-26OCT13BOSNYK-BOS", "Boston", "0.79", "0.81")
+    b = leg("KXNHLGAME-26OCT13PITCBJ-PIT", "Pittsburgh", "0.29", "0.31")  # el favorito es que NO gane
+    c = leg("KXNBAGAME-26OCT13LALDEN-DEN", "Denver", "0.40", "0.60")  # hueco enorme: precio poco fiable
+    props = leg("KXNBAPTS-26OCT13BOSNYK-TATUM25", "Tatum 25+", "0.60", "0.62")
+    good = combo("KXMVECROSSCATEGORY-S1-A", [(a, "yes"), (b, "no")])
+    assert st.combo_legs(good) == [(a["ticker"], "yes"), (b["ticker"], "no")]
+    assert st.combo_legs(combo("KXMVE-X", [(a, "yes")])) is None  # una sola pata no es combinada
+    assert st.combo_legs(combo("KXMVE-X", [(a, "yes"), (props, "yes")])) is None  # con jugadores, no
+    same_game = leg("KXNBAGAME-26OCT13BOSNYK-NYK", "New York", "0.19", "0.21")
+    assert st.combo_legs(combo("KXMVE-X", [(a, "yes"), (same_game, "no")])) is None  # mismo partido
+    assert st.leg_value(a, "yes") == D("0.80") and st.leg_value(b, "no") == D("0.70")
+    assert st.leg_value(c, "yes") is None and st.leg_value({**c, "result": "yes"}, "yes") == 1
+    # Las patas valen 0,80 × 0,70 = 56¢. A 60¢ se paga de más; a 53¢ (con la comisión, 55¢) compensa.
+    ledger = Ledger(new_account("2026-10-13"))
+    mem: dict = {}
+    pricey = {"ticker": "KXMVECROSSCATEGORY-S1-B", "price": D("0.60"), "market": good, "legs": [(a, "yes"), (b, "no")]}
+    cheap = {"ticker": "KXMVECROSSCATEGORY-S1-A", "price": D("0.53"), "market": good, "legs": [(a, "yes"), (b, "no")]}
+    shaky = {"ticker": "KXMVECROSSCATEGORY-S1-C", "price": D("0.30"), "market": good, "legs": [(a, "yes"), (c, "yes")]}
+    data = st.Data(now=NOW, today="2026-10-13", combos=[pricey, cheap, shaky])
+    combinadora = st.Combinadora()
+    events = combinadora.step(ledger, data, mem)
+    assert [(e["ticker"], e["count"], e["price"]) for e in events] == [("KXMVECROSSCATEGORY-S1-A", 5, 0.53)]
+    pos = ledger.position("KXMVECROSSCATEGORY-S1-A")
+    assert pos["name"] == "Combinada · Boston + no Pittsburgh" and "valen 56¢" in pos["note"]
+    assert D(pos["fees"]) == D("0.09")  # 7 % × 5 × 0,53 × 0,47, al céntimo de arriba
+    assert mem["stats"]["seen"] == 2 and mem["stats"]["cheap"] == 1
+    # No repite la misma, ni entra en otra combinada con un partido donde ya tiene dinero.
+    again = {**cheap, "ticker": "KXMVECROSSCATEGORY-S1-D", "price": D("0.50")}
+    assert combinadora.step(ledger, st.Data(now=NOW, today="2026-10-13", combos=[cheap, again]), mem) == []
+    lines = combinadora.research(mem)
+    assert "3 combinadas" in lines[0] and "2 salían más baratas" in lines[1]
+    # Se decide como cualquier mercado: si falla una pata, se pierde lo pagado.
+    op = ledger.settle({"KXMVECROSSCATEGORY-S1-A": "no"}, NOW + timedelta(days=1))[0]
+    assert op["pnl"] == pytest.approx(-5 * 0.53 - 0.09) and op["bets"] == [[5, 0.53]]
+
+
+def test_the_mentor_brings_real_combo_trades_to_the_combo_buyer():
+    world = World(None)
+    kalshi = FakeKalshiPublic()
+    a = leg("KXNBAGAME-26OCT13BOSNYK-BOS", "Boston", "0.79", "0.81")
+    b = leg("KXNHLGAME-26OCT13PITCBJ-PIT", "Pittsburgh", "0.29", "0.31")
+    market = combo("KXMVECROSSCATEGORY-S1-A", [(a, "yes"), (b, "no")])
+    for m in (a, b, market):
+        kalshi.by_ticker[m["ticker"]] = m
+    kalshi.recent = [
+        {"ticker": "KXMVECROSSCATEGORY-S1-A", "yes_price_dollars": "0.5300", "count_fp": "20", "taker_side": "yes"},
+        {"ticker": "KXMVECROSSCATEGORY-S1-A", "yes_price_dollars": "0.5900", "count_fp": "5", "taker_side": "yes"},
+        {"ticker": "KXMVECROSSCATEGORY-S1-Z", "yes_price_dollars": "0.0300", "count_fp": "9", "taker_side": "yes"},
+        {"ticker": "KXNBAGAME-26OCT13BOSNYK-BOS", "yes_price_dollars": "0.8000", "count_fp": "9", "taker_side": "yes"},
+    ]
+    mentora = Mentora(world, kalshi, clock=lambda: NOW.timestamp())
+    mentora.tick(NOW.timestamp())
+    said = texts(world, **{"from": "combinadora", "to": "mentora"})
+    assert said and "compro 5 SÍ de «Combinada · Boston + no Pittsburgh» a 53¢" in said[0]
+    bot = world.bot("combinadora")
+    assert bot["home"] == "incubadora" and bot["detail"]["summary"]["open"] == 1
+    assert "compra una combinada de 2 a 53¢" in bot["activity"]["text"]
+    # Si Kalshi no deja ver las operaciones, las demás estrategias siguen.
+    kalshi.recent_trades = lambda limit=1000: (_ for _ in ()).throw(ConnectionError("sin red"))
+    mentora.tick(NOW.timestamp() + 300)
+    assert world.bot("combinadora")["mood"] != "sick"

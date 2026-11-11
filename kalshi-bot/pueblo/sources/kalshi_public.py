@@ -91,6 +91,12 @@ class KalshiPublic:
                 time.sleep(self.pause)
         return found
 
+    def recent_trades(self, limit: int = 1000) -> list:
+        """Las últimas operaciones de todo Kalshi (unos segundos de actividad), de la más nueva a la más vieja."""
+        resp = self.session.get(f"{self.base_url}/markets/trades", params={"limit": limit}, timeout=self.timeout)
+        resp.raise_for_status()
+        return resp.json().get("trades") or []
+
     def markets_by_ticker(self, tickers: list) -> list:
         """Mercados concretos, estén como estén (abiertos, cerrados o ya liquidados)."""
         found: list = []
