@@ -12,8 +12,8 @@
   en los partidos dio **+3,9 % tras comisiones en 878 partidos**, con un margen de error que no llega a
   cero (+2,2 % a +5,6 %). Detalle en la sección siguiente.
 - **Noviembre de 2026:** ese +3,9 % ya no existe; comprar en cuanto aparece el favorito da −0,9 %.
-  Esperar a que el favorito **aguante 20 minutos** lo devuelve a **+2,3 %** en las ligas elegidas, y el
-  clima sigue en +1,2 %. Las combinadas no tienen ventaja. Detalle en
+  Esperar a que el favorito **aguante 20 minutos** lo devuelve a **+2,5 %** en las ligas elegidas (sin
+  la NFL), y el clima gana un +3,1 % en las 13 ciudades que se quedan. Las combinadas no tienen ventaja. Detalle en
   [Noviembre de 2026](#noviembre-de-2026-el-mercado-ha-cambiado).
 - **Lo más parecido a "el truco"** es ponerse en el lado contrario de quienes compran longshots:
   - comprar el lado **favorito** (88–97¢);
@@ -79,9 +79,31 @@ Washington, Denver, Houston, Oklahoma City, Chicago y Atlanta; las peores, Mine�
 - `settle_minutes = 20`: solo compra un favorito que lleva 20 minutos seguidos a su precio. Si cambia de
   lado, baja del mínimo o el bot deja de verlo más de 2 minutos, vuelve a contar. No se aplica al clima
   (`settle_skip_series = ["KXHIGH"]`).
-- Ligas: MLB, NFL, NHL, NBA, NCAAF y baloncesto universitario masculino y femenino.
-- Clima: 20 ciudades (las 7 de antes y 13 nuevas).
+- Ligas: MLB, NHL, NBA, NCAAF y baloncesto universitario masculino y femenino. La NFL sale: esperando
+  daba +0,3 % (34 partidos), que es cero.
+- Clima: las 13 ciudades que ganaron. Salen Los Ángeles (−1,1 %), Miami (−3,1 %), Phoenix (−4,3 %),
+  Las Vegas (−1,5 %), Mineápolis (−6,5 %), Nueva Orleans (−0,8 %) y San Antonio (−1,4 %).
 - Mira 40 mercados en vez de 20, y pone primero los que ya tienen un favorito claro.
+
+Con lo que queda (partidos esperando 20 minutos y las 13 ciudades): **1.239 apuestas, 40 fallos,
++2,8 %**. Ojo: quitar ciudades por cómo les fue en estas mismas semanas exagera la cifra. Cada ciudad
+tiene unas 40 apuestas, y elegir las ciudades buenas con la primera mitad del periodo no sirvió para
+la segunda (+0,2 % las elegidas, +0,1 % las descartadas). Lo que sí aguantó en las dos mitades es
+esperar a que el favorito se asiente.
+
+**Si el bot hubiera ido así desde el 29 de septiembre con 25 $** (hasta 10 contratos y un 15 % del saldo
+por mercado, reinvirtiendo lo ganado):
+
+| Cómo | Al final | Apuestas | Fallos | Peor caída |
+| --- | --- | --- | --- | --- |
+| Como estaba (5 ligas, 7 ciudades, sin esperar) | 5,74 $ (−77 %) | 305 | 40 | 80 % |
+| Esperando 20 min, 7 ligas y 20 ciudades | 49,14 $ (+97 %) | 292 | 12 | 53 % |
+| Esperando 20 min, sin NFL ni las 7 ciudades | 46,84 $ (+87 %) | 293 | 12 | 42 % |
+
+Las diferencias son enormes porque con 25 $ cada fallo se lleva 3–4 $ y el saldo se reinvierte: cuatro
+fallos seguidos al principio o al final cambian el resultado. Tómalo como dirección (esperar sí, comprar
+en cuanto aparece no), no como lo que vas a ganar: es una simulación con la mejor regla elegida mirando
+estas mismas semanas, supone que las órdenes se llenan, y el peor día fue −10,68 $.
 
 ### Combinadas (parlays): siguen sin compensar
 

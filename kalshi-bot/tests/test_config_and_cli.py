@@ -43,8 +43,9 @@ def test_example_config_loads_with_defaults(clean_env):
     s = load_settings()
     assert s.env == "demo" and s.base_url.startswith("https://external-api.demo.kalshi.co")
     assert s.strategy_name == "favorites" and s.strategy_params["min_price"] == 0.88
-    assert s.engine.series[:5] == ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
-    assert {"KXHIGHMIA", "KXHIGHTDAL", "KXNCAAWBGAME"} <= set(s.engine.series) and len(s.engine.series) == 27
+    assert s.engine.series[:4] == ["KXMLBGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME"]
+    assert {"KXHIGHNY", "KXHIGHTDAL", "KXNCAAWBGAME"} <= set(s.engine.series) and len(s.engine.series) == 19
+    assert not {"KXNFLGAME", "KXHIGHMIA", "KXHIGHTPHX", "KXHIGHTMIN"} & set(s.engine.series)
     assert s.engine.max_markets == 40 and s.engine.favorites_first
     assert s.engine.closing_within_hours == 0 and s.engine.max_hours_to_close == 6
     assert s.engine.max_markets_per_event == 1 and s.engine.poll_interval == 5

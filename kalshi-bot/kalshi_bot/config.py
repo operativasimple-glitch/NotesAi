@@ -47,11 +47,13 @@ log = logging.getLogger(__name__)
 # se asiente, y la temperatura máxima diaria de 20 ciudades, donde Kalshi no cobra comisión de maker.
 # Fuera quedan el fútbol y los e-sports (pierden) y el tenis (sale a cero). El clima no depende de
 # las restricciones a los contratos deportivos que tienen algunos estados.
-GAME_SERIES = ["KXMLBGAME", "KXNFLGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME", "KXNCAAMBGAME", "KXNCAAWBGAME"]
+# Solo donde la simulación de las 6 semanas hasta el 10 de noviembre de 2026 salió con ganancia.
+# Fuera: la NFL (+0,3 %, a cero) y las 7 ciudades que perdieron (Los Ángeles, Miami, Phoenix,
+# Las Vegas, Mineápolis, Nueva Orleans y San Antonio). Ver INVESTIGACION.md.
+GAME_SERIES = ["KXMLBGAME", "KXNHLGAME", "KXNBAGAME", "KXNCAAFGAME", "KXNCAAMBGAME", "KXNCAAWBGAME"]
 WEATHER_SERIES = [
-    "KXHIGHLAX", "KXHIGHNY", "KXHIGHCHI", "KXHIGHMIA", "KXHIGHAUS", "KXHIGHDEN", "KXHIGHPHIL",
-    "KXHIGHTSFO", "KXHIGHTPHX", "KXHIGHTATL", "KXHIGHTSEA", "KXHIGHTBOS", "KXHIGHTDAL", "KXHIGHTDC",
-    "KXHIGHTLV", "KXHIGHTHOU", "KXHIGHTMIN", "KXHIGHTOKC", "KXHIGHTNOLA", "KXHIGHTSATX",
+    "KXHIGHNY", "KXHIGHCHI", "KXHIGHAUS", "KXHIGHDEN", "KXHIGHPHIL", "KXHIGHTSFO", "KXHIGHTATL",
+    "KXHIGHTSEA", "KXHIGHTBOS", "KXHIGHTDAL", "KXHIGHTDC", "KXHIGHTHOU", "KXHIGHTOKC",
 ]  # fmt: skip
 DEFAULT_SERIES = GAME_SERIES + WEATHER_SERIES
 DEFAULT_MAX_MARKETS = 40  # con más ligas y ciudades, 20 se quedaban cortos

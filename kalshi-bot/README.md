@@ -241,13 +241,13 @@ Resumen de [INVESTIGACION.md](INVESTIGACION.md):
   - deja órdenes de compra *post-only* (nunca paga comisión de taker) en el lado favorito, SÍ o NO;
   - solo entre 88¢ y 97¢ y sin cruzar el spread;
   - 10 contratos por orden;
-  - en los partidos (MLB, NFL, NHL, NBA, fútbol americano universitario y baloncesto universitario masculino
-    y femenino) que terminan en las próximas 6 h, uno por partido, hasta 15 min antes del final previsto, y
-    **solo cuando el favorito lleva 20 minutos seguidos a su precio** (`settle_minutes`; en noviembre de 2026
-    comprar en cuanto aparece daba −0,9 % y esperando, +2,3 %);
-  - y en la temperatura máxima diaria de 20 ciudades (mira hasta 4 tramos por día y apuesta en uno; aquí no
-    espera, porque en el clima esperar no mejora). Si tu estado bloquea los
-    contratos deportivos, quita los partidos en **Ajustes → Mercados**: el clima sigue funcionando.
+  - en los partidos (MLB, NHL, NBA, fútbol americano universitario y baloncesto universitario masculino
+    y femenino; la NFL salía a cero) que terminan en las próximas 6 h, uno por partido, hasta 15 min
+    antes del final previsto, y **solo cuando el favorito lleva 20 minutos seguidos a su precio**
+    (`settle_minutes`; en noviembre de 2026 comprar en cuanto aparece daba −0,9 % y esperando, +2,5 %);
+  - y en la temperatura máxima diaria de 13 ciudades, las que ganaron en la simulación (mira hasta 4
+    tramos por día y apuesta en uno; aquí no espera, porque en el clima esperar no mejora). Si tu estado
+    bloquea los contratos deportivos, quita los partidos en **Ajustes → Mercados**: el clima sigue funcionando.
 - **No cambia de bando**: si en un mercado ya tiene NO y el favorito pasa a ser el SÍ (o al revés), no compra el
   nuevo favorito. En Kalshi eso vendería primero lo que tiene, a lo poco que vale ya, y con una previsión que
   sube y baja puede perder dos veces en el mismo mercado. Se queda con lo que tenía hasta el final, y así
@@ -428,7 +428,7 @@ Lo primero: **Ajustes → Probar conexión**. Dice qué paso falla y qué hacer.
   el reloj del servidor va desfasado.
 - **No conecta con Kalshi**: el servidor debe estar en una región de EE. UU.
 - **"No hay mercados que seguir"**: por defecto el bot sigue los partidos que terminan en las próximas
-  6 h y la temperatura máxima de 20 ciudades. Revisa **Ajustes → Mercados** (o `[markets]`).
+  6 h y la temperatura máxima de 13 ciudades. Revisa **Ajustes → Mercados** (o `[markets]`).
 - **"Kalshi pide ir más despacio" (HTTP 429)**: demasiadas peticiones seguidas. No pasa nada: el bot espera,
   repite la petición y baja solo su ritmo (a la mitad, sin bajar de 1 por segundo); luego lo va recuperando,
   un 25 % por cada minuto sin avisos. El bot y el panel comparten ese límite. Con API key, los datos de
