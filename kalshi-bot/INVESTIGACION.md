@@ -120,8 +120,8 @@ pregunta es: ¿sabe esa fuente algo que el precio de Kalshi aún no refleja?
 2. **Probabilidad de victoria en directo de ESPN**, minuto a minuto, en 625 partidos de NBA y baloncesto
    universitario. Es **peor que el precio de Kalshi** en todas las ligas (Brier 0,127 frente a 0,119).
    Comprar cuando ESPN da más que el precio pierde entre un 7 % y un 12 %. Como filtro para el bot
-   tampoco sirve: las compras en las que ESPN no estaba de acuerdo ganaron más (+2,3 % a +5,6 %) que
-   las demás. (Hay que mirar las jugadas con el retraso real: sin él, parecía que ganaba un 7 %.)
+   tampoco sirve: las compras en las que ESPN no estaba de acuerdo ganaron lo mismo o más (+2,3 % y
+   +5,6 %) que aquellas en las que sí lo estaba (+2,4 %). (Hay que mirar las jugadas con el retraso real: sin él, parecía que ganaba un 7 %.)
 3. **Temperaturas ya medidas** (estaciones oficiales, archivo de la Universidad de Iowa), en las 20
    ciudades. En 1.473 tramos el termómetro ya había decidido el resultado antes del cierre y **nunca se
    equivocó**, pero cuando la lectura se publica Kalshi ya los paga a 99¢–1 $: solo hubo 2 ocasiones de
