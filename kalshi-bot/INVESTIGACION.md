@@ -13,7 +13,8 @@
   cero (+2,2 % a +5,6 %). Detalle en la sección siguiente.
 - **Noviembre de 2026:** ese +3,9 % ya no existe; comprar en cuanto aparece el favorito da −0,9 %.
   Esperar a que el favorito **aguante 20 minutos** lo devuelve a **+2,5 %** en las ligas elegidas (sin
-  la NFL), y el clima gana un +3,1 % en las 13 ciudades que se quedan. Las combinadas no tienen ventaja. Detalle en
+  la NFL), y el clima gana un +3,1 % en las 13 ciudades que se quedan. Ni las cuotas de las casas, ni la
+  probabilidad en directo de ESPN, ni los termómetros dan ventaja: Kalshi ya los tiene en el precio. Las combinadas no tienen ventaja. Detalle en
   [Noviembre de 2026](#noviembre-de-2026-el-mercado-ha-cambiado).
 - **Lo más parecido a "el truco"** es ponerse en el lado contrario de quienes compran longshots:
   - comprar el lado **favorito** (88–97¢);
@@ -104,6 +105,32 @@ Las diferencias son enormes porque con 25 $ cada fallo se lleva 3–4 $ y el sal
 fallos seguidos al principio o al final cambian el resultado. Tómalo como dirección (esperar sí, comprar
 en cuanto aparece no), no como lo que vas a ganar: es una simulación con la mejor regla elegida mirando
 estas mismas semanas, supone que las órdenes se llenan, y el peor día fue −10,68 $.
+
+### ¿Ayuda mirar internet? Cuotas, probabilidad en directo y termómetros (12 de noviembre de 2026)
+
+Se probaron las tres fuentes públicas que podían dar ventaja, con las mismas 6 semanas. En todas, la
+pregunta es: ¿sabe esa fuente algo que el precio de Kalshi aún no refleja?
+
+1. **Cuotas de las casas de apuestas** (DraftKings, publicadas por ESPN), en 1.219 partidos de NBA, NHL,
+   NFL, fútbol americano y baloncesto universitario. Justo antes de empezar, Kalshi acierta igual que
+   DraftKings sin su margen (puntuación de Brier 0,1821 frente a 0,1827; más bajo es mejor). Comprar en
+   Kalshi cuando estaba más barato que la casa **perdió**: −12 % con 2¢ de diferencia como taker, −7,7 %
+   como maker. Solo el baloncesto universitario masculino salió en positivo, con 14 aciertos en 103
+   apuestas a precios bajos: es suerte, no una ventaja.
+2. **Probabilidad de victoria en directo de ESPN**, minuto a minuto, en 625 partidos de NBA y baloncesto
+   universitario. Es **peor que el precio de Kalshi** en todas las ligas (Brier 0,127 frente a 0,119).
+   Comprar cuando ESPN da más que el precio pierde entre un 7 % y un 12 %. Como filtro para el bot
+   tampoco sirve: las compras en las que ESPN no estaba de acuerdo ganaron más (+2,3 % a +5,6 %) que
+   las demás. (Hay que mirar las jugadas con el retraso real: sin él, parecía que ganaba un 7 %.)
+3. **Temperaturas ya medidas** (estaciones oficiales, archivo de la Universidad de Iowa), en las 20
+   ciudades. En 1.473 tramos el termómetro ya había decidido el resultado antes del cierre y **nunca se
+   equivocó**, pero cuando la lectura se publica Kalshi ya los paga a 99¢–1 $: solo hubo 2 ocasiones de
+   comprar a 98¢ o menos en 6 semanas. Otros bots leen los datos de 5 minutos antes que nadie.
+
+**Conclusión:** en estos mercados, Kalshi ya incorpora lo que cuentan las noticias, las cuotas y los
+termómetros. Lo que gana es lo de siempre: comprar el favorito como maker, sin pagar comisión de taker,
+esperando a que aguante. El bot no usa estas fuentes. La Notaria de la Incubadora sigue probando lo del
+termómetro con dinero de mentira, pero se espera que encuentre muy poco.
 
 ### Combinadas (parlays): siguen sin compensar
 
